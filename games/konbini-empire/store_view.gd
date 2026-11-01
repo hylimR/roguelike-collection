@@ -33,6 +33,11 @@ const OUTDOOR := 128
 const STOREFRONT := Vector2i(256, 192)
 const STOREFRONT_PX := 0.13
 const LANDMARK := 256
+const LANDMARK_H := {"landmarks": 256, "tokyo": 384}  # the Tokyo sheet has tall cells for the towers
+const TRAIN := Vector2i(320, 192)
+const TRAIN_PX := 0.05
+const DECK := 3.2  # Yamanote viaduct height
+const TRAIN_SPEED := 14.0
 const LANDMARK_PX := 0.085
 const SHOP_PX := 0.075  # art/buildings.png on ordinary shop lots
 # road cross-section from its top edge: sidewalk, two lanes [offset, direction along the road], sidewalk
@@ -82,6 +87,9 @@ var hover_lot := -1
 var pick := ""  # city mode: "" | branch | buyout
 var site: Node3D
 var city: Node3D
+var trains: Array = []  # {node, d: distance along the loop, v}
+var rail_parts: Array = []  # [node, a, b]: viaduct pieces, hidden when they would cover the focused shop
+var loop: PackedVector2Array  # Yamanote Line, closed polyline in world xz
 var shadow_mesh: CylinderMesh
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
@@ -245,9 +253,9 @@ func update_camera() -> void:
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 	var target: Vector3
 	if mode == "city":
-		var P := Vector2(Sim.BLOCK.x + Sim.ROAD, Sim.BLOCK.y + Sim.ROAD)
-		target = Vector3(Sim.CITY.x * P.x / 2, 0, Sim.CITY.y * P.y / 2)
-		cam.size = (Sim.CITY.x * P.x + Sim.CITY.y * P.y) * 0.38 * zoom
+		var b: Rect2 = sim.city_bounds()
+		target = Vector3(b.get_center().x, 0, b.get_center().y)
+		cam.size = (b.size.x + b.size.y) * 0.4 * zoom
 	else:
 		target = site.position + Vector3(lot.x / 2 + 0.3, 0.9, lot.y / 2 + 0.8)
 		cam.size = (lot.x + lot.y) * 0.6 * zoom
@@ -257,10 +265,6 @@ func update_camera() -> void:
 	cam.far = 900.0
 	cam.look_at(target)
 	overlay.queue_redraw()
-
-
-func pitch_vec() -> Vector2:
-	return Vector2(Sim.BLOCK.x + Sim.ROAD, Sim.BLOCK.y + Sim.ROAD)
 
 
 func stripes(a: Color, b: Color, w: int, h: int, on: int) -> ImageTexture:
@@ -287,69 +291,202 @@ func city_sprite(sheet: String, region: Rect2, px: float, at: Vector3) -> Sprite
 	return s
 
 
-## Ground, roads, blocks and every lot except the focused shop's. Rebuilt when the city changes.
+## Ground, streets, blocks, the river, the bay and every lot except the focused shop's.
 func build_city() -> void:
 	for c in city.get_children():
 		c.free()
 	city_sprites.clear()
-	var P := pitch_vec()
-	var span := Vector2(Sim.CITY.x * P.x, Sim.CITY.y * P.y)
-	var mid := Vector3(span.x / 2 - Sim.ROAD / 2, 0, span.y / 2 - Sim.ROAD / 2)
-	var grass := tiled(speckle([Color("7fa35a"), Color("8cb064"), Color("739a52"), Color("98b86c")]), Vector2(300, 300))
-	plane(city, Vector2(1200, 1200), Vector3(mid.x, -0.14, mid.z), grass)
-	plane(city, span + Vector2(Sim.ROAD, Sim.ROAD), Vector3(mid.x, -0.12, mid.z), mat(Color("5d5f66")))
-	var paving := tiles(Color("d8d2c4"), Color("bdb6a6"))
+	rail_parts.clear()
+	var bounds: Rect2 = sim.city_bounds()
+	var mid := bounds.get_center()
+	var grass := tiled(speckle([Color("7fa35a"), Color("8cb064"), Color("739a52"), Color("98b86c")]), Vector2(400, 400))
+	plane(city, Vector2(1600, 1600), Vector3(mid.x, -0.14, mid.y), grass)
+	# Tokyo Bay: the coast steps along the ends of the southern rows and wraps under the last one
+	var sea := tiled(speckle([Color("3f7fbf"), Color("4a8ccb"), Color("3a74b0"), Color("5596d3")]), Vector2(400, 400))
+	for r in range(3, sim.rows.size()):
+		var rw: Dictionary = sim.rows[r]
+		var x0: float = rw.x1 + Sim.ROAD + 3.0 - (r - 3) * 6.0
+		plane(city, Vector2(800, rw.z1 - rw.z0 + 0.2), Vector3(x0 + 400, -0.13, (rw.z0 + rw.z1) / 2 - Sim.ROAD / 2), sea)
+	var last: Dictionary = sim.rows[-1]
+	var south: float = last.z1 + 2.0
+	plane(city, Vector2(1200, 800), Vector3(last.x0 + 170.0 + 600, -0.13, south + 400), sea)
+	plane(city, Vector2(1200, 800), Vector3(last.x0 + 300.0 + 600, -0.13, south - 6.0 + 400), sea)
+	# the outskirts: scattered trees and houses round the city's edge
+	var out := RandomNumberGenerator.new()
+	out.seed = 23
+	for k in 70:
+		var p2 := Vector2(out.randf_range(bounds.position.x - 60, bounds.end.x + 20), out.randf_range(bounds.position.y - 50, bounds.end.y + 30))
+		if bounds.grow(-2.0).has_point(p2) or p2.x > bounds.end.x - 60 and p2.y > bounds.get_center().y:
+			continue
+		var id: int = [0, 1, 2, 3, 3, 4][out.randi() % 6]
+		city_sprite("outdoor", Rect2(id * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[id], Vector3(p2.x, 0, p2.y))
+	var asphalt := mat(Color("5d5f66"))
 	var dash := stripes(Color("5d5f66"), Color("e8e2c8"), 8, 1, 4)
-	for k in Sim.CITY.y + 1:
-		var z0 := k * P.y - Sim.ROAD
-		plane(city, Vector2(span.x + Sim.ROAD, 0.15), Vector3(mid.x, -0.11, z0 + 4.6), tiled(dash, Vector2((span.x + Sim.ROAD) / 2.0, 1)))
-	for k in Sim.CITY.x + 1:
-		var x0 := k * P.x - Sim.ROAD
-		var m := tiled(dash, Vector2((span.y + Sim.ROAD) / 2.0, 1))
-		var mi := MeshInstance3D.new()
-		var pm := PlaneMesh.new()
-		pm.size = Vector2(span.y + Sim.ROAD, 0.15)
-		mi.mesh = pm
-		mi.material_override = m
-		mi.rotation.y = PI / 2
-		mi.position = Vector3(x0 + 4.6, -0.11, mid.z)
-		city.add_child(mi)
+	for rd in sim.roads:
+		var length: float = rd.to - rd.from
+		var middle: float = (rd.from + rd.to) / 2.0
+		if rd.axis == "h":
+			plane(city, Vector2(length, rd.w), Vector3(middle, -0.12, rd.line + rd.w / 2), asphalt)
+			plane(city, Vector2(length, 0.15), Vector3(middle, -0.11, rd.line + 4.6), tiled(dash, Vector2(length / 2.0, 1)))
+		else:
+			plane(city, Vector2(rd.w, length), Vector3(rd.line + rd.w / 2, -0.12, middle), asphalt)
+			if rd.w >= Sim.ROAD:
+				var mi := MeshInstance3D.new()
+				var pm := PlaneMesh.new()
+				pm.size = Vector2(length, 0.15)
+				mi.mesh = pm
+				mi.material_override = tiled(dash, Vector2(length / 2.0, 1))
+				mi.rotation.y = PI / 2
+				mi.position = Vector3(rd.line + 4.6, -0.11, middle)
+				city.add_child(mi)
+	for rd in sim.roads:
+		if rd.axis == "h" and not rd.bridge.is_empty():
+			var bx: float = rd.bridge[0] + rd.bridge[1] / 2
+			plane(city, Vector2(rd.bridge[1] + 0.4, rd.w), Vector3(bx, -0.1, rd.line + rd.w / 2), mat(Color("6a6c73")))
+			for side in [0.3, rd.w - 0.3]:
+				block(city, Vector3(rd.bridge[1] + 0.6, 0.45, 0.15), Vector3(bx, 0.12, rd.line + side), Color("d9d4c7"))
+	# the Sumida jogs from row to row under its bridges. Plazas between blocks are green with trees and a path.
+	for rw in sim.rows:
+		for g in rw.gaps:
+			if g[2] == "p":
+				plane(city, Vector2(g[1], rw.z1 - rw.z0), Vector3(g[0] + g[1] / 2, -0.115, (rw.z0 + rw.z1) / 2), grass)
+				var pr := RandomNumberGenerator.new()
+				pr.seed = int(g[0] * 13.0 + rw.z0)
+				for k in int(rw.depth / 5.0):
+					var id: int = [0, 1, 2, 3, 2][pr.randi() % 5]
+					var side: float = 1.5 if k % 2 == 0 else g[1] - 1.5
+					city_sprite("outdoor", Rect2(id * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[id] * 0.85, Vector3(g[0] + side, 0, rw.z0 + 2.0 + k * 5.0))
+			if g[2] != "r":
+				continue
+			plane(city, Vector2(g[1], rw.z1 - rw.z0 + Sim.ROAD), Vector3(g[0] + g[1] / 2, -0.105, (rw.z0 - Sim.ROAD + rw.z1) / 2), sea)
+	var walk_tiles := tiles(Color("c9c4bb"), Color("a9a49b"))
+	var paving := tiles(Color("d8d2c4"), Color("bdb6a6"))
+	var yard_paving := tiles(Color("bfb7a8"), Color("aaa293"))
 	var zebra := tiled(stripes(Color("5d5f66"), Color("ece7d8"), 8, 1, 4), Vector2(6, 1))
 	for d in sim.districts:
-		var o := Sim.block_origin(d.cell)
-		var c := Vector3(o.x + Sim.BLOCK.x / 2, 0, o.y + Sim.BLOCK.y / 2)
-		var rim := tiled(tiles(Color("c9c4bb"), Color("a9a49b")), Sim.BLOCK + Vector2(4.4, 4.4))
-		plane(city, Sim.BLOCK + Vector2(4.4, 4.4), Vector3(c.x, -0.1, c.z), rim)
-		var yard := Sim.BLOCK.y - Sim.LOT_D
-		plane(city, Vector2(Sim.BLOCK.x, yard), Vector3(c.x, -0.09, o.y + yard / 2), grass)
-		plane(city, Vector2(Sim.BLOCK.x, Sim.LOT_D), Vector3(c.x, -0.09, o.y + Sim.BLOCK.y - Sim.LOT_D / 2), tiled(paving, Vector2(Sim.BLOCK.x, Sim.LOT_D)))
-		# a zebra crossing mid-block, across the road in front
+		var r2: Rect2 = d.rect
+		var c := r2.get_center()
+		var rim := r2.grow(2.2)
+		plane(city, rim.size, Vector3(rim.get_center().x, -0.1, rim.get_center().y), tiled(walk_tiles, rim.size))
+		var below: float = r2.end.y + Sim.ROAD
+		var next_row: float = sim.rows[d.row].z1
+		if next_row - below > 0.5:
+			var gp := Vector2(r2.size.x, next_row - below)
+			plane(city, gp, Vector3(c.x, -0.1, below + gp.y / 2), grass)
+		var row_top: float = sim.rows[d.row].z0
+		if r2.position.y - 2.2 > row_top + 0.5:  # pocket park behind a shallower block
+			var pk := Vector2(r2.size.x + 4.4, r2.position.y - 2.2 - row_top)
+			plane(city, pk, Vector3(c.x, -0.1, row_top + pk.y / 2), grass)
+			for k in int(r2.size.x / 9.0):
+				city_sprite("outdoor", Rect2(OUTDOOR * [0, 1, 2, 4][k % 4], 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * 0.55, Vector3(r2.position.x + 4.0 + k * 9.0, 0, row_top + pk.y * 0.5))
+		var yard := r2.size.y - Sim.LOT_D
+		var green: bool = d.type in ["park", "palace", "homes"]
+		plane(city, Vector2(r2.size.x, yard), Vector3(c.x, -0.09, r2.position.y + yard / 2), grass if green else tiled(yard_paving, Vector2(r2.size.x, yard)))
+		plane(city, Vector2(r2.size.x, Sim.LOT_D), Vector3(c.x, -0.09, r2.end.y - Sim.LOT_D / 2), tiled(paving, Vector2(r2.size.x, Sim.LOT_D)))
 		var zm := MeshInstance3D.new()
 		var zp := PlaneMesh.new()
 		zp.size = Vector2(4.8, 2.6)
 		zm.mesh = zp
 		zm.material_override = zebra
 		zm.rotation.y = PI / 2
-		zm.position = Vector3(c.x, -0.105, o.y + Sim.BLOCK.y + 4.6)
+		zm.position = Vector3(c.x, -0.105, r2.end.y + 4.6)
 		city.add_child(zm)
-		backyard(d, o)
+		backyard(d)
 	for li in sim.lots.size():
 		lot_sprite(li)
+	build_yamanote()
 
 
-## Low greenery near the road behind, trees deeper in; nothing tall where it could hide a shop across the road.
-func backyard(d: Dictionary, o: Vector2) -> void:
+## The elevated Yamanote Line, straight from station to station over the blocks, with two trains on it.
+func build_yamanote() -> void:
+	loop = PackedVector2Array()
+	for stn in Sim.YAMANOTE:
+		for d in sim.districts:
+			if d.name == stn:
+				var yard: float = d.rect.size.y - Sim.LOT_D
+				loop.append(Vector2(d.rect.get_center().x, d.rect.position.y + yard / 2))
+	for i in loop.size():
+		var a := loop[i]
+		var b := loop[(i + 1) % loop.size()]
+		var along := b - a
+		var angle := atan2(-along.y, along.x)
+		var holder := Node3D.new()
+		holder.position = Vector3((a.x + b.x) / 2, 0, (a.y + b.y) / 2)
+		holder.rotation.y = angle
+		city.add_child(holder)
+		block(holder, Vector3(along.length() + 1.8, 0.35, 1.8), Vector3(0, DECK, 0), Color("b9b5ad"))
+		block(holder, Vector3(along.length() + 1.8, 0.05, 0.3), Vector3(0, DECK + 0.2, 0.75), Color("7fc241"))
+		var n := int(along.length() / 9.0)
+		for k in n + 1:
+			block(holder, Vector3(0.6, DECK, 0.6), Vector3(-along.length() / 2 + along.length() * k / maxf(1, n), DECK / 2, 0), Color("9c978d"))
+		rail_parts.append([holder, a, b])
+	for trn in trains:
+		trn.node.queue_free()
+	trains.clear()
+	var length := loop_length()
+	for k in 2:
+		var node := sprite("train", Rect2(0, 0, TRAIN.x, TRAIN.y), TRAIN_PX)
+		street.add_child(node)
+		trains.append({"node": node, "d": length * k / 2.0, "v": TRAIN_SPEED * (1 if k == 0 else -1)})
+	move_trains(0.0)
+
+
+func loop_length() -> float:
+	var total := 0.0
+	for i in loop.size():
+		total += loop[i].distance_to(loop[(i + 1) % loop.size()])
+	return total
+
+
+func move_trains(delta: float) -> void:
+	if loop.is_empty():
+		return
+	var length := loop_length()
+	for trn in trains:
+		trn.d = fposmod(trn.d + trn.v * delta, length)
+		var d: float = trn.d
+		for i in loop.size():
+			var a := loop[i]
+			var b := loop[(i + 1) % loop.size()]
+			var seg := a.distance_to(b)
+			if d <= seg:
+				var p2 := a.lerp(b, d / seg)
+				var dir := (b - a).normalized() * signf(trn.v)
+				var along_x := absf(dir.x) >= absf(dir.y)
+				var forward := dir.x > 0 if along_x else dir.y > 0
+				trn.node.region_rect = Rect2((0 if forward else 1) * TRAIN.x, 0, TRAIN.x, TRAIN.y)
+				trn.node.flip_h = not along_x
+				trn.node.position = Vector3(p2.x, DECK + 0.2 + TRAIN.y / 2.0 * TRAIN_PX * 0.55, p2.y)
+				var near_shop := false
+				if mode == "store":
+					near_shop = p2.distance_to(Sim.lot_pos(sim.lots[focus_lot()])) < 20.0
+				trn.node.visible = not near_shop
+				break
+			d -= seg
+
+
+## Dense back streets: small houses and shops, greenery near the street behind; parks are all trees.
+func backyard(d: Dictionary) -> void:
 	var r := RandomNumberGenerator.new()
-	r.seed = d.cell.x * 31 + d.cell.y * 7
-	var yard := Sim.BLOCK.y - Sim.LOT_D
-	for k in 5:
+	r.seed = hash(d.name)
+	var r2: Rect2 = d.rect
+	var yard := r2.size.y - Sim.LOT_D
+	var green: bool = d.type in ["park", "palace"]
+	var x := r2.position.x + r.randf_range(4.0, 8.0)
+	while x < r2.end.x - 4.0:
+		var z := r2.position.y + r.randf_range(yard * 0.45, yard - 1.0)
+		if green or r.randf() < 0.3:
+			var id: int = [0, 1, 2, 3][r.randi() % 4]
+			city_sprite("outdoor", Rect2(id * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[id], Vector3(x, 0, z))
+		else:
+			var f: int = [4, 2, 0, 3, 1, 5][r.randi() % 6]
+			city_sprite("buildings", Rect2(f * BUILDING_CELL.x, 0, BUILDING_CELL.x, BUILDING_CELL.y), SHOP_PX * 0.62, Vector3(x, 0, z))
+		x += r.randf_range(8.0, 13.0)
+	for k in int(r2.size.x / 12.0):
 		var id: int = [4, 5, 10, 9][r.randi() % 4]
-		city_sprite("outdoor", Rect2(id * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[id], Vector3(o.x + r.randf_range(2, Sim.BLOCK.x - 2), 0, o.y + r.randf_range(1.0, 4.0)))
-	for k in 4:
-		var id: int = [0, 1, 2, 3][r.randi() % 4]
-		city_sprite("outdoor", Rect2(id * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[id], Vector3(o.x + r.randf_range(3, Sim.BLOCK.x - 3), 0, o.y + r.randf_range(6.0, yard - 1.0)))
-	for x in [o.x + 6.0, o.x + Sim.BLOCK.x / 2 + 6.0]:
-		city_sprite("outdoor", Rect2(6 * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[6], Vector3(x, 0, o.y + Sim.BLOCK.y + 2.0))
+		city_sprite("outdoor", Rect2(id * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[id], Vector3(r.randf_range(r2.position.x + 2, r2.end.x - 2), 0, r2.position.y + r.randf_range(0.8, 3.0)))
+	for k in maxi(1, int(r2.size.x / 20.0)):
+		city_sprite("outdoor", Rect2(6 * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[6], Vector3(r2.position.x + 5.0 + k * 20.0, 0, r2.end.y + 2.0))
 
 
 func lot_sprite(li: int) -> void:
@@ -359,8 +496,10 @@ func lot_sprite(li: int) -> void:
 	var at := Vector3(L.x0 + Sim.LOT_W * 0.62, 0, L.front - 0.4)
 	match L.use:
 		"landmark":
-			var f: int = Sim.DISTRICTS[sim.districts[L.block].type].frame
-			city_sprite("landmarks", Rect2(f * LANDMARK, 0, LANDMARK, LANDMARK), LANDMARK_PX, at)
+			var lm: Array = sim.districts[L.block].lm
+			if li > 0 and sim.lots[li - 1].block == L.block and sim.lots[li - 1].use == "landmark":
+				lm = ["landmarks", 4]  # a block that is all landmark (the palace) gets gardens on its other lots
+			city_sprite(lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_PX, at)
 		"shop":
 			city_sprite("buildings", Rect2([0, 1, 3, 5][li % 4] * BUILDING_CELL.x, 0, BUILDING_CELL.x, BUILDING_CELL.y), SHOP_PX, at)
 		"store":
@@ -408,6 +547,10 @@ func update_fade() -> void:
 		var fade_it: bool = mode == "store" and r.intersects(shop) and s.position.x + s.position.z > site.position.x + site.position.z + lot.y
 		s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED if fade_it else SpriteBase3D.ALPHA_CUT_DISCARD
 		s.modulate = Color(1, 1, 1, 0.25) if fade_it else Color.WHITE
+	var shop_at: Vector2 = Sim.lot_pos(sim.lots[focus_lot()]) if focus_lot() >= 0 else Vector2(INF, INF)
+	for part in rail_parts:
+		var near: float = shop_at.distance_to(Geometry2D.get_closest_point_to_segment(shop_at, part[1], part[2]))
+		part[0].visible = mode != "store" or near > 20.0
 
 
 ## World xz to the iso screen plane (x right, y down), in world units.
@@ -422,18 +565,16 @@ func view_center() -> Vector2:
 	return Vector2(t3.x, t3.z)
 
 
-## Roads crossing the view: ["h", z of top edge] or ["v", x of left edge].
-func roads_near(c: Vector2, r: float) -> Array:
-	var P := pitch_vec()
+## Street segments crossing the view (cars only on full-width streets).
+func roads_near(c: Vector2, r: float, for_cars: bool) -> Array:
 	var out := []
-	for k in Sim.CITY.y + 1:
-		var z0 := k * P.y - Sim.ROAD
-		if absf(z0 + 4.6 - c.y) < r:
-			out.append(["h", z0])
-	for k in Sim.CITY.x + 1:
-		var x0 := k * P.x - Sim.ROAD
-		if absf(x0 + 4.6 - c.x) < r:
-			out.append(["v", x0])
+	for rd in sim.roads:
+		if for_cars and rd.w < Sim.ROAD:
+			continue
+		var across: float = c.y if rd.axis == "h" else c.x
+		var along: float = c.x if rd.axis == "h" else c.y
+		if absf(rd.line + rd.w / 2 - across) < r and rd.from < along + r and rd.to > along - r:
+			out.append(rd)
 	return out
 
 
@@ -441,34 +582,40 @@ func roads_near(c: Vector2, r: float) -> Array:
 func spawn_mover(is_car: bool, mid := false) -> void:
 	var c := view_center()
 	var r := cam.size * 1.1
-	var roads := roads_near(c, r)
+	var roads := roads_near(c, r, is_car)
 	if roads.is_empty():
 		return
-	var rd: Array = roads[randi() % roads.size()]
+	var rd: Dictionary = roads[randi() % roads.size()]
 	var dir := 1.0 if randf() < 0.5 else -1.0
 	var line: float
 	if is_car:
 		var lane: Array = LANES[randi() % 2]
-		dir = lane[1] if rd[0] == "h" else -lane[1]
-		line = rd[1] + lane[0]
+		dir = lane[1] if rd.axis == "h" else -lane[1]
+		line = rd.line + lane[0]
+	elif rd.w < Sim.ROAD:
+		line = rd.line + [0.9, rd.w - 0.9][randi() % 2]
 	else:
-		line = rd[1] + WALK_LINES[randi() % 2] + randf_range(-0.5, 0.5)
-	var centre: float = c.x if rd[0] == "h" else c.y
-	var s := centre + (randf_range(-r, r) if mid else -dir * r)
+		line = rd.line + WALK_LINES[randi() % 2] + randf_range(-0.5, 0.5)
+	var centre: float = c.x if rd.axis == "h" else c.y
+	var lo: float = maxf(rd.from, centre - r - 4.0)
+	var hi: float = minf(rd.to, centre + r + 4.0)
+	var s := randf_range(lo, hi) if mid else (lo if dir > 0 else hi)
 	var node: Sprite3D
-	var m := {"axis": rd[0], "line": line, "s": s, "lo": centre - r - 4.0, "hi": centre + r + 4.0}
+	var m := {"axis": rd.axis, "line": line, "s": s, "lo": lo - 0.5, "hi": hi + 0.5}
+	if is_car and cars.any(func(o): return o.axis == rd.axis and absf(o.line - line) < 0.5 and absf(o.s - s) < 7.0):
+		return  # keep cars apart in their lane
 	if is_car:
 		var kv := randi() % 4
-		var frame := kv * 2 + (0 if (dir > 0) == (rd[0] == "h") else 1)
+		var frame := kv * 2 + (0 if (dir > 0) == (rd.axis == "h") else 1)
 		node = sprite("vehicles", Rect2(frame * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
-		node.flip_h = rd[0] == "v"
+		node.flip_h = rd.axis == "v"
 		m.v = dir * randf_range(5.0, 8.0) * (0.6 if kv == 3 else 1.0)
 		m.y = VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
 		cars.append(m)
 	else:
 		m.a = randi() % 7
 		node = sprite("walk", Rect2(PERSON.x, m.a * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
-		node.flip_h = dir < 0 if rd[0] == "h" else dir > 0
+		node.flip_h = dir < 0 if rd.axis == "h" else dir > 0
 		node.add_child(shadow())
 		m.v = dir * randf_range(1.4, 2.4)
 		m.y = 0.82
@@ -536,6 +683,7 @@ func street_life(delta: float) -> void:
 	for c in cars:
 		c.s += c.v * delta
 		place(c)
+	move_trains(delta)
 	var live := func(o): return o.s > o.lo and o.s < o.hi
 	for o in walkers + cars:
 		if not live.call(o):
@@ -1003,7 +1151,7 @@ func draw_city_marks(font: Font) -> void:
 	if city_view:
 		for d in sim.districts:
 			var at := screen_world(Vector3(sim.block_center(d).x, 0, sim.block_center(d).y - 4.0))
-			var nm: String = Sim.DISTRICTS[d.type].name.to_upper()
+			var nm: String = d.name.to_upper()
 			overlay.draw_string_outline(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, 4, Color(0.17, 0.18, 0.26, 0.8))
 			overlay.draw_string(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, Color("f7f3e8"))
 		for li in sim.lots.size():

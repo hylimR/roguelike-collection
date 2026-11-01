@@ -48,7 +48,7 @@ var arranging := false
 
 
 func _ready() -> void:
-	for n in ["products", "people", "perks", "stores", "decor", "outdoor", "buildings", "vehicles", "walk", "storefronts", "landmarks", "bg_konbini", "bg_super"]:
+	for n in ["products", "people", "perks", "stores", "decor", "outdoor", "buildings", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "train", "bg_konbini", "bg_super"]:
 		tex[n] = load("res://art/%s.png" % n)
 	theme = make_theme()
 	best.load("user://best.cfg")
@@ -387,7 +387,7 @@ func on_lot(li: int) -> void:
 
 
 func district_of(li: int) -> String:
-	return Sim.DISTRICTS[sim.districts[sim.lots[li].block].type].name
+	return sim.districts[sim.lots[li].block].name
 
 
 ## Market leaderboard, then whatever lot you clicked, with what you can do there.

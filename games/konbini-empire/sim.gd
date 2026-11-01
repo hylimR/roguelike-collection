@@ -109,30 +109,50 @@ const DECOR := [
 const APPEAL_CAP := 25
 
 # --- city: blocks of two 22-wide shop lots along each block's front (+z) edge, roads between blocks ---
-const CITY := Vector2i(6, 4)
-const BLOCK := Vector2(44.0, 24.0)
+const ALLEY := 5.0  # narrow north-south lane between blocks
+const GAP_W := {"a": 9.2, "l": 5.0, "p": 16.0, "r": 13.0}
+const STEP := 9.0  # most a block front sets back from its row's line
 const ROAD := 9.2  # sidewalk, two lanes, sidewalk (matches the street the shop view draws)
 const LOT_W := 22.0
 const LOT_D := 10.0
 const DIST_SCALE := 22.0  # one unit of utility lost per this many metres walked
 const STAY_HOME := -1.0  # utility of not shopping at all
 const REACH := 90.0
-const MAX_STORES := 6
+const MAX_STORES := 8
 const OPEN_COST := 90000
 
-# frame = art/landmarks.png. pop = shoppers a day; hours and arch weight when and who comes out.
+# Shopper profiles by kind of area. pop = shoppers a day; hours and arch weight when and who comes out
+# (arch order: salaryman, office worker, student, grandma, builder, tourist, kid).
 const DISTRICTS := {
-	"station": {"name": "Station", "pop": 260, "rent": 1.6, "frame": 0, "hours": [4, 1, 1, 4, 2, 1], "arch": [3, 2, 1.2, 0.6, 1, 1.2, 0.4]},
-	"office": {"name": "Offices", "pop": 190, "rent": 1.4, "frame": 1, "hours": [2, 4, 1, 2, 1, 0.3], "arch": [3, 3, 0.3, 0.3, 0.6, 0.6, 0.1]},
-	"school": {"name": "School", "pop": 160, "rent": 1.0, "frame": 2, "hours": [2, 2, 4, 1, 0.3, 0.1], "arch": [0.5, 0.6, 4, 0.8, 0.4, 0.4, 3]},
-	"shrine": {"name": "Shrine", "pop": 130, "rent": 1.2, "frame": 3, "hours": [1, 2, 3, 2, 0.5, 0.2], "arch": [0.5, 0.8, 0.8, 1.5, 0.5, 4, 1]},
-	"park": {"name": "Park", "pop": 120, "rent": 0.9, "frame": 4, "hours": [2, 2, 3, 2, 0.5, 0.2], "arch": [0.6, 0.8, 1.2, 2, 0.6, 1.2, 2.5]},
-	"homes": {"name": "Homes", "pop": 170, "rent": 0.8, "frame": 5, "hours": [3, 1, 2, 3, 1, 0.4], "arch": [1, 1, 1, 3, 1, 0.3, 2]},
-	"arcade": {"name": "Arcade", "pop": 180, "rent": 1.3, "frame": 6, "hours": [1, 3, 3, 3, 1, 0.3], "arch": [1, 2, 1.5, 1.5, 0.5, 2.5, 1]},
-	"hospital": {"name": "Hospital", "pop": 130, "rent": 1.0, "frame": 7, "hours": [3, 2, 2, 1, 1, 0.5], "arch": [0.6, 1.5, 0.3, 3, 0.4, 0.3, 0.5]},
-	"works": {"name": "Works", "pop": 140, "rent": 0.7, "frame": 8, "hours": [4, 4, 1, 1, 0.3, 0.6], "arch": [0.5, 0.3, 0.2, 0.2, 5, 0.1, 0.1]},
+	"hub": {"pop": 320, "rent": 1.8, "hours": [4, 2, 2, 4, 3, 1.5], "arch": [3, 2.5, 1.5, 0.6, 0.8, 1.5, 0.3]},
+	"office": {"pop": 200, "rent": 1.5, "hours": [2, 4, 1, 2, 1, 0.3], "arch": [3, 3, 0.3, 0.3, 0.6, 0.6, 0.1]},
+	"luxury": {"pop": 180, "rent": 2.2, "hours": [0.5, 2, 3, 3, 1, 0.3], "arch": [1, 2.5, 0.5, 1.2, 0.2, 3, 0.3]},
+	"nightlife": {"pop": 170, "rent": 1.6, "hours": [0.5, 1, 1, 3, 4, 3], "arch": [3, 1.5, 0.6, 0.1, 0.8, 2.5, 0]},
+	"youth": {"pop": 180, "rent": 1.4, "hours": [0.5, 1.5, 4, 3, 1, 0.5], "arch": [0.4, 1, 4, 0.3, 0.3, 2, 0.8]},
+	"otaku": {"pop": 190, "rent": 1.3, "hours": [0.5, 2, 4, 3, 1.5, 0.5], "arch": [1.5, 0.5, 3, 0.2, 0.5, 3, 0.5]},
+	"tourist": {"pop": 170, "rent": 1.4, "hours": [1, 3, 4, 2, 0.5, 0.2], "arch": [0.3, 0.5, 1, 1.2, 0.2, 5, 1.2]},
+	"university": {"pop": 150, "rent": 1.0, "hours": [2, 3, 3, 2, 1, 0.5], "arch": [0.3, 0.5, 5, 0.3, 0.3, 0.3, 0.2]},
+	"homes": {"pop": 150, "rent": 0.8, "hours": [3, 1, 2, 3, 1, 0.4], "arch": [1, 1, 1, 3, 1, 0.3, 2]},
+	"oldtown": {"pop": 130, "rent": 0.85, "hours": [3, 2, 3, 2, 0.5, 0.2], "arch": [0.5, 0.6, 0.5, 5, 0.6, 1, 0.8]},
+	"park": {"pop": 110, "rent": 1.0, "hours": [2, 2, 3, 2, 0.5, 0.2], "arch": [0.6, 0.8, 1.2, 2, 0.6, 2, 2.5]},
+	"market": {"pop": 140, "rent": 0.9, "hours": [5, 3, 1, 0.5, 0.2, 1.5], "arch": [0.5, 0.3, 0.1, 0.5, 4, 2, 0.1]},
+	"palace": {"pop": 80, "rent": 2.0, "hours": [1, 2, 3, 1, 0.1, 0.1], "arch": [0.3, 0.3, 0.3, 1, 0.2, 5, 0.5], "closed": true},
 }
-const DISTRICT_MIX := ["office", "office", "school", "shrine", "park", "homes", "homes", "homes", "arcade", "hospital", "works", "works"]
+# Tokyo by rows of blocks, north to south. yard = depth behind the shop lots; x = where the row starts.
+# area: [name, profile, landmark sheet, frame, shop lots, what follows it: "a" avenue, "l" alley, "p" a
+# pocket plaza, "r" the Sumida River, "-" end of row]. Each block also sits a little shallower than its row
+# (fixed per Tokyo), so block backs stagger. Blocks differ in width and depth and rows start and end apart, so the
+# cross streets don't line up; the river jogs from row to row under its bridges.
+const TOKYO := [
+	{"yard": 12, "x": 48, "areas": [["Nerima", "homes", "landmarks", 5, 3, "p"], ["Itabashi", "homes", "landmarks", 7, 2, "a"], ["Kita", "homes", "landmarks", 5, 2, "l"], ["Komagome", "oldtown", "landmarks", 3, 1, "a"], ["Yanaka", "oldtown", "landmarks", 3, 2, "p"], ["Ueno Park", "park", "landmarks", 4, 2, "a"], ["Minowa", "homes", "landmarks", 5, 1, "r"], ["Kameido", "homes", "landmarks", 6, 2, "-"]]},
+	{"yard": 15, "x": -14, "areas": [["Nakano", "homes", "landmarks", 6, 2, "l"], ["Koenji", "youth", "landmarks", 6, 2, "a"], ["Ikebukuro", "hub", "landmarks", 0, 3, "a"], ["Sugamo", "oldtown", "landmarks", 6, 2, "l"], ["Nippori", "oldtown", "landmarks", 0, 1, "a"], ["Ueno", "hub", "landmarks", 0, 3, "l"], ["Asakusa", "tourist", "tokyo", 2, 2, "r"], ["Oshiage", "tourist", "tokyo", 1, 2, "-"]]},
+	{"yard": 11, "x": 30, "areas": [["Suginami", "homes", "landmarks", 5, 3, "a"], ["Nishi-Shinjuku", "office", "tokyo", 4, 2, "l"], ["Shinjuku", "hub", "landmarks", 0, 3, "a"], ["Kagurazaka", "luxury", "landmarks", 3, 1, "p"], ["Jimbocho", "university", "landmarks", 2, 2, "a"], ["Akihabara", "otaku", "tokyo", 7, 2, "l"], ["Kuramae", "oldtown", "landmarks", 6, 1, "r"], ["Ryogoku", "homes", "landmarks", 6, 2, "-"]]},
+	{"yard": 16, "x": -36, "areas": [["Shimokitazawa", "youth", "landmarks", 6, 2, "l"], ["Yoyogi", "park", "tokyo", 9, 2, "p"], ["Harajuku", "youth", "landmarks", 6, 1, "l"], ["Akasaka", "office", "landmarks", 1, 2, "a"], ["Imperial Palace", "palace", "tokyo", 8, 3, "a"], ["Tokyo Station", "hub", "tokyo", 3, 3, "l"], ["Nihonbashi", "office", "landmarks", 1, 2, "r"], ["Kiyosumi", "homes", "landmarks", 4, 2, "-"]]},
+	{"yard": 12, "x": 12, "areas": [["Setagaya", "homes", "landmarks", 5, 3, "l"], ["Nakameguro", "youth", "landmarks", 4, 1, "a"], ["Shibuya", "hub", "tokyo", 5, 3, "a"], ["Roppongi", "nightlife", "tokyo", 11, 2, "p"], ["Ginza", "luxury", "tokyo", 6, 3, "a"], ["Shimbashi", "nightlife", "landmarks", 0, 1, "l"], ["Tsukiji", "market", "landmarks", 8, 2, "r"], ["Tsukishima", "oldtown", "landmarks", 5, 1, "-"]]},
+	{"yard": 14, "x": 62, "areas": [["Jiyugaoka", "luxury", "landmarks", 6, 2, "a"], ["Meguro", "homes", "landmarks", 5, 2, "l"], ["Ebisu", "nightlife", "landmarks", 1, 2, "a"], ["Azabu", "luxury", "landmarks", 5, 1, "l"], ["Shiba", "tourist", "tokyo", 0, 2, "a"], ["Shinagawa", "hub", "landmarks", 0, 3, "a"], ["Toyosu", "market", "landmarks", 8, 2, "r"], ["Odaiba", "tourist", "tokyo", 10, 3, "-"]]},
+]
+# Yamanote Line stations in running order; the elevated line cuts straight between them.
+const YAMANOTE := ["Ikebukuro", "Sugamo", "Nippori", "Ueno", "Akihabara", "Tokyo Station", "Shimbashi", "Shinagawa", "Ebisu", "Shibuya", "Harajuku", "Shinjuku"]
 # how much each archetype prefers a supermarket over a konbini
 const SUPER_FIT := [0.0, 0.5, -0.2, 0.8, 0.2, 0.0, 0.0]
 
@@ -145,11 +165,11 @@ const CHAINS := [
 	{"name": "Midori 24", "color": "3fae49", "frame": 3, "price": 0, "margin": 0.26, "aggr": 0.6, "appeal": 0.1},
 	{"name": "Yoru Mart", "color": "9b4dca", "frame": 4, "price": 0, "margin": 0.28, "aggr": 0.5, "appeal": 0.05, "night": true},
 ]
-const RIVAL_START := 3
+const RIVAL_START := 5
 const RIVAL_CASH := 120000
 const BASKET := {"konbini": 175, "super": 520}  # what one shopper spends, in line with your own tills
 const CREDIT := 150000  # how far a chain can borrow before it folds
-const CHAIN_MAX := 7
+const CHAIN_MAX := 10
 
 const CHILLED := ["icebar", "milk", "fish", "steak"]
 const CATS := ["food", "drink", "snack", "fresh", "home"]
@@ -180,7 +200,9 @@ var draft: Array = []
 var misses := {}
 var stats := {}
 var lots: Array = []  # {block, x0, front, use: free|landmark|shop|store, rent}
-var districts: Array = []  # one per block: {type, cell}
+var districts: Array = []  # one per block: {type, name, lm, rect, row}
+var rows: Array = []  # {z0, depth, x0, x1, gaps: [[x, width, kind]]}
+var roads: Array = []  # street segments for traffic: {axis, line (top or left edge), from, to, w}
 var rivals: Array = []  # rival stores: {chain, kind, lot, open, war, loss_weeks, week, customers, sales}
 var chains: Array = []  # {cash, alive, sales}
 var news: Array = []
@@ -220,12 +242,57 @@ func start(seed_str: String) -> void:
 
 # ---------- city ----------
 
-static func block_origin(c: Vector2i) -> Vector2:
-	return Vector2(c.x * (BLOCK.x + ROAD), c.y * (BLOCK.y + ROAD))
-
-
 func block_center(d: Dictionary) -> Vector2:
-	return block_origin(d.cell) + BLOCK / 2
+	return d.rect.get_center()
+
+
+## Lays Tokyo out from the TOKYO table. Every block sets its front back by its own amount (fixed per area),
+## so each block has its own front street: east-west streets step and jog, joined by the cross streets.
+func build_geometry() -> void:
+	districts = []
+	rows = []
+	roads = []
+	var z := 0.0
+	var fronts := []
+	for r in TOKYO.size():
+		var R: Dictionary = TOKYO[r]
+		var depth: float = R.yard + LOT_D
+		var x: float = R.x
+		var bottom := z + depth + STEP + ROAD  # where the next row starts
+		var row := {"z0": z, "z1": bottom, "depth": depth, "x0": x, "gaps": []}
+		var prev_gap := 0.0
+		for k in R.areas.size():
+			var a: Array = R.areas[k]
+			var w: float = a[4] * LOT_W
+			var step := float(hash(a[0] + "step") % int(STEP + 1))
+			var short := float(hash(a[0]) % 7)  # shallower blocks leave a pocket park behind
+			var front := z + depth + step
+			districts.append({"type": a[1], "name": a[0], "lm": [a[2], a[3]], "rect": Rect2(x, front - depth + short, w, depth - short), "lots": a[4], "row": r})
+			var gw: float = GAP_W[a[5]] if a[5] != "-" else 0.0
+			# its street runs from the middle of the gap before to the middle of the gap after (all the way over a river)
+			fronts.append({"axis": "h", "line": front, "from": x - prev_gap / 2 - (ROAD if k == 0 else 0.0), "to": x + w + (gw if a[5] == "r" else gw / 2) + (ROAD if a[5] == "-" else 0.0), "w": ROAD, "bridge": [x + w, gw] if a[5] == "r" else []})
+			x += w
+			if a[5] != "-":
+				row.gaps.append([x, gw, a[5]])
+				if a[5] == "p":  # a footpath through the plaza
+					roads.append({"axis": "v", "line": x + (gw - ALLEY) / 2, "from": z - ROAD, "to": bottom, "w": ALLEY})
+				elif a[5] != "r":
+					roads.append({"axis": "v", "line": x, "from": z - ROAD, "to": bottom, "w": gw})
+				x += gw
+			prev_gap = gw if a[5] != "r" else 0.0
+		row.x1 = x
+		rows.append(row)
+		z = bottom
+	roads.append({"axis": "h", "line": -ROAD, "from": rows[0].x0 - ROAD, "to": rows[0].x1 + ROAD, "w": ROAD, "bridge": []})
+	roads.append_array(fronts)
+
+
+func city_bounds() -> Rect2:
+	var b := Rect2(rows[0].x0, -ROAD, 0, 0)
+	for rd in roads:
+		b = b.expand(Vector2(rd.from, rd.line) if rd.axis == "h" else Vector2(rd.line, rd.from))
+		b = b.expand(Vector2(rd.to, rd.line + rd.w) if rd.axis == "h" else Vector2(rd.line + rd.w, rd.to))
+	return b
 
 
 static func lot_pos(lot: Dictionary) -> Vector2:
@@ -244,16 +311,15 @@ func build_city() -> void:
 	rivals = []
 	chains = []
 	news = []
-	var center := Vector2i(CITY.x / 2, CITY.y / 2)
-	for bz in CITY.y:
-		for bx in CITY.x:
-			var c := Vector2i(bx, bz)
-			var t: String = "station" if c == center else DISTRICT_MIX[rng.randi() % DISTRICT_MIX.size()]
-			districts.append({"type": t, "cell": c})
-			var o := block_origin(c)
-			var lm := rng.randi() % 2
-			for i in 2:
-				lots.append({"block": districts.size() - 1, "x0": o.x + i * LOT_W, "front": o.y + BLOCK.y, "use": "landmark" if i == lm else "free", "rent": DISTRICTS[t].rent})
+	build_geometry()
+	var fixed := RandomNumberGenerator.new()  # Tokyo is Tokyo: which lot holds the landmark never changes
+	fixed.seed = 1964
+	for k in districts.size():
+		var d: Dictionary = districts[k]
+		var lm: int = fixed.randi() % d.lots
+		for i in d.lots:
+			var use := "landmark" if i == lm or DISTRICTS[d.type].get("closed", false) else "free"
+			lots.append({"block": k, "x0": d.rect.position.x + i * LOT_W, "front": d.rect.end.y, "use": use, "rent": DISTRICTS[d.type].rent})
 	for c in CHAINS.size():
 		chains.append({"cash": RIVAL_CASH, "alive": true, "sales": 0.0})
 	# you start on a middling lot; rivals spread over the rest, a few lots stay ordinary shops
@@ -266,7 +332,7 @@ func build_city() -> void:
 		for ch in range(1, CHAINS.size()):
 			var free := free_lots()
 			open_rival(ch, free[rng.randi() % free.size()], "super" if rng.randf() < 0.2 else "konbini", false)
-	for k in 4:
+	for k in 8:
 		var free := free_lots()
 		lots[free[rng.randi() % free.size()]].use = "shop"
 
@@ -474,7 +540,7 @@ func rivals_week() -> void:
 		rv.loss_weeks = rv.loss_weeks + 1 if rv.week < 0 else 0
 		rv.week = 0.0
 		if rv.loss_weeks >= 2:
-			close_rival(rv, "%s closed its store in %s." % [CHAINS[rv.chain].name, DISTRICTS[districts[lots[rv.lot].block].type].name])
+			close_rival(rv, "%s closed its store in %s." % [CHAINS[rv.chain].name, districts[lots[rv.lot].block].name])
 	for ch in range(1, chains.size()):
 		var c: Dictionary = chains[ch]
 		if c.alive and c.cash < -CREDIT:
@@ -502,7 +568,7 @@ func rivals_week() -> void:
 			continue
 		c.cash -= OPEN_COST * lots[best].rent
 		open_rival(ch, best, "super" if c.cash > 400000 else "konbini")
-		news.append("%s opened a store in %s%s." % [CHAINS[ch].name, DISTRICTS[districts[lots[best].block].type].name, " right by yours" if near_player(best, 40.0) else ""])
+		news.append("%s opened a store in %s%s." % [CHAINS[ch].name, districts[lots[best].block].name, " right by yours" if near_player(best, 40.0) else ""])
 
 
 func market_share() -> Array:
@@ -1012,7 +1078,7 @@ func expand(id: String, li := -1) -> bool:
 		if id == "buyout":
 			chains[target.chain].cash += cost
 			close_rival(target, "")
-			news.append("You bought out %s's store in %s." % [CHAINS[target.chain].name, DISTRICTS[districts[lots[li].block].type].name])
+			news.append("You bought out %s's store in %s." % [CHAINS[target.chain].name, districts[lots[li].block].name])
 		if id == "branch" or id == "buyout":
 			stores.append(new_store("konbini", li))
 			price_war(li, 0)
