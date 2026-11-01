@@ -1,5 +1,5 @@
 extends Control
-## 2.5D store stage: a small 3D room (Codex back-wall art, tiled floor, box shelves) under a tilted camera,
+## 2.5D store stage: an isometric diorama (orthographic camera, cutaway walls, town lot round the shop),
 ## pixel sprites as billboards. Replays a simulated day's customers along AStarGrid2D paths, and in arrange
 ## mode lets the player pick up, move, buy and place objects on the floor grid. Bubbles draw on a 2D overlay.
 
@@ -14,10 +14,13 @@ const MAX_SHOWN := 20
 const PERSON_PX := 0.034
 const ITEM_PX := 0.014
 const DECOR_PX := 0.028
+const OUTDOOR_PX := 0.06
+# per-prop size: trees full, street furniture smaller (art/outdoor.png draws every prop the same size)
+const OUTDOOR_SCALE := [1.0, 1.0, 0.95, 1.05, 0.45, 0.45, 0.6, 0.32, 0.38, 0.38, 0.36, 0.5]
 # wall = crop of the side-view background used as the back wall texture
 const LAYOUT := {
-	"konbini": {"bg": "bg_konbini", "wall": Rect2i(0, 18, 272, 106), "rows": [0.42, 1.0], "gh": 1.42, "clerks": [0.0], "floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]},
-	"super": {"bg": "bg_super", "wall": Rect2i(0, 10, 268, 112), "rows": [0.34, 0.84, 1.34], "gh": 1.8, "clerks": [-0.8, 0.8], "floor": [Color("efe3c8"), Color("d2c3a3")], "stripe": [Color("1f9d55"), Color("1f9d55")]},
+	"konbini": {"bg": "bg_konbini", "wall": Rect2i(0, 70, 272, 54), "rows": [0.42, 1.0], "gh": 1.42, "clerks": [0.0], "floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]},
+	"super": {"bg": "bg_super", "wall": Rect2i(0, 62, 268, 60), "rows": [0.34, 0.84, 1.34], "gh": 1.8, "clerks": [-0.8, 0.8], "floor": [Color("efe3c8"), Color("d2c3a3")], "stripe": [Color("1f9d55"), Color("1f9d55")]},
 }
 
 var tex := {}
@@ -142,25 +145,86 @@ func build_room() -> void:
 	var L: Dictionary = LAYOUT[kind]
 	var g: Vector2i = Sim.GRID[kind]
 	var w := float(g.x)
-	var crop: Image = tex[L.bg].get_image().get_region(L.wall)
-	var h: float = w * crop.get_height() / crop.get_width()
-	var wall := MeshInstance3D.new()
-	var q := QuadMesh.new()
-	q.size = Vector2(w, h)
-	wall.mesh = q
-	wall.material_override = mat(Color.WHITE, ImageTexture.create_from_image(crop))
-	wall.position = Vector3(w / 2, h / 2, 0)
-	room.add_child(wall)
 	var depth := g.y + 1.0
+	# town lot: grass all round, a sidewalk and a road along the open front
+	var gm := mat(Color.WHITE, speckle([Color("7fa35a"), Color("8cb064"), Color("739a52"), Color("98b86c")]))
+	gm.uv1_scale = Vector3(80, 80, 1)
+	gm.texture_repeat = true
+	plane(room, Vector2(80, 80), Vector3(w / 2, -0.12, depth / 2), gm)
+	var sw := mat(Color.WHITE, tiles(Color("c9c4bb"), Color("a9a49b")))
+	sw.uv1_scale = Vector3(80, 2, 1)
+	sw.texture_repeat = true
+	plane(room, Vector2(80, 2), Vector3(w / 2, -0.1, depth + 1.2), sw)
+	plane(room, Vector2(80, 5), Vector3(w / 2, -0.1, depth + 4.7), mat(Color("5d5f66")))
+	for i in 16:
+		block(room, Vector3(1.2, 0.02, 0.15), Vector3(w / 2 - 30 + i * 4, -0.08, depth + 4.7), Color("e8e2c8"))
+	# shop slab and floor
+	block(room, Vector3(w + 0.5, 0.2, depth + 0.5), Vector3(w / 2, -0.1, depth / 2), Color("8a6e4b"))
 	var fm := mat(Color.WHITE, tiles(L.floor[0], L.floor[1]))
 	fm.uv1_scale = Vector3(w, depth, 1)
 	fm.texture_repeat = true
-	plane(room, Vector2(w, depth), Vector3(w / 2, 0, depth / 2), fm)
-	plane(room, Vector2(w + 12, 8), Vector3(w / 2, -0.01, depth + 4), mat(Color("8e8a86")))
-	block(room, Vector3(0.3, h, depth), Vector3(-0.15, h / 2, depth / 2), Color("d9cfb8"))
-	block(room, Vector3(0.3, h, depth), Vector3(w + 0.15, h / 2, depth / 2), Color("d9cfb8"))
-	cam.position = Vector3(w / 2, w * 0.43, g.y + w * 0.6)
-	cam.look_at(Vector3(w / 2, h * 0.24, g.y * 0.45))
+	plane(room, Vector2(w, depth), Vector3(w / 2, 0.002, depth / 2), fm)
+	# cutaway walls: the back one carries the Codex back-wall art, the left one is plain with the shop stripes
+	var crop: Image = tex[L.bg].get_image().get_region(L.wall)
+	var h: float = w * crop.get_height() / crop.get_width()
+	block(room, Vector3(w + 0.5, h, 0.25), Vector3(w / 2, h / 2, -0.125), Color("e6dcc6"))
+	var art := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(w, h)
+	art.mesh = q
+	art.material_override = mat(Color.WHITE, ImageTexture.create_from_image(crop))
+	art.position = Vector3(w / 2, h / 2, 0.005)
+	room.add_child(art)
+	block(room, Vector3(0.25, h, depth + 0.5), Vector3(-0.125, h / 2, depth / 2), Color("efe6d2"))
+	block(room, Vector3(0.02, 0.16, depth), Vector3(0.01, h * 0.72, depth / 2), L.stripe[0])
+	block(room, Vector3(0.02, 0.16, depth), Vector3(0.01, h * 0.62, depth / 2), L.stripe[1])
+	for z in [1.6, depth - 2.2]:
+		block(room, Vector3(0.03, h * 0.38, 1.6), Vector3(0.02, h * 0.36, z), Color("9fd3ea"))
+	block(room, Vector3(w + 0.6, 0.14, 0.35), Vector3(w / 2, h + 0.07, -0.125), Color("5b4632"))
+	block(room, Vector3(0.35, 0.14, depth + 0.6), Vector3(-0.125, h + 0.07, depth / 2), Color("5b4632"))
+	scatter(w, depth)
+	# isometric camera: orthographic, 45 degrees round, 30 degrees down
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	cam.size = (w + depth) * 0.56
+	var target := Vector3(w / 2 + 0.3, 0.9, depth / 2 + 0.3)
+	var pitch := deg_to_rad(30.0)
+	cam.position = target + Vector3(sin(PI / 4) * cos(pitch), sin(pitch), cos(PI / 4) * cos(pitch)) * 60.0
+	cam.look_at(target)
+
+
+## Trees and street props round the lot. Fixed seed per store size so the town looks the same every visit.
+func scatter(w: float, depth: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = int(w)
+	var spots := []
+	for i in 9:
+		spots.append([Vector2(r.randf_range(-7.0, w + 3.0), r.randf_range(-7.0, -1.6)), [0, 1, 2, 3, 4, 5][r.randi() % 6]])
+	for i in 5:
+		spots.append([Vector2(r.randf_range(-7.0, -1.6), r.randf_range(0.0, depth)), [0, 1, 3, 4, 10][r.randi() % 5]])
+	for i in 4:
+		spots.append([Vector2(r.randf_range(w + 1.5, w + 6.0), r.randf_range(-6.0, 0.5)), [0, 1, 2, 4, 5][r.randi() % 5]])  # back right only: nearer trees would hide the till
+	spots.append([Vector2(-1.0, depth + 0.6), 6])
+	spots.append([Vector2(w + 1.0, depth + 0.6), 6])
+	spots.append([Vector2(w + 0.9, depth - 0.4), 7])
+	spots.append([Vector2(w + 1.9, depth + 1.0), 8])
+	spots.append([Vector2(-1.6, depth - 0.6), 9])
+	spots.append([Vector2(w / 2 + 3.0, depth + 1.9), 11])
+	for sp in spots:
+		var id: int = sp[1]
+		var px: float = OUTDOOR_PX * OUTDOOR_SCALE[id]
+		var s := sprite("outdoor", Rect2(id * 64, 0, 64, 64), px)
+		s.position = Vector3(sp[0].x, 32 * px - 0.1, sp[0].y)
+		room.add_child(s)
+
+
+func speckle(colors: Array) -> ImageTexture:
+	var r := RandomNumberGenerator.new()
+	r.seed = 7
+	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
+	for y in 16:
+		for x in 16:
+			img.set_pixel(x, y, colors[0] if r.randf() < 0.55 else colors[r.randi() % colors.size()])
+	return ImageTexture.create_from_image(img)
 
 
 ## Shelves, counter and decorations from store.objects; the carried object is drawn at the hovered cell.
