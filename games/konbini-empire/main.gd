@@ -44,7 +44,7 @@ var arranging := false
 
 
 func _ready() -> void:
-	for n in ["products", "people", "perks", "stores", "decor", "outdoor", "buildings", "vehicles", "bg_konbini", "bg_super"]:
+	for n in ["products", "people", "perks", "stores", "decor", "outdoor", "buildings", "vehicles", "walk", "bg_konbini", "bg_super"]:
 		tex[n] = load("res://art/%s.png" % n)
 	theme = make_theme()
 	best.load("user://best.cfg")

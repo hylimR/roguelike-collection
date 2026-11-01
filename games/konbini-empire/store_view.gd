@@ -12,6 +12,8 @@ const PACE := 0.7  # share of DUR over which the day's customers arrive
 const SPEED := 3.6
 const MAX_SHOWN := 20
 const PERSON_PX := 0.034
+const STRIDE := 2.2  # walk frames per unit walked (art/walk.png: column 0 stands, 1-4 walk)
+const MAX_FPS := 11.0
 const ITEM_PX := 0.014
 const DECOR_PX := 0.028
 const OUTDOOR_PX := 0.06
@@ -290,11 +292,13 @@ func spawn_walker(x := NAN) -> void:
 	if is_nan(x):
 		x = -STREET_END if dir > 0 else lot.x + STREET_END
 	var z := lot.y + (WALK_NEAR if near else WALK_FAR) + randf_range(-0.6, 0.6)
-	var node := sprite("people", Rect2(randi() % 7 * 36, 0, 36, 48), PERSON_PX)
+	var a := randi() % 7
+	var node := sprite("walk", Rect2(36, a * 48, 36, 48), PERSON_PX)
 	node.flip_h = dir < 0
+	node.position = Vector3(x, 0.82, z)
 	node.add_child(shadow())
 	street.add_child(node)
-	walkers.append({"node": node, "x": x, "z": z, "v": dir * randf_range(1.4, 2.4), "bob": randf() * 6.0})
+	walkers.append({"node": node, "a": a, "x": x, "z": z, "v": dir * randf_range(1.4, 2.4), "step": randf() * 4.0})
 
 
 func spawn_car(lane: int, x := NAN) -> void:
@@ -307,6 +311,15 @@ func spawn_car(lane: int, x := NAN) -> void:
 	node.position = Vector3(x, VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1, lot.y + LANES[lane][0])
 	street.add_child(node)
 	cars.append({"node": node, "x": x, "v": dir * randf_range(5.0, 8.0) * (0.6 if kind_v == 3 else 1.0)})
+
+
+## Advances a walker's or customer's walk cycle; speed 0 shows the standing frame.
+func stride(p: Dictionary, speed: float, delta: float) -> void:
+	var col := 0
+	if speed > 0.0:
+		p.step += delta * minf(speed * STRIDE, MAX_FPS)
+		col = 1 + int(p.step) % 4
+	p.node.region_rect = Rect2(col * 36, p.a * 48, 36, 48)
 
 
 func shadow() -> MeshInstance3D:
@@ -338,8 +351,8 @@ func street_life(delta: float) -> void:
 			next_car[lane] = randf_range(1.5, 4.0)
 	for wk in walkers:
 		wk.x += wk.v * delta
-		wk.bob += delta * 12.0
-		wk.node.position = Vector3(wk.x, 0.82 + absf(sin(wk.bob)) * 0.06, wk.z)
+		wk.node.position.x = wk.x
+		stride(wk, absf(wk.v), delta)
 	for c in cars:
 		c.x += c.v * delta
 		c.node.position.x = c.x
@@ -623,10 +636,10 @@ func spawn(cu: Dictionary) -> void:
 	walk(path, here, exit, 0.0, "")
 	path.append([Vector2(exit.x + 0.5, walk_z), 0.0, ""])
 	path.append([Vector2(-8.0 if randf() < 0.5 else lot.x + 14.0, walk_z), 0.0, ""])
-	var node := sprite("people", Rect2(cu.a * 36, 0, 36, 48), PERSON_PX)
+	var node := sprite("walk", Rect2(36, cu.a * 48, 36, 48), PERSON_PX)
 	node.add_child(shadow())
 	actors.add_child(node)
-	people.append({"cu": cu, "pos": start, "path": path, "wait": -1.0, "bob": randf() * 6.0, "node": node})
+	people.append({"cu": cu, "a": cu.a, "pos": start, "path": path, "wait": -1.0, "step": randf() * 4.0, "node": node})
 
 
 func _process(delta: float) -> void:
@@ -651,7 +664,6 @@ func _process(delta: float) -> void:
 			p.node.flip_h = d.x < 0
 		var outside: bool = p.pos.y > lot.y - 0.5 and target.y > lot.y - 0.5
 		var v := SPEED * (2.0 if outside else 1.0)
-		p.bob += delta * 12.0
 		if d.length() <= v * delta:
 			p.pos = target
 			p.wait = step[1]
@@ -662,8 +674,8 @@ func _process(delta: float) -> void:
 				p.wait = -1.0
 		else:
 			p.pos += d.normalized() * v * delta
-		var bob := 0.0 if p.wait >= 0.0 else absf(sin(p.bob)) * 0.06
-		p.node.position = Vector3(p.pos.x, 0.82 + bob, p.pos.y)
+		stride(p, 0.0 if p.wait >= 0.0 else v, delta)
+		p.node.position = Vector3(p.pos.x, 0.82, p.pos.y)
 	for p in people:
 		if p.path.is_empty():
 			p.node.queue_free()
