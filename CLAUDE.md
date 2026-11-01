@@ -8,6 +8,7 @@ Collection of proof-of-concept roguelike games, each published as a Claude Artif
 - No build tooling, no package manager, no backend. Open the file in a browser to run it.
 - Update the games table in `README.md` whenever a game is added or its status changes. Update docs in place; do not create new markdown files per task.
 - Keep comments minimal: only for non-obvious logic.
+- Godot games (when the user asks for Godot): a Godot 4.6 GDScript project in `games/<slug>/`, rules in a node-free script so `godot --headless --path games/<slug> --script res://tests/<check>.gd` can test them. Commit `*.import` and `*.uid`, ignore `.godot/`. The Godot MCP's `run_project` injects `mcp_interaction_server.gd` and an `[autoload]` entry into `project.godot`; never commit either.
 
 ## Artifact constraints
 

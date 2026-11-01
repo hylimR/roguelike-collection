@@ -13,6 +13,8 @@ games/
 
 One folder per game, kebab-case slug (e.g. `games/dungeon-dash/`). Keep a game's assets inline unless it needs more than one file; multi-file games publish extra files alongside `index.html`.
 
+A game can instead be a Godot 4.6 project (`games/<slug>/project.godot`, GDScript only) when asked for. Those run in Godot, not as artifacts, and keep a headless test under `tests/`.
+
 ## Adding a game
 
 1. Create `games/<slug>/index.html`.
@@ -24,7 +26,7 @@ One folder per game, kebab-case slug (e.g. `games/dungeon-dash/`). Keep a game's
 
 | Game | Slug | Core idea | Status | Artifact |
 |------|------|-----------|--------|----------|
-| _none yet_ | | | | |
+| [Konbini Empire](games/konbini-empire/) | `konbini-empire` | Stock a konbini day by day, pay weekly rent, grow into a supermarket and a three-store chain, build the flagship. Pixel art by Codex. | playable | Godot 4.6 project (no artifact) |
 
 Status: `idea` → `poc` → `playable` → `shelved`.
 
