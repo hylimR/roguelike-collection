@@ -690,6 +690,7 @@ func shuffled(a: Array) -> Array:
 
 func begin_day() -> void:
 	spent_today = 0
+	news = []
 	weather = pick(WEATHER)
 	event = pick(EVENTS, 0.5 if has("cat") else 1.0)
 	event_arg = ""
@@ -830,7 +831,6 @@ func simulate_day() -> Dictionary:
 	var r := {"day": day, "weather": weather.name, "stores": [], "sales": 0, "extras": 0, "waste": 0, "upkeep": 0, "rent": 0, "customers": 0, "walkouts": 0, "misses": {}, "spent": spent_today, "rep_delta": 0.0, "net": 0, "cash": 0}
 	var wanted := 0.0
 	var got := 0.0
-	news = []
 	var alloc := allocate()
 	r.city_shoppers = alloc._all
 	for si in stores.size():
@@ -975,7 +975,7 @@ func expansions() -> Array:
 
 ## Price of taking over a rival store: the lot plus its trade; stores losing money go cheaper.
 func buyout_cost(rv: Dictionary) -> int:
-	var trade: float = rv.sales * 20.0 * (0.5 if rv.loss_weeks > 0 else 1.0)
+	var trade: float = rv.sales * 10.0 * (0.5 if rv.loss_weeks > 0 else 1.0)
 	return int(OPEN_COST * lots[rv.lot].rent * 1.2 + trade)
 
 
