@@ -44,7 +44,7 @@ var arranging := false
 
 
 func _ready() -> void:
-	for n in ["products", "people", "perks", "stores", "decor", "outdoor", "bg_konbini", "bg_super"]:
+	for n in ["products", "people", "perks", "stores", "decor", "outdoor", "buildings", "vehicles", "bg_konbini", "bg_super"]:
 		tex[n] = load("res://art/%s.png" % n)
 	theme = make_theme()
 	best.load("user://best.cfg")
@@ -203,6 +203,7 @@ func build() -> void:
 	info = label("")
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.custom_minimum_size = Vector2(620, 56)
+	info.max_lines_visible = 4
 	bottom.add_child(info)
 
 	var side := PanelContainer.new()

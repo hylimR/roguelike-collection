@@ -385,7 +385,7 @@ func steal() -> String:
 				var n := ceili(s.qty * 0.3)
 				s.qty -= n
 				lost += n
-	return "Lost %d snacks and drinks." % lost
+	return "Lost %d snacks and drinks." % lost if lost else "Nothing worth stealing was on the shelves."
 
 
 func event_text() -> String:
