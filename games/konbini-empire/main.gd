@@ -38,10 +38,13 @@ var info: Label
 var perk_row: HBoxContainer
 var open_btn: Button
 var grow_btn: Button
+var arrange_btn: Button
+var foot: Label
+var arranging := false
 
 
 func _ready() -> void:
-	for n in ["products", "people", "perks", "stores", "bg_konbini", "bg_super"]:
+	for n in ["products", "people", "perks", "stores", "decor", "bg_konbini", "bg_super"]:
 		tex[n] = load("res://art/%s.png" % n)
 	theme = make_theme()
 	best.load("user://best.cfg")
@@ -169,7 +172,9 @@ func build() -> void:
 	view.position = Vector2(0, 32)
 	view.size = Vector2(640, 360)
 	view.clip_contents = true
+	view.sim = sim
 	view.finished.connect(show_report)
+	view.changed.connect(refresh_ui)
 	add_child(view)
 
 	var bottom := VBoxContainer.new()
@@ -187,6 +192,8 @@ func build() -> void:
 	perk_row = HBoxContainer.new()
 	perk_row.add_theme_constant_override("separation", 2)
 	row.add_child(perk_row)
+	arrange_btn = button("ARRANGE", toggle_arrange, "Move shelves and the counter, buy decorations  [E]")
+	row.add_child(arrange_btn)
 	grow_btn = button("EXPAND", show_grow, "Renovate, open branches, build the flagship  [G]")
 	row.add_child(grow_btn)
 	open_btn = button("  OPEN SHOP  >  ", open_shop, "Run today's trading  [Space]")
@@ -216,7 +223,7 @@ func build() -> void:
 	slot_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slot_box.add_theme_constant_override("separation", 4)
 	scroll.add_child(slot_box)
-	var foot := label("Tap a price tag to change it. Items marked * spoil: leftovers are binned at close.", MUTED)
+	foot = label("", MUTED)
 	foot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	foot.custom_minimum_size.x = 296
 	sv.add_child(foot)
@@ -233,11 +240,18 @@ func new_run(seed_str: String) -> void:
 	sim.start(seed_str)
 	cur = 0
 	phase = "prep"
+	arranging = false
+	view.edit = false
 	close_modal()
 	refresh()
 
 
 func refresh() -> void:
+	refresh_ui()
+	view.show_store(sim.stores[cur], cur)
+
+
+func refresh_ui() -> void:
 	var prep := phase == "prep"
 	lbl_day.text = "DAY %d  %s" % [sim.day, WEEKDAYS[(sim.day - 1) % 7]]
 	lbl_weather.text = sim.weather.name.to_upper()
@@ -256,20 +270,26 @@ func refresh() -> void:
 		if i == cur:
 			b.add_theme_stylebox_override("normal", box(Color("c5e6d0"), INK))
 		tabs.add_child(b)
-	grow_btn.disabled = not prep
+	grow_btn.disabled = not prep or arranging
 	open_btn.disabled = not prep
+	arrange_btn.disabled = not prep
+	arrange_btn.text = "DONE" if arranging else "ARRANGE"
 
 	var st: Dictionary = sim.stores[cur]
 	var def: Dictionary = Sim.STORE[st.kind]
-	shelf_title.text = "%s #%d  -  %d SHELVES" % [def.name.to_upper(), cur + 1, def.slots]
 	for c in slot_box.get_children():
 		c.queue_free()
-	for i in st.slots.size():
-		slot_box.add_child(slot_row(i, st.slots[i], prep))
+	if arranging:
+		arrange_panel(st)
+	else:
+		shelf_title.text = "%s #%d  -  %d SHELVES" % [def.name.to_upper(), cur + 1, def.slots]
+		foot.text = "Tap a price tag to change it. Items marked * spoil: leftovers are binned at close."
+		for i in st.slots.size():
+			slot_box.add_child(slot_row(i, st.slots[i], prep))
 
 	var lines := ["%s. %s" % [sim.weather.name, weather_hint()]]
 	if sim.day == 1:
-		lines.push_front("Stock shelves on the right, then open the shop. Rent is due every Sunday: miss it and the run ends. Grow into a supermarket, open branches, then build the flagship.")
+		lines.push_front("Stock the shelves, then open the shop. Pay rent every Sunday or the run ends. Grow: supermarket, branches, flagship.")
 	if sim.event.id != "none":
 		lines.append(sim.event_text())
 	if sim.morning_note != "":
@@ -288,7 +308,61 @@ func refresh() -> void:
 		pic.tooltip_text = "%s x%d: %s" % [p.name, n, sim.perk_desc(p)]
 		pic.mouse_filter = Control.MOUSE_FILTER_PASS
 		perk_row.add_child(pic)
-	view.show_store(st)
+
+
+func arrange_panel(st: Dictionary) -> void:
+	var ap := Sim.appeal(st)
+	shelf_title.text = "ARRANGE #%d  -  APPEAL %d (+%d%%)" % [cur + 1, ap, ap * 2]
+	foot.text = "Right-click or Esc cancels. Customers need a path to every shelf and the till: blocked spots show red. Selling refunds half."
+	var ct: String = view.carried_type()
+	var msg := "Click a shelf, the counter or a decoration to pick it up."
+	if ct == "new":
+		msg = "Placing a %s: click a free floor tile." % Sim.DECOR[view.carry.new].name.to_lower()
+	elif ct != "":
+		msg = "Moving the %s: click where it goes." % ("shelf unit" if ct == "gondola" else ct)
+	var m := label(msg, INK)
+	m.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	m.custom_minimum_size.x = 290
+	slot_box.add_child(m)
+	if ct != "":
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 6)
+		h.add_child(button("CANCEL  [Esc]", view.cancel_carry))
+		if ct == "decor":
+			var o: Dictionary = st.objects[view.carry.idx]
+			h.add_child(button("SELL  +" + yen(Sim.DECOR[o.id].cost / 2), view.sell_carried))
+		slot_box.add_child(h)
+	for i in Sim.DECOR.size():
+		var d: Dictionary = Sim.DECOR[i]
+		var panel := PanelContainer.new()
+		panel.add_theme_stylebox_override("panel", box(Color.WHITE, LINE, 1, 4))
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 6)
+		panel.add_child(h)
+		h.add_child(picture("decor", i, Vector2i(48, 48), Vector2(40, 40)))
+		var v := VBoxContainer.new()
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		v.add_theme_constant_override("separation", 0)
+		h.add_child(v)
+		v.add_child(label(d.name, INK, 14))
+		var dl := label(d.desc, MUTED)
+		dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		dl.custom_minimum_size.x = 160
+		v.add_child(dl)
+		var b := button("BUY\n" + yen(d.cost), view.carry_new.bind(i))
+		b.custom_minimum_size.x = 70
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		b.disabled = sim.cash < d.cost
+		h.add_child(b)
+		slot_box.add_child(panel)
+
+
+func toggle_arrange() -> void:
+	if phase != "prep" or modal:
+		return
+	arranging = not arranging
+	view.set_edit(arranging)
+	refresh_ui()
 
 
 func weather_hint() -> String:
@@ -382,11 +456,15 @@ func on_clear(i: int) -> void:
 func open_shop() -> void:
 	if phase != "prep" or modal:
 		return
+	if arranging:
+		arranging = false
+		view.set_edit(false)
 	var pre: Array = sim.stores[cur].slots.map(func(s): return s.qty)
 	report = sim.simulate_day()
 	phase = "day"
 	open_btn.disabled = true
 	grow_btn.disabled = true
+	arrange_btn.disabled = true
 	view.play(report.stores[cur].events, pre, report.stores[cur].left)
 
 
@@ -661,8 +739,15 @@ func _unhandled_input(e: InputEvent) -> void:
 				open_shop()
 			elif k == KEY_TAB:
 				select_store((cur + 1) % sim.stores.size())
-			elif k == KEY_G:
+			elif k == KEY_G and not arranging:
 				show_grow()
+			elif k == KEY_E:
+				toggle_arrange()
+			elif k == KEY_ESCAPE and arranging:
+				if view.carry.is_empty():
+					toggle_arrange()
+				else:
+					view.cancel_carry()
 		"day":
 			if k == KEY_SPACE or k == KEY_ENTER:
 				view.skip()

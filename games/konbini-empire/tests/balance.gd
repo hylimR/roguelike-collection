@@ -22,11 +22,35 @@ func _init() -> void:
 	print("bankrupt days: ", bust.map(func(r): return r.day))
 	print("supermarket day median %s  (n=%d)" % [med(supers), supers.size()])
 	print("win day median %s  min %s" % [med(wins), wins[0] if wins.size() else "-"])
-	# determinism: same seed, same run
-	assert(play("same").day == play("same").day and play("same").cash == play("same").cash)
-	var ok: bool = supers.size() > RUNS * 0.5 and won.size() > RUNS * 0.2 and bust.size() > 0
+	var a := play("same")
+	var b := play("same")
+	var same: bool = a.day == b.day and a.cash == b.cash
+	var layout := layout_ok()
+	print("deterministic %s  layout rules %s" % [same, layout])
+	var ok: bool = supers.size() > RUNS * 0.5 and won.size() > RUNS * 0.2 and bust.size() > 0 and same and layout
 	print("BALANCE OK" if ok else "BALANCE FAIL")
 	quit(0 if ok else 1)
+
+
+## Default plans are valid; overlaps and walling a shelf in are refused; decor buys, sells and survives a refit.
+func layout_ok() -> bool:
+	var s := Sim.new()
+	s.start("layout")
+	var st: Dictionary = s.stores[0]
+	for i in st.objects.size():
+		if not Sim.placement_ok(st, i, st.objects[i].cell):
+			return false
+	var overlap: bool = s.move_object(0, 1, Vector2i(2, 3))
+	# shelf 0 sits on (2,3)-(3,3): three tiles around it are fine, the fourth would wall it in
+	var fenced: bool = s.buy_decor(0, 0, Vector2i(2, 4)) and s.buy_decor(0, 0, Vector2i(3, 4)) and s.buy_decor(0, 0, Vector2i(2, 2))
+	var walled: bool = s.buy_decor(0, 0, Vector2i(3, 2))
+	var cash: int = s.cash
+	s.sell_decor(0, st.objects.size() - 1)
+	var refund: bool = s.cash == cash + Sim.DECOR[0].cost / 2
+	s.cash = 1000000
+	s.expand("super0")
+	var kept: int = s.stores[0].objects.filter(func(o): return o.type == "decor").size()
+	return not overlap and fenced and not walled and refund and kept == 2 and Sim.appeal(s.stores[0]) == 2
 
 
 func med(a: Array):

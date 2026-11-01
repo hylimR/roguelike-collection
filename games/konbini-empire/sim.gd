@@ -43,8 +43,8 @@ const BLOCK_W := [3.0, 4.0, 2.0, 4.0, 2.0, 1.0]
 
 # mix scales each archetype's chance to visit; frame = art/stores.png
 const STORE := {
-	"konbini": {"name": "Konbini", "frame": 0, "slots": 6, "cap": 30, "traffic": 110, "checkout": 140, "upkeep": 4000, "rent": 20000, "tier": 0, "wants": [1, 2], "mix": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]},
-	"super": {"name": "Supermarket", "frame": 1, "slots": 12, "cap": 60, "traffic": 220, "checkout": 300, "upkeep": 14000, "rent": 60000, "tier": 1, "wants": [2, 4], "mix": [1.0, 1.6, 0.6, 2.5, 0.8, 1.0, 1.0]},
+	"konbini": {"name": "Konbini", "frame": 0, "slots": 6, "rows": 2, "cap": 30, "traffic": 110, "checkout": 140, "upkeep": 4000, "rent": 20000, "tier": 0, "wants": [1, 2], "mix": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]},
+	"super": {"name": "Supermarket", "frame": 1, "slots": 12, "rows": 3, "cap": 60, "traffic": 220, "checkout": 300, "upkeep": 14000, "rent": 60000, "tier": 1, "wants": [2, 4], "mix": [1.0, 1.6, 0.6, 2.5, 0.8, 1.0, 1.0]},
 }
 
 const WEATHER := [
@@ -85,6 +85,28 @@ const PERKS := [
 	{"id": "register", "name": "Self-checkout", "desc": "+80 checkout per store, no wage.", "frame": 10, "max": 3},
 	{"id": "investor", "name": "Investor", "desc": "Take ¥%s cash now.", "frame": 11, "max": 99},
 ]
+
+# Floor plan grid: x across, z from the back wall (0) forward. Row z = GRID.y is the front walkway: never built on.
+const GRID := {"konbini": Vector2i(14, 7), "super": Vector2i(18, 8)}
+const FOOT := {"gondola": Vector2i(2, 1), "counter": Vector2i(3, 1), "decor": Vector2i(1, 1)}
+const NO_CELL := Vector2i(-1, -1)
+
+# frame = index in art/decor.png. appeal: +2% customers each. arch: visit mix per archetype. prod: demand. income: yen a day.
+const DECOR := [
+	{"name": "Potted plant", "cost": 3000, "appeal": 1, "desc": "+2% customers."},
+	{"name": "Bench", "cost": 6000, "appeal": 1, "arch": {3: 1.4}, "desc": "+2% customers. Grandmas stop by."},
+	{"name": "Vending machine", "cost": 25000, "appeal": 0, "income": 1500, "desc": "Sells drinks all night: +¥1,500 a day."},
+	{"name": "Gachapon", "cost": 15000, "appeal": 1, "arch": {2: 1.3, 6: 1.6}, "desc": "+2% customers. Kids and students drop in."},
+	{"name": "Sakura tree", "cost": 20000, "appeal": 4, "desc": "+8% customers."},
+	{"name": "Chalkboard sign", "cost": 8000, "appeal": 2, "desc": "+4% customers."},
+	{"name": "ATM", "cost": 40000, "appeal": 3, "arch": {0: 1.25, 5: 1.25}, "desc": "+6% customers. Salarymen and tourists."},
+	{"name": "Ice freezer", "cost": 18000, "appeal": 0, "prod": {"icebar": 1.6}, "desc": "Ice bar demand x1.6."},
+	{"name": "Magazine rack", "cost": 10000, "appeal": 1, "arch": {0: 1.3}, "prod": {"news": 1.5}, "desc": "+2% customers. Papers sell better."},
+	{"name": "Paper lantern", "cost": 5000, "appeal": 1, "desc": "+2% customers."},
+	{"name": "Aquarium", "cost": 30000, "appeal": 6, "desc": "+12% customers."},
+	{"name": "Claw machine", "cost": 35000, "appeal": 2, "arch": {2: 1.3, 5: 1.5}, "income": 1000, "desc": "+4% customers, +¥1,000 a day."},
+]
+const APPEAL_CAP := 25
 
 const CHILLED := ["icebar", "milk", "fish", "steak"]
 const CATS := ["food", "drink", "snack", "fresh", "home"]
@@ -151,10 +173,122 @@ func start(seed_str: String) -> void:
 
 
 func new_store(kind: String) -> Dictionary:
-	var s := {"kind": kind, "slots": []}
+	var s := {"kind": kind, "slots": [], "objects": default_objects(kind)}
 	for i in STORE[kind].slots:
 		s.slots.append(empty_slot())
 	return s
+
+
+static func default_objects(kind: String) -> Array:
+	var out := []
+	for g in STORE[kind].slots / STORE[kind].rows:
+		out.append({"type": "gondola", "cell": Vector2i(2 + g * 3, 3)})
+	out.append({"type": "counter", "cell": Vector2i(GRID[kind].x - 4, 1)})
+	return out
+
+
+static func cells_of(o: Dictionary) -> Array:
+	var out := []
+	var f: Vector2i = FOOT[o.type]
+	for x in f.x:
+		for z in f.y:
+			out.append(o.cell + Vector2i(x, z))
+	return out
+
+
+static func entry_cell(kind: String) -> Vector2i:
+	return Vector2i(1, GRID[kind].y)
+
+
+static func exit_cell(kind: String) -> Vector2i:
+	return Vector2i(GRID[kind].x - 2, GRID[kind].y)
+
+
+static func nav(store: Dictionary) -> AStarGrid2D:
+	var g: Vector2i = GRID[store.kind]
+	var a := AStarGrid2D.new()
+	a.region = Rect2i(0, 0, g.x, g.y + 1)
+	a.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	a.update()
+	for o in store.objects:
+		for c in cells_of(o):
+			if a.is_in_boundsv(c):
+				a.set_point_solid(c)
+	return a
+
+
+## A free cell in front of (else behind) the object that customers can reach, or NO_CELL.
+static func access(store: Dictionary, a: AStarGrid2D, o: Dictionary) -> Vector2i:
+	var from := entry_cell(store.kind)
+	for dz in ([1] if o.type == "counter" else [1, -1]):
+		for c in cells_of(o):
+			var n: Vector2i = c + Vector2i(0, dz)
+			if a.is_in_boundsv(n) and not a.is_point_solid(n) and a.get_id_path(from, n).size() > 0:
+				return n
+	return NO_CELL
+
+
+## Would the store still work with object idx moved to cell (or obj added there when idx < 0)?
+static func placement_ok(store: Dictionary, oi: int, cell: Vector2i, obj := {}) -> bool:
+	var objs: Array = store.objects.duplicate(true)
+	if oi >= 0:
+		objs[oi].cell = cell
+	else:
+		obj = obj.duplicate()
+		obj.cell = cell
+		objs.append(obj)
+	var g: Vector2i = GRID[store.kind]
+	var seen := {}
+	for o in objs:
+		for c in cells_of(o):
+			if c.x < 0 or c.y < 0 or c.x >= g.x or c.y >= g.y or seen.has(c):
+				return false
+			seen[c] = true
+	var test := {"kind": store.kind, "objects": objs}
+	var a := nav(test)
+	for o in objs:
+		if o.type != "decor" and access(test, a, o) == NO_CELL:
+			return false
+	return true
+
+
+static func object_at(store: Dictionary, cell: Vector2i) -> int:
+	for i in store.objects.size():
+		if cell in cells_of(store.objects[i]):
+			return i
+	return -1
+
+
+static func appeal(store: Dictionary) -> int:
+	var n := 0
+	for o in store.objects:
+		if o.type == "decor":
+			n += DECOR[o.id].appeal
+	return mini(n, APPEAL_CAP)
+
+
+func move_object(si: int, oi: int, cell: Vector2i) -> bool:
+	if not placement_ok(stores[si], oi, cell):
+		return false
+	stores[si].objects[oi].cell = cell
+	return true
+
+
+func buy_decor(si: int, id: int, cell: Vector2i) -> bool:
+	var o := {"type": "decor", "id": id}
+	if cash < DECOR[id].cost or not placement_ok(stores[si], -1, cell, o):
+		return false
+	cash -= DECOR[id].cost
+	o.cell = cell
+	stores[si].objects.append(o)
+	return true
+
+
+func sell_decor(si: int, oi: int) -> void:
+	var o: Dictionary = stores[si].objects[oi]
+	if o.type == "decor":
+		cash += DECOR[o.id].cost / 2
+		stores[si].objects.remove_at(oi)
 
 
 func empty_slot() -> Dictionary:
@@ -305,7 +439,7 @@ func buy_prob(sens: float, tier: int) -> float:
 	return 0.85 - 0.6 * sens
 
 
-func want_tables(tier: int) -> Array:
+func want_tables(tier: int, prod: Dictionary) -> Array:
 	var out := []
 	for a in A:
 		var ids := []
@@ -314,7 +448,7 @@ func want_tables(tier: int) -> Array:
 			var pid: int = idx[id]
 			if P[pid].tier > tier:
 				continue
-			var x: float = a.wants[id] * weather.mult.get(id, 1.0)
+			var x: float = a.wants[id] * weather.mult.get(id, 1.0) * prod.get(id, 1.0)
 			if event.id == "viral" and id == event_arg:
 				x *= 4.0
 			if event.id == "festival" and P[pid].cat == "food":
@@ -342,7 +476,18 @@ func simulate_day() -> Dictionary:
 	var got := 0.0
 	for st in stores:
 		var def: Dictionary = STORE[st.kind]
-		var tables := want_tables(def.tier)
+		var arch := [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+		var prod := {}
+		for o in st.objects:
+			if o.type != "decor":
+				continue
+			var d: Dictionary = DECOR[o.id]
+			for ai in d.get("arch", {}):
+				arch[ai] *= d.arch[ai]
+			for id in d.get("prod", {}):
+				prod[id] = prod.get(id, 1.0) * d.prod[id]
+			r.extras += d.get("income", 0)
+		var tables := want_tables(def.tier, prod)
 		for s in st.slots:
 			s.sold = 0
 		var bw := PackedFloat32Array(BLOCK_W)
@@ -353,7 +498,7 @@ func simulate_day() -> Dictionary:
 		for x in bw:
 			bw_sum += x
 		var traffic: float = def.traffic * (0.6 + rep / 125.0) * weather.traffic * bw_sum / 16.0
-		traffic *= 1.0 + 0.12 * has("poster") + (0.06 if has("loyalty") else 0.0)
+		traffic *= 1.0 + 0.12 * has("poster") + (0.06 if has("loyalty") else 0.0) + 0.02 * appeal(st)
 		if event.id == "festival":
 			traffic *= 1.5
 		elif event.id == "tv":
@@ -370,7 +515,7 @@ func simulate_day() -> Dictionary:
 			var blk := rng.rand_weighted(bw)
 			var aw := PackedFloat32Array()
 			for ai in A.size():
-				var w: float = A[ai].hours[blk] * def.mix[ai]
+				var w: float = A[ai].hours[blk] * def.mix[ai] * arch[ai]
 				if event.id == "school" and (ai == 2 or ai == 6):
 					w *= 3.0
 				aw.append(w)
@@ -505,5 +650,12 @@ func expand(id: String) -> bool:
 			st.kind = "super"
 			while st.slots.size() < STORE["super"].slots:
 				st.slots.append(empty_slot())
+			var decor: Array = st.objects.filter(func(o): return o.type == "decor")
+			st.objects = default_objects("super")
+			for o in decor:
+				if placement_ok(st, -1, o.cell, o):
+					st.objects.append(o)
+				else:
+					cash += DECOR[o.id].cost  # no room after the refit: refunded
 		return true
 	return false
