@@ -24,6 +24,7 @@ var report := {}
 var modal: Control
 var modal_keys := {}
 var best := ConfigFile.new()
+var bold: FontVariation
 
 var lbl_day: Label
 var lbl_weather: Label
@@ -65,17 +66,13 @@ func box(bg: Color, border: Color, bw := 2, pad := 6) -> StyleBoxFlat:
 
 func make_theme() -> Theme:
 	var th := Theme.new()
-	var f: FontFile = load("res://fonts/kenpixel.ttf")
-	f.antialiasing = TextServer.FONT_ANTIALIASING_NONE
-	f.hinting = TextServer.HINTING_NONE
-	f.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
-	var jp := SystemFont.new()  # the pixel font has no yen sign
-	jp.font_names = PackedStringArray(["MS Gothic", "Yu Gothic", "Noto Sans CJK JP", "DejaVu Sans"])
-	jp.antialiasing = TextServer.FONT_ANTIALIASING_NONE
-	var fb: Array[Font] = [jp]
-	f.fallbacks = fb
+	var f: FontFile = load("res://fonts/NotoSans-Regular.ttf")
+	bold = FontVariation.new()
+	bold.base_font = f
+	bold.variation_embolden = 0.7
 	th.default_font = f
-	th.default_font_size = 12
+	th.default_font_size = 13
+	th.set_font("font", "Button", bold)
 	th.set_stylebox("normal", "Button", box(PAPER, INK))
 	th.set_stylebox("hover", "Button", box(Color("e3f3e8"), INK))
 	th.set_stylebox("pressed", "Button", box(Color("c5e6d0"), INK))
@@ -100,6 +97,8 @@ func label(text: String, color := INK, px := 0) -> Label:
 	l.add_theme_color_override("font_color", color)
 	if px > 0:
 		l.add_theme_font_size_override("font_size", px)
+	if px >= 15:
+		l.add_theme_font_override("font", bold)
 	return l
 
 
@@ -125,11 +124,12 @@ func picture(sheet: String, i: int, cell: Vector2i, min_size: Vector2) -> Textur
 	r.custom_minimum_size = min_size
 	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	r.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	return r
 
 
 func yen(v: int) -> String:
-	return "¥" + Sim.money(v)
+	return ("-¥" if v < 0 else "¥") + Sim.money(absi(v))
 
 
 # ---------- layout ----------
@@ -305,7 +305,7 @@ func refresh_ui() -> void:
 		var n := sim.has(p.id)
 		if n == 0:
 			continue
-		var pic := picture("perks", p.frame, Vector2i(40, 40), Vector2(28, 28))
+		var pic := picture("perks", p.frame, Vector2i(80, 80), Vector2(28, 28))
 		pic.tooltip_text = "%s x%d: %s" % [p.name, n, sim.perk_desc(p)]
 		pic.mouse_filter = Control.MOUSE_FILTER_PASS
 		perk_row.add_child(pic)
@@ -340,7 +340,7 @@ func arrange_panel(st: Dictionary) -> void:
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 6)
 		panel.add_child(h)
-		h.add_child(picture("decor", i, Vector2i(48, 48), Vector2(40, 40)))
+		h.add_child(picture("decor", i, Vector2i(96, 96), Vector2(40, 40)))
 		var v := VBoxContainer.new()
 		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		v.add_theme_constant_override("separation", 0)
@@ -395,7 +395,7 @@ func slot_row(i: int, s: Dictionary, prep: bool) -> Control:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 4)
 	panel.add_child(h)
-	h.add_child(picture("products", s.pid, Vector2i(32, 32), Vector2(32, 32)))
+	h.add_child(picture("products", s.pid, Vector2i(64, 64), Vector2(32, 32)))
 	var v := VBoxContainer.new()
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.add_theme_constant_override("separation", 0)
@@ -529,7 +529,9 @@ func show_picker(slot: int) -> void:
 		var ok := sim.can_stock(cur, pid)
 		var t := "%s\n%s > %s\n%s" % [p.name, yen(sim.wholesale[pid]), yen(p.price), " ".join(tags) if ok else "SUPERMARKET"]
 		var b := button(t, pick_product.bind(slot, pid))
-		b.icon = atlas("products", pid, Vector2i(32, 32))
+		b.icon = atlas("products", pid, Vector2i(64, 64))
+		b.add_theme_constant_override("icon_max_width", 32)
+		b.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.custom_minimum_size = Vector2(168, 54)
 		b.clip_text = true
@@ -606,7 +608,7 @@ func show_draft() -> void:
 		v.custom_minimum_size = Vector2(170, 0)
 		v.add_theme_constant_override("separation", 6)
 		card.add_child(v)
-		v.add_child(picture("perks", p.frame, Vector2i(40, 40), Vector2(80, 80)))
+		v.add_child(picture("perks", p.frame, Vector2i(80, 80), Vector2(80, 80)))
 		var n := label(p.name.to_upper())
 		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		v.add_child(n)
@@ -636,7 +638,7 @@ func show_grow() -> void:
 	for e in sim.expansions():
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
-		row.add_child(picture("stores", e.frame, Vector2i(160, 128), Vector2(100, 80)))
+		row.add_child(picture("stores", e.frame, Vector2i(320, 256), Vector2(100, 80)))
 		var col := VBoxContainer.new()
 		col.custom_minimum_size.x = 330
 		col.add_child(label(e.name.to_upper()))

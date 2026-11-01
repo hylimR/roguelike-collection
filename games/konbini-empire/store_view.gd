@@ -11,18 +11,23 @@ const DUR := 10.0
 const PACE := 0.7  # share of DUR over which the day's customers arrive
 const SPEED := 3.6
 const MAX_SHOWN := 20
-const PERSON_PX := 0.034
+const PERSON_PX := 0.017
 const STRIDE := 2.2  # walk frames per unit walked (art/walk.png: column 0 stands, 1-4 walk)
 const MAX_FPS := 11.0
-const ITEM_PX := 0.014
-const DECOR_PX := 0.028
-const OUTDOOR_PX := 0.06
+const ITEM_PX := 0.007
+const DECOR_PX := 0.014
+const OUTDOOR_PX := 0.03
 # per-prop size: trees full, street furniture smaller (art/outdoor.png draws every prop the same size)
 const OUTDOOR_SCALE := [1.0, 1.0, 0.95, 1.05, 0.45, 0.45, 0.6, 0.32, 0.38, 0.38, 0.36, 0.5]
-const BUILDING_CELL := Vector2i(128, 128)
-const BUILDING_PX := 0.06
-const VEHICLE_CELL := Vector2i(64, 48)
-const VEHICLE_PX := 0.05
+const BUILDING_CELL := Vector2i(256, 256)
+const BUILDING_PX := 0.03
+const VEHICLE_CELL := Vector2i(128, 96)
+const VEHICLE_PX := 0.025
+# atlas cells (art is cut at 2x its own pixel grid)
+const ITEM := 64
+const PERSON := Vector2i(72, 96)
+const DECOR := 96
+const OUTDOOR := 128
 # street cross-section, as distance past the shop front (z = depth): sidewalks and traffic lanes [z, direction]
 const WALK_NEAR := 1.2
 const WALK_FAR := 8.2
@@ -31,8 +36,8 @@ const STREET_END := 32.0  # walkers and cars live between x = -STREET_END and w 
 const PITCH := 30.0
 # wall = crop of the side-view background used as the back wall texture
 const LAYOUT := {
-	"konbini": {"bg": "bg_konbini", "wall": Rect2i(0, 70, 272, 54), "rows": [0.42, 1.0], "gh": 1.42, "clerks": [0.0], "floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]},
-	"super": {"bg": "bg_super", "wall": Rect2i(0, 62, 268, 60), "rows": [0.34, 0.84, 1.34], "gh": 1.8, "clerks": [-0.8, 0.8], "floor": [Color("efe3c8"), Color("d2c3a3")], "stripe": [Color("1f9d55"), Color("1f9d55")]},
+	"konbini": {"bg": "bg_konbini", "wall": Rect2i(0, 140, 544, 108), "rows": [0.42, 1.0], "gh": 1.42, "clerks": [0.0], "floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]},
+	"super": {"bg": "bg_super", "wall": Rect2i(0, 124, 536, 120), "rows": [0.34, 0.84, 1.34], "gh": 1.8, "clerks": [-0.8, 0.8], "floor": [Color("efe3c8"), Color("d2c3a3")], "stripe": [Color("1f9d55"), Color("1f9d55")]},
 }
 
 var tex := {}
@@ -68,6 +73,8 @@ var cam_offset := Vector3.ZERO
 var cam_base := 12.0
 var zoom := 1.0
 
+var vp: SubViewport
+var vp_scale := 1.0  # real pixels per UI unit
 var cam: Camera3D
 var room: Node3D
 var street: Node3D
@@ -77,14 +84,20 @@ var overlay: Control
 
 
 func _ready() -> void:
-	var box := SubViewportContainer.new()
-	box.stretch = true
-	box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(box)
-	var vp := SubViewport.new()
+	vp = SubViewport.new()
 	vp.own_world_3d = true
-	box.add_child(vp)
+	vp.msaa_3d = Viewport.MSAA_4X
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(vp)
+	var screen_rect := TextureRect.new()
+	screen_rect.texture = vp.get_texture()
+	screen_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	screen_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	screen_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	add_child(screen_rect)
+	get_window().size_changed.connect(fit_viewport)
+	fit_viewport.call_deferred()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color("2b2d42")
@@ -148,7 +161,7 @@ func sprite(sheet: String, region: Rect2, px: float, billboard := true) -> Sprit
 	s.region_enabled = true
 	s.region_rect = region
 	s.pixel_size = px
-	s.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	s.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	s.shaded = false
 	if billboard:
@@ -261,8 +274,8 @@ func scatter(w: float, depth: float) -> void:
 		var car := sprite("vehicles", Rect2((k * 4) * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
 		car.position = Vector3(w + 3.5 + k * 1.9, VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1, 2.4)
 		room.add_child(car)
-	var vend := sprite("decor", Rect2(2 * 48, 0, 48, 48), DECOR_PX)
-	vend.position = Vector3(w + 0.7, 24 * DECOR_PX - 0.1, 0.8)
+	var vend := sprite("decor", Rect2(2 * DECOR, 0, DECOR, DECOR), DECOR_PX)
+	vend.position = Vector3(w + 0.7, DECOR / 2.0 * DECOR_PX - 0.1, 0.8)
 	room.add_child(vend)
 	var spots := []
 	for x in range(-30, int(w) + 32, 7):  # lamps along the kerb, street trees on the far side
@@ -279,8 +292,8 @@ func scatter(w: float, depth: float) -> void:
 	for sp in spots:
 		var id: int = sp[1]
 		var px: float = OUTDOOR_PX * OUTDOOR_SCALE[id]
-		var s := sprite("outdoor", Rect2(id * 64, 0, 64, 64), px)
-		s.position = Vector3(sp[0].x, 32 * px - 0.1, sp[0].y)
+		var s := sprite("outdoor", Rect2(id * OUTDOOR, 0, OUTDOOR, OUTDOOR), px)
+		s.position = Vector3(sp[0].x, OUTDOOR / 2.0 * px - 0.1, sp[0].y)
 		room.add_child(s)
 
 
@@ -293,7 +306,7 @@ func spawn_walker(x := NAN) -> void:
 		x = -STREET_END if dir > 0 else lot.x + STREET_END
 	var z := lot.y + (WALK_NEAR if near else WALK_FAR) + randf_range(-0.6, 0.6)
 	var a := randi() % 7
-	var node := sprite("walk", Rect2(36, a * 48, 36, 48), PERSON_PX)
+	var node := sprite("walk", Rect2(PERSON.x, a * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
 	node.flip_h = dir < 0
 	node.position = Vector3(x, 0.82, z)
 	node.add_child(shadow())
@@ -319,7 +332,7 @@ func stride(p: Dictionary, speed: float, delta: float) -> void:
 	if speed > 0.0:
 		p.step += delta * minf(speed * STRIDE, MAX_FPS)
 		col = 1 + int(p.step) % 4
-	p.node.region_rect = Rect2(col * 36, p.a * 48, 36, 48)
+	p.node.region_rect = Rect2(col * PERSON.x, p.a * PERSON.y, PERSON.x, PERSON.y)
 
 
 func shadow() -> MeshInstance3D:
@@ -405,7 +418,7 @@ func build_props() -> void:
 					block(props, Vector3(1.9, 0.05, 0.92), Vector3(x, ry - 0.03, z + 0.03), Color("8d8a80"))
 					var row := []
 					for k in 3:
-						var s := sprite("products", Rect2(0, 0, 32, 32), ITEM_PX, false)
+						var s := sprite("products", Rect2(0, 0, ITEM, ITEM), ITEM_PX, false)
 						s.position = Vector3(x - 0.58 + k * 0.58, ry + 0.22, z + 0.42)
 						props.add_child(s)
 						row.append(s)
@@ -418,13 +431,13 @@ func build_props() -> void:
 				block(props, Vector3(2.92, 0.1, 0.87), Vector3(x, 0.45, z), L.stripe[1])
 				block(props, Vector3(0.5, 0.35, 0.4), Vector3(x + 1.0, 1.22, z - 0.1), Color("3b3f52"))
 				for dx in L.clerks:
-					var cl := sprite("people", Rect2(7 * 36, 0, 36, 48), PERSON_PX)
+					var cl := sprite("people", Rect2(7 * PERSON.x, 0, PERSON.x, PERSON.y), PERSON_PX)
 					cl.flip_h = true
 					cl.position = Vector3(x + dx, 0.82, z - 0.75)
 					props.add_child(cl)
 			"decor":
-				var d := sprite("decor", Rect2(o.id * 48, 0, 48, 48), DECOR_PX)
-				d.position = Vector3(c.x + 0.5, 24 * DECOR_PX, c.y + 0.5)
+				var d := sprite("decor", Rect2(o.id * DECOR, 0, DECOR, DECOR), DECOR_PX)
+				d.position = Vector3(c.x + 0.5, DECOR / 2.0 * DECOR_PX, c.y + 0.5)
 				props.add_child(d)
 	refresh_shelves()
 
@@ -438,7 +451,7 @@ func refresh_shelves() -> void:
 			var sp: Sprite3D = shelf_sprites[i][k]
 			sp.visible = s.pid >= 0 and (k < n or (q == 0 and k == 1))
 			if s.pid >= 0:
-				sp.region_rect = Rect2(s.pid * 32, 0, 32, 32)
+				sp.region_rect = Rect2(s.pid * ITEM, 0, ITEM, ITEM)
 				sp.modulate = Color(0.45, 0.45, 0.5) if q == 0 else Color.WHITE
 
 
@@ -466,9 +479,22 @@ func set_edit(on: bool) -> void:
 
 # ---------- arranging ----------
 
+## Sizes the 3D render to the real pixels this view covers (the UI itself is laid out at 960x540).
+func fit_viewport() -> void:
+	var win := Vector2(get_window().size)
+	vp_scale = clampf(minf(win.x / 960.0, win.y / 540.0), 1.0, 3.0)
+	vp.size = Vector2i((size * vp_scale).round())
+	overlay.queue_redraw()
+
+
+## World point to this control's coordinates.
+func screen(p: Vector3) -> Vector2:
+	return cam.unproject_position(p) / vp_scale
+
+
 func cell_at(pos: Vector2) -> Vector2i:
-	var o := cam.project_ray_origin(pos)
-	var d := cam.project_ray_normal(pos)
+	var o := cam.project_ray_origin(pos * vp_scale)
+	var d := cam.project_ray_normal(pos * vp_scale)
 	if d.y > -0.001:
 		return Sim.NO_CELL
 	var p := o + d * (-o.y / d.y)
@@ -477,8 +503,8 @@ func cell_at(pos: Vector2) -> Vector2i:
 
 ## Nearest object whose box the click ray passes through, else whatever stands on the clicked tile.
 func object_under(pos: Vector2) -> int:
-	var o := cam.project_ray_origin(pos)
-	var d := cam.project_ray_normal(pos)
+	var o := cam.project_ray_origin(pos * vp_scale)
+	var d := cam.project_ray_normal(pos * vp_scale)
 	var best := -1
 	var best_dist := INF
 	for i in store.objects.size():
@@ -636,7 +662,7 @@ func spawn(cu: Dictionary) -> void:
 	walk(path, here, exit, 0.0, "")
 	path.append([Vector2(exit.x + 0.5, walk_z), 0.0, ""])
 	path.append([Vector2(-8.0 if randf() < 0.5 else lot.x + 14.0, walk_z), 0.0, ""])
-	var node := sprite("walk", Rect2(36, cu.a * 48, 36, 48), PERSON_PX)
+	var node := sprite("walk", Rect2(PERSON.x, cu.a * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
 	node.add_child(shadow())
 	actors.add_child(node)
 	people.append({"cu": cu, "a": cu.a, "pos": start, "path": path, "wait": -1.0, "step": randf() * 4.0, "node": node})
@@ -711,25 +737,25 @@ func draw_overlay() -> void:
 		var g: Vector2i = Sim.GRID[kind]
 		var line := Color(0.17, 0.18, 0.26, 0.3)
 		for x in g.x + 1:
-			overlay.draw_line(cam.unproject_position(Vector3(x, 0, 0)), cam.unproject_position(Vector3(x, 0, g.y)), line)
+			overlay.draw_line(screen(Vector3(x, 0, 0)), screen(Vector3(x, 0, g.y)), line)
 		for z in g.y + 1:
-			overlay.draw_line(cam.unproject_position(Vector3(0, 0, z)), cam.unproject_position(Vector3(g.x, 0, z)), line)
+			overlay.draw_line(screen(Vector3(0, 0, z)), screen(Vector3(g.x, 0, z)), line)
 		for c in ghost_cells:
 			var quad := PackedVector2Array()
 			for k in [Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(1, 0, 1), Vector3(0, 0, 1)]:
-				quad.append(cam.unproject_position(Vector3(c.x, 0.02, c.y) + k))
+				quad.append(screen(Vector3(c.x, 0.02, c.y) + k))
 			overlay.draw_colored_polygon(quad, Color(0.18, 0.75, 0.38, 0.45) if ghost_ok else Color(0.9, 0.2, 0.2, 0.5))
 		if carry.is_empty() and hover_obj >= 0 and hover_obj < store.objects.size():
 			var oc: Vector2i = store.objects[hover_obj].cell
-			var at := cam.unproject_position(Vector3(oc.x + 0.5 * Sim.FOOT[store.objects[hover_obj].type].x, 0, oc.y + 1.0))
+			var at := screen(Vector3(oc.x + 0.5 * Sim.FOOT[store.objects[hover_obj].type].x, 0, oc.y + 1.0))
 			overlay.draw_string_outline(font, at + Vector2(-40, 18), "PICK UP", HORIZONTAL_ALIGNMENT_CENTER, 80, 12, 4, Color("2b2d42"))
 			overlay.draw_string(font, at + Vector2(-40, 18), "PICK UP", HORIZONTAL_ALIGNMENT_CENTER, 80, 12, Color.WHITE)
 		return
 	for p in people:
 		if p.wait >= 0.0:
-			bubble(p, cam.unproject_position(Vector3(p.pos.x, 1.75, p.pos.y)), font)
+			bubble(p, screen(Vector3(p.pos.x, 1.75, p.pos.y)), font)
 	for f in floaters:
-		var at := cam.unproject_position(f.at)
+		var at := screen(f.at)
 		overlay.draw_string_outline(font, at + Vector2(-30, 0), f.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 4, Color.WHITE)
 		overlay.draw_string(font, at + Vector2(-30, 0), f.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("2f9e5b"))
 	var hour := 6.0 + progress() * 24.0
@@ -754,7 +780,7 @@ func bubble(p: Dictionary, head: Vector2, font: Font) -> void:
 		overlay.draw_string(font, r.position + Vector2(8, 26), "...", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, edge)
 		return
 	var pid: int = p.cu.buy[0] if kind_b == "buy" else p.cu.miss[0]
-	overlay.draw_texture_rect_region(tex.products, Rect2(r.position + Vector2(4, 3), Vector2(32, 32)), Rect2(pid * 32, 0, 32, 32), Color(1, 1, 1, 1.0 if kind_b == "buy" else 0.55))
+	overlay.draw_texture_rect_region(tex.products, Rect2(r.position + Vector2(4, 3), Vector2(32, 32)), Rect2(pid * ITEM, 0, ITEM, ITEM), Color(1, 1, 1, 1.0 if kind_b == "buy" else 0.55))
 	if kind_b == "miss":
 		overlay.draw_string_outline(font, r.position + Vector2(26, 34), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 4, Color.WHITE)
 		overlay.draw_string(font, r.position + Vector2(26, 34), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, edge)
