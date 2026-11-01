@@ -247,7 +247,7 @@ func update_camera() -> void:
 	if mode == "city":
 		var P := Vector2(Sim.BLOCK.x + Sim.ROAD, Sim.BLOCK.y + Sim.ROAD)
 		target = Vector3(Sim.CITY.x * P.x / 2, 0, Sim.CITY.y * P.y / 2)
-		cam.size = (Sim.CITY.x * P.x + Sim.CITY.y * P.y) * 0.3 * zoom
+		cam.size = (Sim.CITY.x * P.x + Sim.CITY.y * P.y) * 0.38 * zoom
 	else:
 		target = site.position + Vector3(lot.x / 2 + 0.3, 0.9, lot.y / 2 + 0.8)
 		cam.size = (lot.x + lot.y) * 0.6 * zoom
