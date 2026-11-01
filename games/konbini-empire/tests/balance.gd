@@ -26,8 +26,13 @@ func _init() -> void:
 	var b := play("same")
 	var same: bool = a.day == b.day and a.cash == b.cash
 	var layout := layout_ok()
-	print("deterministic %s  layout rules %s" % [same, layout])
-	var ok: bool = supers.size() > RUNS * 0.5 and won.size() > RUNS * 0.2 and bust.size() > 0 and same and layout
+	var conserved := allocation_ok()
+	var opened: int = res.reduce(func(t, r): return t + r.opened, 0)
+	var folded: int = res.reduce(func(t, r): return t + r.folded, 0)
+	var closed: int = res.reduce(func(t, r): return t + r.closed, 0)
+	print("deterministic %s  layout rules %s  shoppers conserved %s" % [same, layout, conserved])
+	print("rival stores opened %d  closed %d  chains bankrupt %d  (all runs)" % [opened, closed, folded])
+	var ok: bool = supers.size() > RUNS * 0.5 and won.size() > RUNS * 0.2 and bust.size() > 0 and same and layout and conserved and opened > 0 and folded > 0
 	print("BALANCE OK" if ok else "BALANCE FAIL")
 	quit(0 if ok else 1)
 
@@ -61,12 +66,19 @@ func play(seed_str: String) -> Dictionary:
 	var s := Sim.new()
 	s.start(seed_str)
 	var first_super := -1
+	var opened := 0
+	var closed := 0
+	var folded := 0
 	while not s.over and s.day <= MAX_DAY:
 		s.event_text()  # formatting smoke test: every event text is built at least once
 		prep(s)
 		if s.over:
 			break
-		s.simulate_day()
+		var rep: Dictionary = s.simulate_day()
+		for line in rep.news:
+			opened += 1 if "opened a store" in line else 0
+			closed += 1 if "closed its store" in line else 0
+			folded += 1 if "went bankrupt" in line else 0
 		if s.over:
 			break
 		if first_super < 0 and s.stores[0].kind == "super":
@@ -76,7 +88,23 @@ func play(seed_str: String) -> Dictionary:
 			if PERK_ORDER.find(s.draft[i].id) < PERK_ORDER.find(s.draft[best].id):
 				best = i
 		s.next_day(best)
-	return {"day": s.day, "won": s.won, "over": s.over, "super": first_super, "cash": s.cash}
+	return {"day": s.day, "won": s.won, "over": s.over, "super": first_super, "cash": s.cash, "opened": opened, "closed": closed, "folded": folded}
+
+
+## Every shopper the city generates either picks a store or stays home.
+func allocation_ok() -> bool:
+	var s := Sim.new()
+	s.start("alloc")
+	for i in s.stores[0].slots.size():
+		s.buy(0, i, i, 10)
+	var al: Dictionary = s.allocate()
+	var placed: float = al._home
+	for k in al:
+		if not k.begins_with("_"):
+			for row in al[k]:
+				for x in row:
+					placed += x
+	return absf(placed - al._all) < 0.5 and al._all > 1000.0
 
 
 func value(s, pid: int, kind: String) -> float:
@@ -89,7 +117,21 @@ func value(s, pid: int, kind: String) -> float:
 func prep(s) -> void:
 	var reserve: int = s.weekly_rent() + 30000
 	for e in s.expansions():
-		if not e.get("locked", false) and s.cash > e.cost + reserve:
+		if e.get("locked", false):
+			continue
+		if e.id == "branch":
+			var crowd: Array = s.crowding()
+			var lots: Array = s.free_lots()
+			lots.sort_custom(func(x, y): return s.lot_score(x, crowd) > s.lot_score(y, crowd))
+			if s.cash > s.branch_cost(lots[0]) + reserve:
+				s.expand("branch", lots[0])
+				break
+		elif e.id == "buyout":
+			var cheapest: Dictionary = s.rivals.filter(func(rv): return rv.open).reduce(func(x, y): return x if s.buyout_cost(x) < s.buyout_cost(y) else y)
+			if s.free_lots().is_empty() and s.cash > s.buyout_cost(cheapest) + reserve:
+				s.expand("buyout", cheapest.lot)
+				break
+		elif s.cash > e.cost + reserve:
 			s.expand(e.id)
 			break
 	for si in s.stores.size():

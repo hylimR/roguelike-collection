@@ -63,7 +63,7 @@ const EVENTS := [
 	{"id": "payday", "name": "Payday", "desc": "Customers ignore prices", "w": 7},
 	{"id": "viral", "name": "Viral product", "desc": "%s is trending (x4 demand)", "w": 7},
 	{"id": "sale", "name": "Supplier sale", "desc": "%s 30%% off wholesale", "w": 8},
-	{"id": "rival", "name": "Rival opened nearby", "desc": "-25% customers for 3 days", "w": 6, "bad": true},
+	{"id": "rival", "name": "Rival flash sale", "desc": "A rival near you slashes prices for 3 days", "w": 6, "bad": true},
 	{"id": "thief", "name": "Shoplifter", "desc": "Snacks and drinks went missing", "w": 6, "bad": true},
 	{"id": "outage", "name": "Power cut tonight", "desc": "Chilled stock spoils at close", "w": 5, "bad": true},
 	{"id": "inspector", "name": "Health inspector", "desc": "Fines stores that binned food yesterday", "w": 6, "bad": true},
@@ -108,6 +108,49 @@ const DECOR := [
 ]
 const APPEAL_CAP := 25
 
+# --- city: blocks of two 22-wide shop lots along each block's front (+z) edge, roads between blocks ---
+const CITY := Vector2i(6, 4)
+const BLOCK := Vector2(44.0, 24.0)
+const ROAD := 9.2  # sidewalk, two lanes, sidewalk (matches the street the shop view draws)
+const LOT_W := 22.0
+const LOT_D := 10.0
+const DIST_SCALE := 22.0  # one unit of utility lost per this many metres walked
+const STAY_HOME := -1.0  # utility of not shopping at all
+const REACH := 90.0
+const MAX_STORES := 6
+const OPEN_COST := 90000
+
+# frame = art/landmarks.png. pop = shoppers a day; hours and arch weight when and who comes out.
+const DISTRICTS := {
+	"station": {"name": "Station", "pop": 260, "rent": 1.6, "frame": 0, "hours": [4, 1, 1, 4, 2, 1], "arch": [3, 2, 1.2, 0.6, 1, 1.2, 0.4]},
+	"office": {"name": "Offices", "pop": 190, "rent": 1.4, "frame": 1, "hours": [2, 4, 1, 2, 1, 0.3], "arch": [3, 3, 0.3, 0.3, 0.6, 0.6, 0.1]},
+	"school": {"name": "School", "pop": 160, "rent": 1.0, "frame": 2, "hours": [2, 2, 4, 1, 0.3, 0.1], "arch": [0.5, 0.6, 4, 0.8, 0.4, 0.4, 3]},
+	"shrine": {"name": "Shrine", "pop": 130, "rent": 1.2, "frame": 3, "hours": [1, 2, 3, 2, 0.5, 0.2], "arch": [0.5, 0.8, 0.8, 1.5, 0.5, 4, 1]},
+	"park": {"name": "Park", "pop": 120, "rent": 0.9, "frame": 4, "hours": [2, 2, 3, 2, 0.5, 0.2], "arch": [0.6, 0.8, 1.2, 2, 0.6, 1.2, 2.5]},
+	"homes": {"name": "Homes", "pop": 170, "rent": 0.8, "frame": 5, "hours": [3, 1, 2, 3, 1, 0.4], "arch": [1, 1, 1, 3, 1, 0.3, 2]},
+	"arcade": {"name": "Arcade", "pop": 180, "rent": 1.3, "frame": 6, "hours": [1, 3, 3, 3, 1, 0.3], "arch": [1, 2, 1.5, 1.5, 0.5, 2.5, 1]},
+	"hospital": {"name": "Hospital", "pop": 130, "rent": 1.0, "frame": 7, "hours": [3, 2, 2, 1, 1, 0.5], "arch": [0.6, 1.5, 0.3, 3, 0.4, 0.3, 0.5]},
+	"works": {"name": "Works", "pop": 140, "rent": 0.7, "frame": 8, "hours": [4, 4, 1, 1, 0.3, 0.6], "arch": [0.5, 0.3, 0.2, 0.2, 5, 0.1, 0.1]},
+}
+const DISTRICT_MIX := ["office", "office", "school", "shrine", "park", "homes", "homes", "homes", "arcade", "hospital", "works", "works"]
+# how much each archetype prefers a supermarket over a konbini
+const SUPER_FIT := [0.0, 0.5, -0.2, 0.8, 0.2, 0.0, 0.0]
+
+# chain 0 is you. price: -1 discount .. +1 premium; aggr: appetite for opening stores, and next to yours.
+# frame = row in art/storefronts.png
+const CHAINS := [
+	{"name": "You", "color": "f08a24", "frame": 0},
+	{"name": "Sora Store", "color": "2f7fd6", "frame": 1, "price": 1, "margin": 0.33, "aggr": 0.4, "appeal": 0.2},
+	{"name": "Maru Mart", "color": "e04a3a", "frame": 2, "price": -1, "margin": 0.2, "aggr": 0.85, "appeal": 0.0},
+	{"name": "Midori 24", "color": "3fae49", "frame": 3, "price": 0, "margin": 0.26, "aggr": 0.6, "appeal": 0.1},
+	{"name": "Yoru Mart", "color": "9b4dca", "frame": 4, "price": 0, "margin": 0.28, "aggr": 0.5, "appeal": 0.05, "night": true},
+]
+const RIVAL_START := 3
+const RIVAL_CASH := 120000
+const BASKET := {"konbini": 175, "super": 520}  # what one shopper spends, in line with your own tills
+const CREDIT := 150000  # how far a chain can borrow before it folds
+const CHAIN_MAX := 7
+
 const CHILLED := ["icebar", "milk", "fish", "steak"]
 const CATS := ["food", "drink", "snack", "fresh", "home"]
 const TIER_MULT := [0.85, 1.0, 1.25]
@@ -128,7 +171,6 @@ var event: Dictionary
 var event_arg := ""
 var wholesale: Array = []
 var rent_mult := 1.0
-var rival_days := 0
 var last_waste := 0
 var spent_today := 0
 var morning_note := ""
@@ -137,6 +179,11 @@ var won := false
 var draft: Array = []
 var misses := {}
 var stats := {}
+var lots: Array = []  # {block, x0, front, use: free|landmark|shop|store, rent}
+var districts: Array = []  # one per block: {type, cell}
+var rivals: Array = []  # rival stores: {chain, kind, lot, open, war, loss_weeks, week, customers, sales}
+var chains: Array = []  # {cash, alive, sales}
+var news: Array = []
 
 
 func _init() -> void:
@@ -161,19 +208,322 @@ func start(seed_str: String) -> void:
 	rep = 50.0
 	perks = {}
 	rent_mult = 1.0
-	rival_days = 0
 	last_waste = 0
 	over = false
 	won = false
 	misses = {}
 	draft = []
 	stats = {"served": 0, "peak": START_CASH, "sales": 0}
-	stores = [new_store("konbini")]
+	build_city()
 	begin_day()
 
 
-func new_store(kind: String) -> Dictionary:
-	var s := {"kind": kind, "slots": [], "objects": default_objects(kind)}
+# ---------- city ----------
+
+static func block_origin(c: Vector2i) -> Vector2:
+	return Vector2(c.x * (BLOCK.x + ROAD), c.y * (BLOCK.y + ROAD))
+
+
+func block_center(d: Dictionary) -> Vector2:
+	return block_origin(d.cell) + BLOCK / 2
+
+
+static func lot_pos(lot: Dictionary) -> Vector2:
+	return Vector2(lot.x0 + LOT_W / 2, lot.front - LOT_D / 2)
+
+
+## Where a shop of this kind sits on the lot: centred, front flush with the lot's street edge.
+static func store_origin(lot: Dictionary, kind: String) -> Vector3:
+	return Vector3(lot.x0 + (LOT_W - GRID[kind].x) / 2.0, 0, lot.front - (GRID[kind].y + 1))
+
+
+func build_city() -> void:
+	stores = []
+	lots = []
+	districts = []
+	rivals = []
+	chains = []
+	news = []
+	var center := Vector2i(CITY.x / 2, CITY.y / 2)
+	for bz in CITY.y:
+		for bx in CITY.x:
+			var c := Vector2i(bx, bz)
+			var t: String = "station" if c == center else DISTRICT_MIX[rng.randi() % DISTRICT_MIX.size()]
+			districts.append({"type": t, "cell": c})
+			var o := block_origin(c)
+			var lm := rng.randi() % 2
+			for i in 2:
+				lots.append({"block": districts.size() - 1, "x0": o.x + i * LOT_W, "front": o.y + BLOCK.y, "use": "landmark" if i == lm else "free", "rent": DISTRICTS[t].rent})
+	for c in CHAINS.size():
+		chains.append({"cash": RIVAL_CASH, "alive": true, "sales": 0.0})
+	# you start on a middling lot; rivals spread over the rest, a few lots stay ordinary shops
+	var ranked := free_lots()
+	var crowd := crowding()
+	ranked.sort_custom(func(x, y): return lot_score(x, crowd) > lot_score(y, crowd))
+	var mine: int = ranked[rng.randi_range(ranked.size() / 4, ranked.size() / 2)]
+	stores = [new_store("konbini", mine)]
+	for k in RIVAL_START:
+		for ch in range(1, CHAINS.size()):
+			var free := free_lots()
+			open_rival(ch, free[rng.randi() % free.size()], "super" if rng.randf() < 0.2 else "konbini", false)
+	for k in 4:
+		var free := free_lots()
+		lots[free[rng.randi() % free.size()]].use = "shop"
+
+
+func free_lots() -> Array:
+	return range(lots.size()).filter(func(i): return lots[i].use == "free")
+
+
+func open_stores() -> Array:
+	var out := []
+	for st in stores:
+		out.append([st, 0])
+	for rv in rivals:
+		if rv.open:
+			out.append([rv, rv.chain])
+	return out
+
+
+func store_pos(st: Dictionary) -> Vector2:
+	return lot_pos(lots[st.lot])
+
+
+## Per district: exp(stay home) plus the pull of every open store in reach. Used by lot_score.
+func crowding() -> Array:
+	var out := []
+	for d in districts:
+		var cp := block_center(d)
+		var sum := exp(STAY_HOME)
+		for e in open_stores():
+			var dd := cp.distance_to(store_pos(e[0]))
+			if dd < REACH:
+				sum += exp(-dd / DIST_SCALE)
+		out.append(sum)
+	return out
+
+
+## Quick estimate of daily shoppers a new konbini on this lot would win (gravity model; no prices or hours).
+func lot_score(li: int, crowd: Array) -> float:
+	var lp := lot_pos(lots[li])
+	var score := 0.0
+	for k in districts.size():
+		var dd := lp.distance_to(block_center(districts[k]))
+		if dd < REACH:
+			var pull := exp(-dd / DIST_SCALE)
+			score += DISTRICTS[districts[k].type].pop * pull / (pull + crowd[k])
+	return score
+
+
+func near_player(li: int, radius: float) -> bool:
+	for st in stores:
+		if store_pos(st).distance_to(lot_pos(lots[li])) < radius:
+			return true
+	return false
+
+
+func open_rival(ch: int, li: int, kind: String, fight := true) -> void:
+	rivals.append({"chain": ch, "kind": kind, "lot": li, "open": true, "war": 0, "loss_weeks": 0, "week": 0.0, "customers": 0.0, "sales": 0.0})
+	lots[li].use = "store"
+	if fight:
+		price_war(li, ch)
+
+
+func close_rival(rv: Dictionary, why: String) -> void:
+	rv.open = false
+	lots[rv.lot].use = "free"
+	if why != "":
+		news.append(why)
+
+
+## Stores of other chains near a new opening cut prices for a week.
+func price_war(li: int, opener: int) -> void:
+	var lp := lot_pos(lots[li])
+	for rv in rivals:
+		if rv.open and rv.chain != opener and store_pos(rv).distance_to(lp) < 35.0 and rv.war == 0:
+			rv.war = 7
+			if opener == 0:
+				news.append("%s cut prices to fight your new store." % CHAINS[rv.chain].name)
+
+
+func decor_effects(st: Dictionary) -> Dictionary:
+	var fx := {"arch": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], "prod": {}, "income": 0}
+	for o in st.objects:
+		if o.type != "decor":
+			continue
+		var d: Dictionary = DECOR[o.id]
+		for ai in d.get("arch", {}):
+			fx.arch[ai] *= d.arch[ai]
+		for id in d.get("prod", {}):
+			fx.prod[id] = fx.prod.get(id, 1.0) * d.prod[id]
+		fx.income += d.get("income", 0)
+	return fx
+
+
+## [base utility, price level, night bonus, per-archetype bonus] for a store today.
+func store_terms(st: Dictionary, ch: int) -> Array:
+	if ch == 0:
+		var tiers := []
+		for sl in st.slots:
+			if sl.pid >= 0 and sl.qty > 0:
+				tiers.append(sl.tier)
+		if tiers.is_empty():
+			return [-6.0, 0.0, 0.0, [0, 0, 0, 0, 0, 0, 0]]
+		var price: float = tiers.reduce(func(x, y): return x + y, 0) / float(tiers.size()) - 1.0
+		var u := (rep - 50.0) / 60.0 + 0.04 * appeal(st) + 0.12 * has("poster") + (0.06 if has("loyalty") else 0.0)
+		u += 0.3 if event.id == "tv" else 0.0
+		var arch: Array = decor_effects(st).arch.map(func(m): return log(m))
+		return [u, price, 0.7 if has("neon") and st.kind == "konbini" else 0.0, arch]
+	var c: Dictionary = CHAINS[ch]
+	return [c.appeal, c.price - (1.0 if st.war > 0 else 0.0), 0.6 if c.get("night", false) else 0.0, [0, 0, 0, 0, 0, 0, 0]]
+
+
+## Splits every district's shoppers among stores in reach: a logit on store utility minus walking distance,
+## with staying home as the outside option. Returns {store key: [6 blocks][7 archetypes] expected shoppers,
+## "_all": generated, "_home": stayed home}. Keys: "p<i>" your stores, "r<i>" rivals, "x" for `extra`.
+func allocate(extra := {}) -> Dictionary:
+	var all := []
+	for i in stores.size():
+		all.append(["p%d" % i, stores[i], 0])
+	for i in rivals.size():
+		if rivals[i].open:
+			all.append(["r%d" % i, rivals[i], rivals[i].chain])
+	if not extra.is_empty():
+		all.append(["x", extra, extra.chain])
+	var terms := []
+	for e in all:
+		terms.append(store_terms(e[1], e[2]))
+	var out := {"_all": 0.0, "_home": 0.0}
+	for e in all:
+		var grid := []
+		for b in 6:
+			grid.append([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+		out[e[0]] = grid
+	var crowd_mult: float = weather.traffic * (1.5 if event.id == "festival" else 1.0)
+	for d in districts:
+		var D: Dictionary = DISTRICTS[d.type]
+		var cp := block_center(d)
+		var near := []
+		for k in all.size():
+			var dd := cp.distance_to(store_pos(all[k][1]))
+			if dd < REACH:
+				near.append([k, -dd / DIST_SCALE])
+		var w := []
+		var wsum := 0.0
+		for b in 6:
+			for a in 7:
+				var x: float = D.hours[b] * D.arch[a] * A[a].hours[b] * (3.0 if event.id == "school" and (a == 2 or a == 6) else 1.0)
+				w.append(x)
+				wsum += x
+		var total: float = D.pop * crowd_mult
+		out._all += total
+		for b in 6:
+			for a in 7:
+				var n: float = total * w[b * 7 + a] / wsum
+				if n <= 0.0:
+					continue
+				var sens: float = A[a].sens * (0.2 if event.id == "payday" else 1.0)
+				var ex := []
+				var den := exp(STAY_HOME)
+				for nk in near:
+					var e: Array = all[nk[0]]
+					var t: Array = terms[nk[0]]
+					var u: float = nk[1] + t[0] + t[3][a] - t[1] * (0.15 + 0.7 * sens)
+					if b >= 4:
+						u += t[2]
+					if e[1].kind == "super":
+						u += SUPER_FIT[a] - (4.0 if b == 5 else 0.0)
+					var v := exp(u)
+					ex.append(v)
+					den += v
+				out._home += n * exp(STAY_HOME) / den
+				for j in near.size():
+					out[all[near[j][0]][0]][b][a] += n * ex[j] / den
+	return out
+
+
+## Rival stores trade on their share of shoppers: abstract basket, chain margin, rent and upkeep.
+func rivals_day(alloc: Dictionary, r: Dictionary) -> void:
+	for ch in chains:
+		ch.sales = 0.0
+	chains[0].sales = r.sales + r.extras
+	for i in rivals.size():
+		var rv: Dictionary = rivals[i]
+		if not rv.open:
+			continue
+		var n := 0.0
+		for row in alloc["r%d" % i]:
+			for x in row:
+				n += x
+		var c: Dictionary = CHAINS[rv.chain]
+		var price: float = c.price - (1.0 if rv.war > 0 else 0.0)
+		rv.customers = n
+		rv.sales = n * BASKET[rv.kind] * (1.0 + 0.12 * price)
+		var profit: float = rv.sales * c.margin * (0.6 if rv.war > 0 else 1.0) - STORE[rv.kind].upkeep * 0.8 - STORE[rv.kind].rent * lots[rv.lot].rent * rent_mult / 7.0
+		rv.week += profit
+		chains[rv.chain].cash += profit
+		chains[rv.chain].sales += rv.sales
+		rv.war = maxi(0, rv.war - 1)
+
+
+## Rent day for rivals: losers close, broke chains fold, cash-rich chains open a store on the best free lot.
+func rivals_week() -> void:
+	for rv in rivals:
+		if not rv.open:
+			continue
+		rv.loss_weeks = rv.loss_weeks + 1 if rv.week < 0 else 0
+		rv.week = 0.0
+		if rv.loss_weeks >= 2:
+			close_rival(rv, "%s closed its store in %s." % [CHAINS[rv.chain].name, DISTRICTS[districts[lots[rv.lot].block].type].name])
+	for ch in range(1, chains.size()):
+		var c: Dictionary = chains[ch]
+		if c.alive and c.cash < -CREDIT:
+			c.alive = false
+			for rv in rivals:
+				if rv.open and rv.chain == ch:
+					close_rival(rv, "")
+			news.append("%s went bankrupt. Its stores are up for grabs." % CHAINS[ch].name)
+	for ch in shuffled(range(1, chains.size())):
+		var c: Dictionary = chains[ch]
+		var aggr: float = CHAINS[ch].aggr
+		# aggressive chains borrow to expand; the cautious wait for the cash
+		var count := rivals.filter(func(rv): return rv.open and rv.chain == ch).size()
+		if not c.alive or count >= CHAIN_MAX or c.cash < OPEN_COST * (1.6 - 1.6 * aggr):
+			continue
+		var crowd := crowding()
+		var best := -1
+		var best_score := 0.0
+		for li in free_lots():
+			var sc := lot_score(li, crowd) * (1.0 + aggr * 0.5 if near_player(li, 40.0) else 1.0)
+			if sc > best_score:
+				best = li
+				best_score = sc
+		if best < 0 or best_score < 60.0:
+			continue
+		c.cash -= OPEN_COST * lots[best].rent
+		open_rival(ch, best, "super" if c.cash > 400000 else "konbini")
+		news.append("%s opened a store in %s%s." % [CHAINS[ch].name, DISTRICTS[districts[lots[best].block].type].name, " right by yours" if near_player(best, 40.0) else ""])
+
+
+func market_share() -> Array:
+	var total := 0.0
+	for c in chains:
+		total += c.sales
+	var out := []
+	for i in chains.size():
+		var n := 0
+		if i == 0:
+			n = stores.size()
+		else:
+			n = rivals.filter(func(rv): return rv.open and rv.chain == i).size()
+		out.append({"chain": i, "name": CHAINS[i].name, "sales": chains[i].sales, "share": chains[i].sales / maxf(1.0, total), "stores": n, "alive": chains[i].alive})
+	out.sort_custom(func(x, y): return x.sales > y.sales)
+	return out
+
+
+func new_store(kind: String, li: int) -> Dictionary:
+	lots[li].use = "store"
+	var s := {"kind": kind, "lot": li, "slots": [], "objects": default_objects(kind)}
 	for i in STORE[kind].slots:
 		s.slots.append(empty_slot())
 	return s
@@ -313,7 +663,7 @@ func products_for(tier: int) -> Array:
 func weekly_rent() -> int:
 	var r := 0
 	for s in stores:
-		r += STORE[s.kind].rent
+		r += STORE[s.kind].rent * lots[s.lot].rent
 	return int(r * rent_mult)
 
 
@@ -351,7 +701,13 @@ func begin_day() -> void:
 		"sale", "spike":
 			event_arg = CATS[rng.randi() % CATS.size()]
 		"rival":
-			rival_days = 3
+			var near := rivals.filter(func(rv): return rv.open and near_player(rv.lot, 45.0))
+			if near.is_empty():
+				notes.append("No rival close enough to bother you.")
+			else:
+				var rv: Dictionary = near[rng.randi() % near.size()]
+				rv.war = maxi(rv.war, 3)
+				notes.append("%s near you cut prices." % CHAINS[rv.chain].name)
 		"tv":
 			rep = minf(100.0, rep + 8.0)
 		"inspector":
@@ -474,53 +830,30 @@ func simulate_day() -> Dictionary:
 	var r := {"day": day, "weather": weather.name, "stores": [], "sales": 0, "extras": 0, "waste": 0, "upkeep": 0, "rent": 0, "customers": 0, "walkouts": 0, "misses": {}, "spent": spent_today, "rep_delta": 0.0, "net": 0, "cash": 0}
 	var wanted := 0.0
 	var got := 0.0
-	for st in stores:
+	news = []
+	var alloc := allocate()
+	r.city_shoppers = alloc._all
+	for si in stores.size():
+		var st: Dictionary = stores[si]
 		var def: Dictionary = STORE[st.kind]
-		var arch := [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-		var prod := {}
-		for o in st.objects:
-			if o.type != "decor":
-				continue
-			var d: Dictionary = DECOR[o.id]
-			for ai in d.get("arch", {}):
-				arch[ai] *= d.arch[ai]
-			for id in d.get("prod", {}):
-				prod[id] = prod.get(id, 1.0) * d.prod[id]
-			r.extras += d.get("income", 0)
-		var tables := want_tables(def.tier, prod)
+		var fx := decor_effects(st)
+		r.extras += fx.income
+		var tables := want_tables(def.tier, fx.prod)
 		for s in st.slots:
 			s.sold = 0
-		var bw := PackedFloat32Array(BLOCK_W)
-		if has("neon") and st.kind == "konbini":
-			bw[4] *= 2.0
-			bw[5] *= 2.0
-		var bw_sum := 0.0
-		for x in bw:
-			bw_sum += x
-		var traffic: float = def.traffic * (0.6 + rep / 125.0) * weather.traffic * bw_sum / 16.0
-		traffic *= 1.0 + 0.12 * has("poster") + (0.06 if has("loyalty") else 0.0) + 0.02 * appeal(st)
-		if event.id == "festival":
-			traffic *= 1.5
-		elif event.id == "tv":
-			traffic *= 1.3
-		if rival_days > 0:
-			traffic *= 0.75
-		var n := int(traffic * rng.randf_range(0.9, 1.1))
 		var checkout: float = def.checkout + 50 * has("parttimer") + 80 * has("register")
 		var block_cap := []
 		for b in 6:
-			block_cap.append(ceili(checkout * bw[b] / bw_sum * 1.3))
+			block_cap.append(ceili(checkout * BLOCK_W[b] / 16.0 * 1.3))
 		var custs := []
-		for c in n:
-			var blk := rng.rand_weighted(bw)
-			var aw := PackedFloat32Array()
-			for ai in A.size():
-				var w: float = A[ai].hours[blk] * def.mix[ai] * arch[ai]
-				if event.id == "school" and (ai == 2 or ai == 6):
-					w *= 3.0
-				aw.append(w)
-			custs.append({"t": (blk + rng.randf()) / 6.0, "blk": blk, "a": rng.rand_weighted(aw), "slot": -1, "buy": [], "miss": [], "spent": 0, "walkout": false})
+		var counts: Array = alloc["p%d" % si]
+		for b in 6:
+			for a in 7:
+				var x: float = counts[b][a]
+				for c in int(x) + (1 if rng.randf() < x - int(x) else 0):
+					custs.append({"t": (b + rng.randf()) / 6.0, "blk": b, "a": a, "slot": -1, "buy": [], "miss": [], "spent": 0, "walkout": false})
 		custs.sort_custom(func(x, y): return x.t < y.t)
+		var n := custs.size()
 		var sr := {"kind": st.kind, "customers": n, "walkouts": 0, "sales": 0, "events": custs}
 		for cu in custs:
 			if block_cap[cu.blk] <= 0:
@@ -537,14 +870,14 @@ func simulate_day() -> Dictionary:
 					break
 				var pid: int = tb[0][rng.rand_weighted(tb[1])]
 				wanted += 1.0
-				var si := find_slot(st, pid)
-				if si < 0:
+				var sl := find_slot(st, pid)
+				if sl < 0:
 					cu.miss.append(pid)
 					r.misses[pid] = r.misses.get(pid, 0) + 1
 					continue
-				var s: Dictionary = st.slots[si]
+				var s: Dictionary = st.slots[sl]
 				if cu.slot < 0:
-					cu.slot = si
+					cu.slot = sl
 				if rng.randf() < buy_prob(sens, s.tier):
 					s.qty -= 1
 					s.sold += 1
@@ -572,12 +905,15 @@ func simulate_day() -> Dictionary:
 			if s.pid >= 0 and (P[s.pid].perish or (event.id == "outage" and P[s.pid].id in CHILLED)):
 				r.waste += s.qty * P[s.pid].cost
 				s.qty = 0
+	rivals_day(alloc, r)
 	if day % 7 == 0:
 		r.rent = weekly_rent()
+		rivals_week()
 		rent_mult *= 1.1
 	cash += r.sales + r.extras - r.upkeep - r.rent
 	last_waste = r.waste
-	rival_days = maxi(0, rival_days - 1)
+	r.news = news.duplicate()
+	r.market = market_share()
 	var delta := (got / maxf(1.0, wanted) - 0.6) * 15.0
 	if delta < 0 and has("loyalty"):
 		delta *= 0.5
@@ -626,8 +962,10 @@ func expansions() -> Array:
 	var out := []
 	if stores[0].kind == "konbini":
 		out.append({"id": "super0", "name": "Renovate into a supermarket", "desc": "12 shelves, fresh food, twice the shoppers. Rent ¥60,000/week.", "cost": 150000, "frame": 1})
-	if stores.size() < 3:
-		out.append({"id": "branch", "name": "Open branch konbini #%d" % (stores.size() + 1), "desc": "A second till across town. Rent ¥20,000/week.", "cost": 90000 * stores.size(), "frame": 0})
+	if stores.size() < MAX_STORES and not free_lots().is_empty():
+		out.append({"id": "branch", "name": "Open branch konbini #%d" % (stores.size() + 1), "desc": "Pick a free lot on the city map. Price and rent depend on the district.", "cost": branch_cost(-1), "frame": 0, "lot": true})
+	if stores.size() < MAX_STORES and rivals.any(func(rv): return rv.open):
+		out.append({"id": "buyout", "name": "Buy out a rival store", "desc": "Pick a rival store on the city map. It becomes your konbini; struggling stores sell cheap.", "cost": rivals.filter(func(rv): return rv.open).map(func(rv): return buyout_cost(rv)).min(), "frame": 0, "lot": true})
 	for i in range(1, stores.size()):
 		if stores[i].kind == "konbini":
 			out.append({"id": "super%d" % i, "name": "Renovate branch #%d" % (i + 1), "desc": "Turn this branch into a supermarket.", "cost": 150000, "frame": 1})
@@ -635,13 +973,49 @@ func expansions() -> Array:
 	return out
 
 
-func expand(id: String) -> bool:
+## Price of taking over a rival store: the lot plus its trade; stores losing money go cheaper.
+func buyout_cost(rv: Dictionary) -> int:
+	var trade: float = rv.sales * 20.0 * (0.5 if rv.loss_weeks > 0 else 1.0)
+	return int(OPEN_COST * lots[rv.lot].rent * 1.2 + trade)
+
+
+func rival_at(li: int) -> Dictionary:
+	for rv in rivals:
+		if rv.open and rv.lot == li:
+			return rv
+	return {}
+
+
+## Cost of a branch on lot li (li < 0: the cheapest possible, for the menu).
+func branch_cost(li: int) -> int:
+	var m: float = lots[li].rent if li >= 0 else 0.7
+	return int(OPEN_COST * stores.size() * m)
+
+
+func expand(id: String, li := -1) -> bool:
 	for e in expansions():
-		if e.id != id or e.get("locked", false) or cash < e.cost:
+		if e.id != id or e.get("locked", false):
 			continue
-		cash -= e.cost
+		var target := rival_at(li) if id == "buyout" else {}
+		var cost: int = e.cost
 		if id == "branch":
-			stores.append(new_store("konbini"))
+			if li < 0 or lots[li].use != "free":
+				return false
+			cost = branch_cost(li)
+		elif id == "buyout":
+			if target.is_empty():
+				return false
+			cost = buyout_cost(target)
+		if cash < cost:
+			return false
+		cash -= cost
+		if id == "buyout":
+			chains[target.chain].cash += cost
+			close_rival(target, "")
+			news.append("You bought out %s's store in %s." % [CHAINS[target.chain].name, DISTRICTS[districts[lots[li].block].type].name])
+		if id == "branch" or id == "buyout":
+			stores.append(new_store("konbini", li))
+			price_war(li, 0)
 		elif id == "flagship":
 			won = true
 			over = true
