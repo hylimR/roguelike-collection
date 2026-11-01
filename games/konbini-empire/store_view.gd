@@ -37,6 +37,7 @@ var paused := false
 var edit := false
 var carry := {}  # {"idx": object index} or {"new": decor id}
 var hover := Sim.NO_CELL
+var hover_obj := -1
 var nav_grid: AStarGrid2D
 var ghost_cells: Array = []
 var ghost_ok := true
@@ -263,13 +264,32 @@ func cell_at(pos: Vector2) -> Vector2i:
 	return Vector2i(floori(p.x), floori(p.z))
 
 
+## Nearest object whose box the click ray passes through, else whatever stands on the clicked tile.
+func object_under(pos: Vector2) -> int:
+	var o := cam.project_ray_origin(pos)
+	var d := cam.project_ray_normal(pos)
+	var best := -1
+	var best_dist := INF
+	for i in store.objects.size():
+		var ob: Dictionary = store.objects[i]
+		var f: Vector2i = Sim.FOOT[ob.type]
+		var h: float = {"gondola": LAYOUT[kind].gh, "counter": 1.2, "decor": 1.3}[ob.type]
+		var hit = AABB(Vector3(ob.cell.x, 0, ob.cell.y), Vector3(f.x, h, f.y)).intersects_ray(o, d)
+		if hit != null and o.distance_to(hit) < best_dist:
+			best = i
+			best_dist = o.distance_to(hit)
+	return best if best >= 0 else Sim.object_at(store, cell_at(pos))
+
+
 func _gui_input(e: InputEvent) -> void:
 	if not edit:
 		return
 	if e is InputEventMouseMotion:
 		var c := cell_at(e.position)
-		if c != hover:
+		var ho := object_under(e.position)
+		if c != hover or ho != hover_obj:
 			hover = c
+			hover_obj = ho
 			if not carry.is_empty():
 				build_props()
 			overlay.queue_redraw()
@@ -278,15 +298,14 @@ func _gui_input(e: InputEvent) -> void:
 		if e.button_index == MOUSE_BUTTON_RIGHT:
 			cancel_carry()
 		elif e.button_index == MOUSE_BUTTON_LEFT:
-			click()
+			click(object_under(e.position))
 		accept_event()
 
 
-func click() -> void:
+func click(picked := -1) -> void:
 	if carry.is_empty():
-		var idx := Sim.object_at(store, hover)
-		if idx >= 0:
-			carry = {"idx": idx}
+		if picked >= 0:
+			carry = {"idx": picked}
 	else:
 		var ok: bool = sim.buy_decor(si, carry.new, hover) if carry.has("new") else sim.move_object(si, carry.idx, hover)
 		if ok:
@@ -480,8 +499,9 @@ func draw_overlay() -> void:
 			for k in [Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(1, 0, 1), Vector3(0, 0, 1)]:
 				quad.append(cam.unproject_position(Vector3(c.x, 0.02, c.y) + k))
 			overlay.draw_colored_polygon(quad, Color(0.18, 0.75, 0.38, 0.45) if ghost_ok else Color(0.9, 0.2, 0.2, 0.5))
-		if carry.is_empty() and Sim.object_at(store, hover) >= 0:
-			var at := cam.unproject_position(Vector3(hover.x + 0.5, 0, hover.y + 0.5))
+		if carry.is_empty() and hover_obj >= 0 and hover_obj < store.objects.size():
+			var oc: Vector2i = store.objects[hover_obj].cell
+			var at := cam.unproject_position(Vector3(oc.x + 0.5 * Sim.FOOT[store.objects[hover_obj].type].x, 0, oc.y + 1.0))
 			overlay.draw_string_outline(font, at + Vector2(-40, 18), "PICK UP", HORIZONTAL_ALIGNMENT_CENTER, 80, 12, 4, Color("2b2d42"))
 			overlay.draw_string(font, at + Vector2(-40, 18), "PICK UP", HORIZONTAL_ALIGNMENT_CENTER, 80, 12, Color.WHITE)
 		return
