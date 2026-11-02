@@ -50,7 +50,7 @@ Each store is played on its own street, carved into the city on its lot:
 - the rival's shop along the street: its shelves behind mullioned glass, a fascia in the chain's stripes, air-conditioning units on the roof;
 - neighbours in that district's own building style;
 - a crossing whose lights the pedestrians wait for, speckled asphalt with manhole covers, yellow tactile paving down both sidewalks, and utility poles with sagging wires along the far side;
-- Tokyo carrying on around it: the side streets and avenues that cross the set run on through it, opening a gap in its sidewalks and its rows of buildings, and the city's own buildings stay wherever the set doesn't build. Only city buildings on the street, in the open ground in front of it, or covering your shop are cleared, along with expressway decks (and their pillars) that would hide the street.
+- Tokyo carrying on around it: the side streets and avenues that cross the set run on through it, opening a gap in its sidewalks and its rows of buildings, and the city's own buildings stay wherever the set doesn't build. Only city buildings on the street, in the open ground in front of it, or covering your shop are cleared, along with expressway decks (and their pillars) that would hide the street. Where the set reaches over water (the bay, a canal, the Sumida) it stands on made ground, its street with a strip either side and the plots of your shop and the rival, so a waterfront store gets a quay and a river runs up to the street and on past it; the neighbours keep out of the water.
 
 Every box in the scene is shaded per face (top brightest, the street face next), so counters, shelves and buildings read as solid.
 

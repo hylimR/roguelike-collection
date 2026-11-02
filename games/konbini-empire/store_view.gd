@@ -1539,6 +1539,13 @@ func build_set() -> void:
 	var span := rival_span(b.rival)
 	var roads := roads_near()
 	var side_roads := roads.filter(func(rd): return rd is Array or rd.size.y > rd.size.x)  # avenues and cross streets
+	# where the set runs out over water (the bay, a canal) it stands on made ground: its street with a strip either
+	# side, and the lots of your shop and the rival. Elsewhere the water stays and the neighbours keep out of it.
+	var made := surface(mat(Color("bfc4a6") if type in ["homes", "oldtown", "park"] else (Color("b8b2a6") if type == "market" else Color("cdc6b6"))))
+	if near_water():
+		for w in water_runs(-9.2, 9.2) + water_runs(-20.2, -7.2, -16.5, span.y):
+			rect_quad(made, w, -0.125)  # over the water, under any bridge
+		roads.append_array(water_runs(SET.position.y, -20.2) + water_runs(-20.2, -7.2, SET.position.x, -16.5) + water_runs(-20.2, -7.2, span.y, SET.end.x))
 	var far_gaps := mouths(-8.2, -3.6, side_roads, Vector2(-16.5, span.y))  # none between your shop and the rival
 	var near_gaps := mouths(3.6, 8.2, side_roads)
 	var walk := surface(mat(Color.WHITE, tiles(Color("c9c4bb"), Color("a9a49b"))))
@@ -1568,7 +1575,7 @@ func build_set() -> void:
 	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042)
 	for bx in [-2.2, 0.2, 2.6]:
 		rect_quad(paint, Rect2(bx, -15.6, 0.12, 4.6), -0.038)
-	commit([walk, tar, paint, kerb, bay, tactile], set_node)
+	commit([made, walk, tar, paint, kerb, bay, tactile], set_node)
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
 		for ring in [[0.46, Color("74767c"), -0.039], [0.36, Color("4d4f55"), -0.037]]:
 			var disc := MeshInstance3D.new()
@@ -1733,6 +1740,39 @@ func roads_near() -> Array:
 	return out
 
 
+## Whether any water reaches into the set: a 4 m sample, narrower than any canal, so inland sets skip the fine scan.
+func near_water() -> bool:
+	var o := Vector2(site.position.x, site.position.z)
+	for x in range(int(SET.position.x), int(SET.end.x) + 1, 4):
+		for z in range(int(SET.position.y), int(SET.end.y) + 1, 4):
+			if Sim.City.is_water(C, o + Vector2(x, z)):
+				return true
+	return false
+
+
+## Water in the band z0..z1 between x0 and x1 (street frame), as runs 1 m deep on a 1 m grid.
+func water_runs(z0: float, z1: float, x0: float = SET.position.x, x1: float = SET.end.x) -> Array:
+	var o := Vector2(site.position.x, site.position.z)
+	var out := []
+	var z := z0
+	while z < z1:
+		var h := minf(1.0, z1 - z)
+		var start := INF
+		var x := x0
+		while x < x1:
+			var wet := Sim.City.is_water(C, o + Vector2(x + 0.5, z + h / 2))
+			if wet and start == INF:
+				start = x
+			elif not wet and start < INF:
+				out.append(Rect2(start, z, x - start, h))
+				start = INF
+			x += 1.0
+		if start < INF:
+			out.append(Rect2(start, z, x1 - start, h))
+		z += h
+	return out
+
+
 ## Where side roads meet the set's sidewalk band z0..z1, as x spans, leaving out any that touch `keep`.
 func mouths(z0: float, z1: float, roads: Array, keep := Vector2(INF, INF)) -> Array:
 	var out := []
@@ -1761,6 +1801,8 @@ static func in_gaps(x: float, gaps: Array) -> bool:
 
 ## The stretches of x0..x1 where the band z0..z1 is clear of every road, as Vector2(from, to), on a 0.5 m grid.
 static func free_runs(x0: float, x1: float, z0: float, z1: float, roads: Array) -> Array:
+	var band := Rect2(x0, z0, x1 - x0, z1 - z0)
+	roads = roads.filter(func(rd): return band.intersects(rd, true) if rd is Rect2 else band.grow(rd[2]).intersects(Rect2(rd[0], Vector2.ZERO).expand(rd[1]), true))
 	var runs := []
 	var start := INF
 	var x := x0
