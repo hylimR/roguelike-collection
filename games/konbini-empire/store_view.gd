@@ -40,8 +40,29 @@ const TRAIN_SPEED := 14.0
 const LANDMARK_PX := 0.085
 const WALK_NEAR := 1.2  # customers' sidewalk line in front of the shop
 const MAX_WALKERS := 70
-const MAX_CARS := 40
+const MAX_CARS := 70
 const PITCH := 30.0
+const SUN := Vector3(-0.35, 1.0, 0.6)  # towards the sun; the building shader lights its faces from here too
+const SHADOW_RES := 4096
+# Ground shadows: a mask rendered from the sun (buildings white on clear), looked up per ground point.
+const SHADOW_SHADER := """
+shader_type spatial;
+render_mode unshaded, depth_draw_never, cull_disabled;
+uniform sampler2D mask : filter_linear;
+uniform mat4 light_vp;
+uniform float strength;
+varying vec3 wpos;
+
+void vertex() {
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+void fragment() {
+	vec4 c = light_vp * vec4(wpos, 1.0);
+	ALBEDO = vec3(0.08, 0.1, 0.2);
+	ALPHA = texture(mask, vec2(c.x, -c.y) * 0.5 + 0.5).a * strength;
+}
+"""
 # Buildings: boxes in a MultiMesh. Custom data = size and facade style (-1: plain shaded colour, for roofs); colour =
 # wall tint, alpha = accent index / 8. Walls pick a 3-unit bay and floor tile from the facade atlas.
 const BUILDING_SHADER := """
@@ -50,14 +71,18 @@ render_mode unshaded, cull_back;
 uniform sampler2D facades : filter_nearest_mipmap;
 uniform sampler2D accents : filter_nearest_mipmap;
 uniform float styles = 10.0;
+uniform float night = 0.0;
 varying vec3 lpos;
+varying vec3 lnrm;
 varying vec4 info;
 varying vec4 tint;
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
+const vec3 ROOF[8] = vec3[8](vec3(0.62, 0.62, 0.6), vec3(0.72, 0.72, 0.7), vec3(0.62, 0.4, 0.32), vec3(0.47, 0.6, 0.38), vec3(0.46, 0.53, 0.6), vec3(0.6, 0.56, 0.5), vec3(0.44, 0.45, 0.48), vec3(0.7, 0.65, 0.53));
 
 void vertex() {
 	info = INSTANCE_CUSTOM;
 	tint = COLOR;
+	lnrm = NORMAL;
 	lpos = (VERTEX + 0.5) * INSTANCE_CUSTOM.xyz;
 }
 
@@ -65,26 +90,35 @@ void fragment() {
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float shade = 0.6 + 0.4 * max(dot(n, normalize(vec3(-0.35, 1.0, 0.6))), 0.0);
 	vec3 col = tint.rgb;
+	vec3 glow = vec3(0.0);
 	if (info.w > -0.5) {
-		if (n.y > 0.5) {
+		float style = floor(info.w);
+		float seed = fract(info.w) * 2.0;
+		int pick = int(tint.a * 8.0) % 8;
+		if (lnrm.y > 0.5) {
 			vec2 e = min(lpos.xz, info.xz - lpos.xz);
-			col = mix(vec3(0.6, 0.6, 0.58), tint.rgb, 0.3) * (min(e.x, e.y) < 0.35 ? 1.1 : 0.9);
+			col = mix(ROOF[pick], tint.rgb, 0.15) * (min(e.x, e.y) < 0.35 ? 1.12 : 0.92);
 		} else {
-			bool front = abs(n.z) > 0.5;
+			bool front = abs(lnrm.z) > 0.5;
 			float width = front ? info.x : info.z;
 			float bays = max(1.0, floor(width / 3.0 + 0.5));
 			vec2 cont = vec2((front ? lpos.x : lpos.z) / width * bays, lpos.y / 3.0);
 			float row = cont.y < 1.0 ? 0.0 : 1.0;
-			vec2 uv = vec2((info.w + fract(cont.x)) / styles, (row + 1.0 - fract(cont.y)) / 2.0);
+			vec2 uv = vec2((style + fract(cont.x)) / styles, (row + 1.0 - fract(cont.y)) / 2.0);
 			vec2 gx = dFdx(cont) / vec2(styles, 2.0);
 			vec2 gy = dFdy(cont) / vec2(styles, 2.0);
 			vec4 t = textureGrad(facades, uv, gx, gy);
-			float acc = textureGrad(accents, uv, gx, gy).r;
-			col = mix(mix(t.rgb, t.rgb * tint.rgb, t.a), ACCENT[int(tint.a * 8.0) % 8] * t.r, acc);
+			vec4 m = textureGrad(accents, uv, gx, gy);
+			col = mix(mix(t.rgb, t.rgb * tint.rgb, t.a), ACCENT[pick] * t.r, m.r);
+			// after dark about half the windows light up, each its own, and signs keep shining
+			vec2 cell = floor(cont) + vec2(lnrm.x * 7.0 + lnrm.z * 3.0, seed * 91.0);
+			float r = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
+			vec3 lamp = r > 0.85 ? vec3(0.78, 0.86, 1.0) : vec3(1.0, 0.8, 0.48);
+			glow = (m.g * step(0.6, r) * lamp + m.r * ACCENT[pick] * 0.9) * night;
 		}
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
 	}
-	ALBEDO = col * shade;
+	ALBEDO = col * shade * (1.0 - 0.62 * night) + glow;
 }
 """
 # wall = crop of the side-view background used as the back wall texture
@@ -143,11 +177,13 @@ var roof_base: Array = []
 var pillar_mm: MultiMesh
 var pillar_base: Array = []
 var tree_mms: Array = []  # [MultiMesh, base transforms, height]
+var mask_vp: SubViewport  # the city seen from the sun, for ground shadows
 var shadow_mesh: CylinderMesh
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
 var cam_base := 12.0
 var zoom := 1.0
+var yaw := PI / 4
 
 var vp: SubViewport
 var vp_scale := 1.0  # real pixels per UI unit
@@ -301,6 +337,7 @@ func set_mode(m: String) -> void:
 	mode = m
 	cam_offset = Vector3.ZERO
 	zoom = 1.0
+	yaw = PI / 4  # the shop cutaway is drawn for this angle
 	pick = "" if m == "store" else pick
 	update_camera()
 	update_fade()
@@ -318,7 +355,7 @@ func update_camera() -> void:
 		cam.size = (lot.x + lot.y) * 0.6 * zoom
 	var pitch := deg_to_rad(PITCH)
 	target += cam_offset
-	cam.position = target + Vector3(sin(PI / 4) * cos(pitch), sin(pitch), cos(PI / 4) * cos(pitch)) * 400.0
+	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * 400.0
 	cam.far = 900.0
 	cam.look_at(target)
 	overlay.queue_redraw()
@@ -434,7 +471,7 @@ func multimesh(mesh: Mesh, count: int, colors := false, custom := false) -> Mult
 	return mm
 
 
-func mm_node(mm: MultiMesh, m: Material, parent: Node3D) -> MultiMeshInstance3D:
+func mm_node(mm: MultiMesh, m: Material, parent: Node) -> MultiMeshInstance3D:
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.material_override = m
@@ -485,6 +522,7 @@ func build_static() -> void:
 	build_elevated()
 	build_buildings()
 	build_trees()
+	build_shadows()
 	for L in C.landmarks:
 		var lm: Array = C.districts[L.d].lm
 		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_PX, Vector3(L.pos.x + 3.0, 0, L.pos.y + 3.0), lm_sprites)
@@ -535,9 +573,9 @@ func build_roads() -> void:
 		ribbon(tar, pts, half - SW, SW - half, -0.11)
 		if av.shuto == "":
 			ribbon(solid, pts, 0.12, -0.12, -0.1)
-			var lane: float = (half - SW) / 2
-			ribbon(dash, pts, lane + 0.07, lane - 0.07, -0.1, 0.5)
-			ribbon(dash, pts, -lane + 0.07, -lane - 0.07, -0.1, 0.5)
+			var mid_lane: float = (half - SW) / 2
+			ribbon(dash, pts, mid_lane + 0.07, mid_lane - 0.07, -0.1, 0.5)
+			ribbon(dash, pts, -mid_lane + 0.07, -mid_lane - 0.07, -0.1, 0.5)
 		else:
 			ribbon(solid, pts, 0.6, -0.6, -0.1)  # the expressway's pillars stand on this median
 		# bridges: railings where the avenue crosses water
@@ -573,7 +611,7 @@ func build_elevated() -> void:
 	for sh in C.shuto:
 		routes.append([sh.pts, sh.closed, Sim.City.EXPRESS_W, "shuto"])
 	for rp in C.ramps:
-		routes.append([rp, false, Sim.City.RAMP_W, "ramp"])
+		routes.append([rp.pts, false, Sim.City.RAMP_W, "ramp"])
 	routes.append([flat3(C.rail, Sim.City.RAIL_DECK), true, 3.6, "rail"])
 	for rt in routes:
 		var pts: PackedVector3Array = rt[0].duplicate()
@@ -637,22 +675,24 @@ func build_buildings() -> void:
 	brecs.clear()
 	for bd in all:
 		var r: Rect2 = bd.rect
+		var c: Vector2 = bd.center
+		var sz: Vector2 = bd.size
 		var h: float = bd.floors * Sim.City.FLOOR
 		var rec := {"foot": r, "h": h, "box": [boxes.size()], "roof": -1, "hidden": false}
 		var tint: Color = bd.tint
 		tint.a = (bd.accent + 0.5) / 8.0
-		boxes.append([Vector3(r.size.x, h, r.size.y), Vector3(r.get_center().x, h / 2, r.get_center().y), tint, bd.style])
+		boxes.append([Vector3(sz.x, h, sz.y), Vector3(c.x, h / 2, c.y), tint, bd.style + bd.kit * 0.49, bd.angle])
 		if bd.roof != "":
-			var rh := minf(r.size.x, r.size.y) * 0.32
+			var rh := minf(sz.x, sz.y) * 0.32
 			rec.roof = roofs.size()
-			roofs.append([r, h, rh, Color(bd.roof)])
+			roofs.append([c, sz, h, rh, Color(bd.roof), bd.angle])
 			rec.h += rh
-		elif bd.floors >= 3 and r.size.x > 6.0 and r.size.y > 6.0:
+		elif bd.floors >= 3 and bd.angle == 0.0 and r.size.x > 6.0 and r.size.y > 6.0:
 			var k: float = bd.kit
 			var ks := Vector3(1.6 + 1.6 * k, 1.2, 1.4 + 1.8 * (1.0 - k))
 			var at_ := Vector3(r.position.x + 1.0 + ks.x / 2 + (r.size.x - ks.x - 2.0) * k, h + 0.6, r.position.y + 1.0 + ks.z / 2 + (r.size.y - ks.z - 2.0) * (1.0 - k))
 			rec.box.append(boxes.size())
-			boxes.append([ks, at_, Color("c9c7c0"), Sim.City.PLAIN])
+			boxes.append([ks, at_, Color("c9c7c0"), Sim.City.PLAIN, 0.0])
 		brecs.append(rec)
 	var shader := Shader.new()
 	shader.code = BUILDING_SHADER
@@ -667,7 +707,7 @@ func build_buildings() -> void:
 	box_base.clear()
 	for k in boxes.size():
 		var e: Array = boxes[k]
-		var tf := Transform3D(Basis.from_scale(e[0]), e[1])
+		var tf := Transform3D(Basis(Vector3.UP, e[4]) * Basis.from_scale(e[0]), e[1])
 		box_mm.set_instance_transform(k, tf)
 		box_mm.set_instance_color(k, e[2])
 		box_mm.set_instance_custom_data(k, Color(e[0].x, e[0].y, e[0].z, e[3]))
@@ -677,16 +717,58 @@ func build_buildings() -> void:
 	roof_base.clear()
 	for k in roofs.size():
 		var e: Array = roofs[k]
-		var r: Rect2 = e[0]
-		var basis := Basis.from_scale(Vector3(r.size.x, e[2], r.size.y))
-		if r.size.x > r.size.y:  # ridge along the longer side
-			basis = Basis(Vector3.UP, PI / 2) * Basis.from_scale(Vector3(r.size.y, e[2], r.size.x))
-		var tf := Transform3D(basis, Vector3(r.get_center().x, e[1] + e[2] / 2, r.get_center().y))
+		var sz: Vector2 = e[1]
+		var basis := Basis.from_scale(Vector3(sz.x, e[3], sz.y))
+		if sz.x > sz.y:  # ridge along the longer side
+			basis = Basis(Vector3.UP, PI / 2) * Basis.from_scale(Vector3(sz.y, e[3], sz.x))
+		var tf := Transform3D(Basis(Vector3.UP, e[5]) * basis, Vector3(e[0].x, e[2] + e[3] / 2, e[0].y))
 		roof_mm.set_instance_transform(k, tf)
-		roof_mm.set_instance_color(k, e[3])
+		roof_mm.set_instance_color(k, e[4])
 		roof_mm.set_instance_custom_data(k, Color(0, 0, 0, -1))
 		roof_base.append(tf)
 	mm_node(roof_mm, building_mat, city)
+
+
+## Ground shadows: the buildings, pillars and decks rendered from the sun into a mask, then a shadow plane over the
+## ground looks each point up in it. Overlapping shadows don't darken twice; hidden buildings drop their shadow.
+func build_shadows() -> void:
+	if mask_vp:
+		mask_vp.free()
+	mask_vp = SubViewport.new()
+	mask_vp.own_world_3d = true
+	mask_vp.transparent_bg = true
+	mask_vp.size = Vector2i(SHADOW_RES, SHADOW_RES)
+	mask_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(mask_vp)
+	var white := StandardMaterial3D.new()
+	white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	white.cull_mode = BaseMaterial3D.CULL_DISABLED
+	for mm in [box_mm, roof_mm, pillar_mm]:
+		mm_node(mm, white, mask_vp)
+	for part in elevated:
+		var mi := MeshInstance3D.new()
+		mi.mesh = part[0].mesh
+		mi.material_override = white
+		mask_vp.add_child(mi)
+		part.append(mi)
+	var b: Rect2 = C.bounds
+	var mid := Vector3(b.get_center().x, 0, b.get_center().y)
+	var sun := Camera3D.new()
+	sun.projection = Camera3D.PROJECTION_ORTHOGONAL
+	sun.size = b.size.length()
+	sun.near = 1.0
+	sun.far = 1500.0
+	mask_vp.add_child(sun)
+	sun.position = mid + SUN.normalized() * 600.0
+	sun.look_at(mid)
+	sun.current = true
+	var sm := ShaderMaterial.new()
+	sm.shader = Shader.new()
+	sm.shader.code = SHADOW_SHADER
+	sm.set_shader_parameter("mask", mask_vp.get_texture())
+	sm.set_shader_parameter("light_vp", sun.get_camera_projection() * Projection(sun.global_transform.affine_inverse()))
+	sm.set_shader_parameter("strength", 0.42)
+	plane(city, b.grow(200.0).size, Vector3(mid.x, -0.06, mid.z), sm)
 
 
 ## Facade tiles, 32 px a bay (3 units) by a floor, one column per style: row 0 the ground floor, row 1 the floors
@@ -705,7 +787,8 @@ func facade_atlas() -> Array:
 			var r := func(x: int, y: int, w: int, h: int, c: Color) -> void:
 				var box := Rect2i(s * 32 + x, row * 32 + y, w, h)
 				img.fill_rect(box, Color(c.r, c.g, c.b, 0.0) if c.a == 0.5 else c)
-				mask.fill_rect(box, Color.WHITE if c.a == 0.5 else Color.BLACK)
+				var lit := c.a == 0.0 and c.to_html(false) in WINDOWS
+				mask.fill_rect(box, Color(1, 0, 0) if c.a == 0.5 else (Color(0, 1, 0) if lit else Color.BLACK))
 			var up := row == 1
 			match s:
 				0:  # glass curtain wall
@@ -810,6 +893,9 @@ func facade_atlas() -> Array:
 	img.generate_mipmaps()
 	mask.generate_mipmaps()
 	return [ImageTexture.create_from_image(img), ImageTexture.create_from_image(mask)]
+
+
+const WINDOWS := ["3d5a78", "4f6f8c", "26313e", "5d7f9c", "2c3644", "e8d9a0", "8fb3c0", "ece6d2", "e8e0c8", "c9b98a", "39475a", "e8dcb0"]
 
 
 static func wall_px(v: float) -> Color:
@@ -991,6 +1077,10 @@ func update_fade() -> void:
 		pillar_mm.set_instance_transform(k, away if on and shop_at.distance_to(Vector2(p.x, p.z)) < 24.0 else pillar_base[k])
 	for part in elevated:
 		part[0].visible = not on or shop_at.distance_to(Geometry2D.get_closest_point_to_segment(shop_at, part[1], part[2])) > 26.0
+		if part.size() > 3:
+			part[3].visible = part[0].visible
+	if mask_vp:
+		mask_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 ## Screen-plane box of a footprint standing h tall.
@@ -1020,12 +1110,28 @@ func build_paths() -> void:
 		var pts := PackedVector3Array([Vector3(s.from, 0, c), Vector3(s.to, 0, c)] if s.axis == "h" else [Vector3(c, 0, s.from), Vector3(c, 0, s.to)])
 		paths.append(make_path(pts, s.w, "street", false))
 	for av in C.avenues:
-		paths.append(make_path(flat3(av.pts), av.w, "avenue", false))
+		var pa := make_path(flat3(av.pts), av.w, "avenue", false)
+		pa.name = av.name
+		paths.append(pa)
+	var decks := {}  # avenue name -> the expressway path above it
 	for sh in C.shuto:
 		var pts: PackedVector3Array = sh.pts.duplicate()
 		for i in pts.size():
 			pts[i] = pts[i] + Vector3(0, 0.3, 0)
-		paths.append(make_path(pts, Sim.City.EXPRESS_W, "shuto", sh.closed))
+		var pa := make_path(pts, Sim.City.EXPRESS_W, "shuto", sh.closed)
+		paths.append(pa)
+		decks[sh.name] = pa
+	for rp in C.ramps:
+		var av: Dictionary = C.avenues[rp.av]
+		var pts: PackedVector3Array = rp.pts.duplicate()
+		for i in pts.size():
+			pts[i] = pts[i] + Vector3(0, 0.3 * pts[i].y / Sim.City.DECK, 0)
+		var pa := make_path(pts, Sim.City.RAMP_W, "ramp", false)
+		pa.dir = rp.side  # traffic keeps left: one way down each ramp
+		pa.s0 = rp.s0
+		pa.ground = paths.filter(func(q): return q.kind == "avenue" and q.name == av.name)[0]
+		pa.deck = decks[av.shuto]
+		paths.append(pa)
 	rail_path = make_path(flat3(C.rail, Sim.City.RAIL_DECK + 0.3), 3.6, "rail", true)
 	for trn in trains:
 		trn.node.queue_free()
@@ -1083,7 +1189,7 @@ func view_rect() -> Rect2:
 ## A walker on a sidewalk (or a car in a lane) of a road in view; new ones start near the view's edge.
 func spawn_mover(is_car: bool, mid := false) -> void:
 	var view := view_rect()
-	var cands := paths.filter(func(pa): return pa.box.intersects(view) and (is_car or pa.kind != "shuto"))
+	var cands := paths.filter(func(pa): return pa.box.intersects(view) and (is_car or pa.kind not in ["shuto", "ramp"]))
 	if cands.is_empty():
 		return
 	var p: Dictionary = cands[randi() % cands.size()]
@@ -1106,13 +1212,11 @@ func spawn_mover(is_car: bool, mid := false) -> void:
 			break
 	if s < 0.0:
 		return
-	var dir := 1.0 if randf() < 0.5 else -1.0
+	var dir: float = p.get("dir", 1.0 if randf() < 0.5 else -1.0)
 	var m := {"path": p, "s": s, "v": 0.0, "lat": 0.0, "y": 0.0, "dir": Vector3.RIGHT}
 	var node: Sprite3D
 	if is_car:
-		var half: float = p.w / 2 - (0.6 if p.kind == "shuto" else Sim.City.SIDEWALK)
-		var lanes := 1 if p.w <= Sim.ROAD else 2
-		m.lat = dir * half * (randi() % lanes + 0.5) / lanes  # keep left
+		m.lat = lane(p, dir, randi() % 2)
 		if cars.any(func(o): return o.path == p and signf(o.v) == dir and absf(o.lat - m.lat) < 0.5 and absf(o.s - s) < 7.0):
 			return  # keep cars apart in their lane
 		m.kv = randi() % 4
@@ -1132,6 +1236,25 @@ func spawn_mover(is_car: bool, mid := false) -> void:
 	m.node = node
 	street.add_child(node)
 	place(m)
+
+
+## Lateral offset of a lane for traffic going `dir` along path p (keep left; lane 0 is the inner one).
+func lane(p: Dictionary, dir: float, k: int) -> float:
+	if p.kind == "ramp":
+		return 0.0
+	var half: float = p.w / 2 - (0.6 if p.kind == "shuto" else Sim.City.SIDEWALK)
+	var lanes := 1 if p.w <= Sim.ROAD else 2
+	return dir * half * (mini(k, lanes - 1) + 0.5) / lanes
+
+
+## A car that reaches the end of a ramp carries on along the avenue below or the expressway above, outer lane.
+func off_ramp(o: Dictionary) -> void:
+	var p: Dictionary = o.path
+	var top: bool = p.pts[-1 if o.v > 0.0 else 0].y > 1.0
+	var next: Dictionary = p.deck if top else p.ground
+	o.path = next
+	o.s = p.s0 + (Sim.City.RAMP_L if o.v > 0.0 else 0.0)
+	o.lat = lane(next, signf(o.v), 1)
 
 
 func clear_street() -> void:
@@ -1180,7 +1303,7 @@ func street_life(delta: float) -> void:
 	next_car -= delta * busy
 	if next_car <= 0.0 and cars.size() < MAX_CARS:
 		spawn_mover(true)
-		next_car = randf_range(0.3, 0.9)
+		next_car = randf_range(0.12, 0.45)
 	var view := view_rect().grow(6.0)
 	var gone := []
 	for o in walkers + cars:
@@ -1188,6 +1311,8 @@ func street_life(delta: float) -> void:
 		if o.path.closed:
 			o.s = fposmod(o.s, o.path.cum[-1])
 		var at_: Vector3 = o.node.position
+		if (o.s < 0.0 or o.s > o.path.cum[-1]) and o.path.kind == "ramp":
+			off_ramp(o)
 		if o.s < 0.0 or o.s > o.path.cum[-1] or not view.has_point(Vector2(at_.x, at_.z)) or (not close and o.has("a")):
 			gone.append(o)
 			continue
@@ -1392,6 +1517,11 @@ func object_under(pos: Vector2) -> int:
 func _gui_input(e: InputEvent) -> void:
 	if e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		zoom = clampf(zoom * (0.9 if e.button_index == MOUSE_BUTTON_WHEEL_UP else 1.1), 0.04 if mode == "city" else 0.55, 1.4 if mode == "city" else 6.0)
+		update_camera()
+		accept_event()
+		return
+	if mode == "city" and e is InputEventMouseMotion and e.button_mask & MOUSE_BUTTON_MASK_RIGHT:
+		yaw -= e.relative.x * 0.006
 		update_camera()
 		accept_event()
 		return
@@ -1647,8 +1777,10 @@ func draw_overlay() -> void:
 		overlay.draw_string(font, at + Vector2(-30, 0), f.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("2f9e5b"))
 	var hour := 6.0 + progress() * 24.0
 	var night := clampf((hour - 18.0) / 4.0, 0.0, 1.0) * (1.0 - clampf((hour - 28.0) / 2.0, 0.0, 1.0))
+	if building_mat and building_mat.get_shader_parameter("night") != night:
+		building_mat.set_shader_parameter("night", night)
 	if night > 0.0:
-		overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.07, 0.25, 0.38 * night))
+		overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.07, 0.25, 0.32 * night))
 	if playing:
 		var clock := "%02d:00  %s" % [int(hour) % 24, Sim.BLOCKS[mini(5, int(progress() * 6.0))]]
 		overlay.draw_rect(Rect2(8, 8, 150, 24), Color(0.17, 0.18, 0.26, 0.85))

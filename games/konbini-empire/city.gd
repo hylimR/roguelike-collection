@@ -269,7 +269,7 @@ static func _build() -> Dictionary:
 	# avenues, the expressway above the carriers, ramps from the deck down to the avenue
 	C.avenues = []
 	C.shuto = [{"name": "C1", "pts": _deck(smooth(C1, true), DECK), "closed": true}]
-	C.ramps = []
+	C.ramps = []  # {pts, av: the avenue below, s0: where along it the ramp starts, side: +1 left of its direction}
 	for av in AVENUES:
 		var pts := smooth(av.pts)
 		C.avenues.append({"name": av.name, "w": av.w, "pts": pts, "shuto": av.get("shuto", "")})
@@ -279,8 +279,9 @@ static func _build() -> Dictionary:
 			var cum := cumulative(pts)
 			var s0: float = cum[-1] * 0.42
 			for side in [1.0, -1.0]:
-				C.ramps.append(_ramp(pts, cum, s0, side, side > 0))
-				C.ramps.append(_ramp(pts, cum, s0 + RAMP_L + 24.0, side, side < 0))
+				for s in [s0, s0 + RAMP_L + 24.0]:
+					var down: bool = (side > 0) == (s == s0)  # off-ramps first, on-ramps after, for traffic keeping left
+					C.ramps.append({"pts": _ramp(pts, cum, s, side, down), "av": C.avenues.size() - 1, "s0": s, "side": side})
 	var rainbow := smooth(RAINBOW)
 	var rb := _deck(rainbow, DECK)
 	var rcum := cumulative(rainbow)
@@ -293,7 +294,7 @@ static func _build() -> Dictionary:
 		if sh.name in ["C1", "11"]:
 			_add_corridor(C, _flat(sh.pts), EXPRESS_W / 2 + 1.5, sh.closed)
 	for rp in C.ramps:
-		_add_corridor(C, _flat(rp), RAMP_W / 2 + 1.0)
+		_add_corridor(C, _flat(rp.pts), RAMP_W / 2 + 1.0)
 	# the Yamanote loop, pulled a little inside its stations so it skirts their landmarks
 	var stations := []
 	for stn in YAMANOTE:
@@ -516,7 +517,8 @@ const MIX := {
 }
 
 
-## Every building in Tokyo: {rect, floors, style, tint, accent, roof: "" | gable roof colour}. Fixed seed, cached.
+## Every building in Tokyo: {rect (bounding box), center, size, angle, floors, style, tint, accent, roof: "" | gable
+## roof colour}. Fixed seed, cached.
 static func buildings() -> Array:
 	if not _buildings.is_empty():
 		return _buildings
@@ -525,7 +527,94 @@ static func buildings() -> Array:
 	rng.seed = 23
 	for b in C.blocks:
 		_fill_block(C, b, rng, _buildings)
+	_line_avenues(C, rng, _buildings)
 	return _buildings
+
+
+## Buildings turned to face the curved avenues, filling what the square blocks leave beside them.
+static func _line_avenues(C: Dictionary, rng: RandomNumberGenerator, out: Array) -> void:
+	for st in C.streets:  # the side streets join the corridors now that every lot is placed
+		var c: float = st.line + st.w / 2
+		var a := Vector2(st.from, c) if st.axis == "h" else Vector2(c, st.from)
+		var b := Vector2(st.to, c) if st.axis == "h" else Vector2(c, st.to)
+		_add_corridor(C, PackedVector2Array([a, b]), st.w / 2)
+	var placed := {}  # bucket -> footprints already standing
+	for bd in out:
+		_add_poly(placed, _corners(bd.center, bd.size, 0.0))
+	for av in C.avenues:
+		var pts: PackedVector2Array = av.pts
+		var cum := cumulative(pts)
+		for side in [1.0, -1.0]:
+			var s := 3.0
+			while s < cum[-1] - 16.0:
+				var n := nearest(C, at(pts, cum, s)[0])
+				var d: Dictionary = C.districts[n[0]]
+				var mix: Array = MIX["office" if d.type == "palace" else d.type]
+				var m: Array = mix[rng.rand_weighted(PackedFloat32Array(mix.map(func(x): return float(x[0]))))]
+				var full := Vector2(rng.randf_range(m[4], minf(m[5], 14.0)), rng.randf_range(m[6], minf(m[7], 13.0)))
+				var step := 2.0  # side streets cut the frontage into wedges: slide on and squeeze in smaller ones
+				for size in [full, full * Vector2(0.6, 0.7), Vector2(5.0, 6.0)]:
+					var mid: Array = at(pts, cum, s + size.x / 2)
+					var dir: Vector2 = mid[1]
+					var c: Vector2 = mid[0] + Vector2(dir.y, -dir.x) * side * (av.w / 2 + 1.0 + size.y / 2)
+					var ang := atan2(-dir.y, dir.x)
+					var poly := _corners(c, size, ang)
+					if n[1] < URBAN and not _obb_blocked(C, placed, poly, c, ang, size):
+						var near: float = c.distance_to(d.center)
+						var floors := maxi(1, roundi(rng.randf_range(m[2], m[3] + 0.99) * lerpf(1.0, 0.55, clampf(near / 90.0, 0.0, 1.0))))
+						var bd := _building(rng, m[1], _bounds(poly), floors)
+						bd.center = c
+						bd.size = size
+						bd.angle = ang
+						out.append(bd)
+						_add_poly(placed, poly)
+						step = size.x + 0.7
+						break
+				s += step
+
+
+## Corners of a size.x by size.y footprint centred on c, its x side along (cos ang, -sin ang).
+static func _corners(c: Vector2, size: Vector2, ang: float) -> PackedVector2Array:
+	var ex := Vector2(cos(ang), -sin(ang)) * size.x / 2
+	var ez := Vector2(sin(ang), cos(ang)) * size.y / 2
+	return PackedVector2Array([c - ex - ez, c + ex - ez, c + ex + ez, c - ex + ez])
+
+
+static func _bounds(poly: PackedVector2Array) -> Rect2:
+	var r := Rect2(poly[0], Vector2.ZERO)
+	for q in poly:
+		r = r.expand(q)
+	return r
+
+
+static func _add_poly(placed: Dictionary, poly: PackedVector2Array) -> void:
+	for k in _bucket_keys(_bounds(poly)):
+		if not placed.has(k):
+			placed[k] = []
+		placed[k].append(poly)
+
+
+## blocked() for a turned footprint: roads in its own frame, lots and other buildings as polygons, water and parks.
+static func _obb_blocked(C: Dictionary, placed: Dictionary, poly: PackedVector2Array, c: Vector2, ang: float, size: Vector2) -> bool:
+	var ex := Vector2(cos(ang), -sin(ang))
+	var ez := Vector2(sin(ang), cos(ang))
+	var local := Rect2(-size / 2, size)
+	for k in _bucket_keys(_bounds(poly)):
+		for sg in C.corridors.get(k, []):
+			var a: Vector2 = sg[0] - c
+			var b: Vector2 = sg[1] - c
+			if seg_rect_dist(Vector2(a.dot(ex), a.dot(ez)), Vector2(b.dot(ex), b.dot(ez)), local) < sg[2]:
+				return true
+		for q in C.reserved.get(k, []):
+			if not Geometry2D.intersect_polygons(poly, PackedVector2Array([q.position, Vector2(q.end.x, q.position.y), q.end, Vector2(q.position.x, q.end.y)])).is_empty():
+				return true
+		for other in placed.get(k, []):
+			if not Geometry2D.intersect_polygons(poly, other).is_empty():
+				return true
+	for q in Array(poly) + [c]:
+		if is_water(C, q) or in_park(C, q):
+			return true
+	return false
 
 
 static func _fill_block(C: Dictionary, b: Dictionary, rng: RandomNumberGenerator, out: Array) -> void:
@@ -584,4 +673,4 @@ static func _row(C: Dictionary, rng: RandomNumberGenerator, out: Array, type: St
 static func _building(rng: RandomNumberGenerator, style: int, fp: Rect2, floors: int) -> Dictionary:
 	var tints: Array = TINTS[style]
 	var gable := style in [HOUSE, WOOD] and floors <= 2
-	return {"rect": fp, "floors": maxi(1, floors), "style": style, "tint": Color(tints[rng.randi() % tints.size()]) * rng.randf_range(0.94, 1.04), "accent": rng.randi() % 8, "roof": ROOFS[rng.randi() % ROOFS.size()] if gable else "", "kit": rng.randf()}
+	return {"rect": fp, "center": fp.get_center(), "size": fp.size, "angle": 0.0, "floors": maxi(1, floors), "style": style, "tint": Color(tints[rng.randi() % tints.size()]) * rng.randf_range(0.94, 1.04), "accent": rng.randi() % 8, "roof": ROOFS[rng.randi() % ROOFS.size()] if gable else "", "kit": rng.randf()}
