@@ -1,15 +1,93 @@
 # Konbini Empire
 
-Run a konbini in Tokyo against rival chains, one day at a time. The city is 48 real neighbourhoods laid out roughly where they are: Shinjuku, Shibuya, Ikebukuro, Ueno and Tokyo Station as Yamanote Line hubs, Ginza and Aoyama luxury, Roppongi and Ebisu nightlife, Akihabara otaku, Asakusa and Odaiba tourists, Sugamo grandmothers, Tsukiji early workers, the Imperial Palace in the middle. Each sends out its own crowd at its own hours. The city is drawn like a city builder: blocks split again and again so side streets meet in T-junctions, curved avenues (Meiji-dori, Yasukuni-dori, Chuo-dori...) cut across them, the elevated Shuto expressway rings the palace (C1) and runs out along the radial avenues with ramps down to the street, the Rainbow Bridge crosses to Odaiba, and Yamanote trains circle on their viaduct. Every block is packed with 3D buildings in a pixel facade shader: glass towers round the station hubs, neon buildings in the nightlife districts, wooden machiya in the old town, houses with gable roofs in the suburbs, warehouses by the markets. The Sumida runs under bridges, the bay holds Tsukishima, Toyosu and Odaiba, and parks (the palace and its moat, Ueno, Yoyogi, Shinjuku Gyoen) are full of trees. Buildings line the curved avenues too, turned to face them, and everything casts a shadow away from the sun. Landmarks (Tokyo Tower, Skytree, Kaminarimon, Shibuya crossing and more) are Codex pixel art; traffic keeps left, including up on the expressway, and cars come down the off-ramps onto the avenues and climb the on-ramps. As the day replay runs into the night, office and flat windows light up and the neon signs glow. The day's weather shows over the city and the shop: grey rain, a typhoon's driving rain, cold-snap snow or heatwave haze, with fewer people out in bad weather. Beyond the built-up edge, homes thin out along the outbound highways into a patchwork of fields and woods, and the bay opens to the south. Every shopper picks a store by distance, prices, reputation and decor, or stays home, so your shoppers are the ones you win from Sora Store, Maru Mart, Midori 24 and Yoru Mart. Rivals open stores where the crowds are (aggressive ones right next to yours), start price wars when anyone opens nearby, close stores that lose money, borrow to expand and sometimes go bankrupt. Open branches on free lots or buy out rival stores from the city map (CITY or M). Each shop is shown on its own street: an orthographic 45-degree camera over a cutaway shop between its neighbours, with the buildings, trees and expressway in front of it cut away. Customers peel off the sidewalk into your shop; the street gets busier at rush hour. Drag to pan, scroll to zoom, right-drag to turn the city map (street names and expressway route shields appear close up; names that would overlap are left out until you zoom in). Each morning you see the weather and the day's event, stock six shelves at today's wholesale prices and set price tags. Open the shop and watch customers browse, buy or leave asking for things you don't carry. Food, milk, fish, flowers and papers spoil at close. Rent is due every Sunday and rises 10% a week; miss it and the run ends. After each day you draft one of three upgrades (staff, self-checkout, fryer, truck, lucky cat...). Renovate into a supermarket (12 shelves, fresh food), open branches, and build the flagship hypermarket to win.
+Run konbini across Tokyo in real time, each one in a street fight with the rival chain next door. Every day runs from 06:00 to midnight, and two and a half minutes at 1x. Passers-by walk the street, and those after something you stock pick your shop or the rival's by how appealing each is. Customers take an item off the shelf, queue at the till, and pay when a cashier, or you, rings them up. Every sale also hits the rival's takings (its HP). Each rival customer heals it. Drive it to zero and it closes for good; two days later a tougher chain moves in.
 
-ARRANGE mode lets you move shelf units and the counter around a floor grid and buy decorations (plants, sakura tree, gachapon, vending machine, ATM, aquarium...). Each decoration adds appeal (+2% customers per point) or a specific effect; customers path around whatever you place, and a spot that would wall off a shelf or the till shows red. Renovating keeps decorations that still fit.
+The rival fights back. It warns a few seconds ahead, then launches an attack:
+
+- a flyer promoter or a mascot parade that poaches your customers;
+- trash bags dumped at your door;
+- a price war;
+- fake reviews;
+- shoplifters;
+- a blackout that stops the tills;
+- a hostile takeover by three suits who each grab 15% of your cash at the door.
+
+Click a threat to chase it off. Click the till to ring up a waiting customer; fast ring-ups build a combo that multiplies XP. Click a shelf to restock it. Customers who find an empty shelf, a full queue or a slow till leave angry, and your rating drops.
+
+Spend what you earn on staff:
+
+- cashiers;
+- stock clerks, who never touch tonight's bills;
+- cleaners for spills and trash;
+- a guard;
+- a promoter on the sidewalk.
+
+Each applicant has a trait, such as speedy, slacker, night owl or charming. Every level-up and every closed rival or milestone offers a card: skills, the five abilities (Flyer Blitz, Time Sale, Counter Campaign, Influencer Visit, Express Truck), and legendary rewards. Expansions for each store add product lines (coffee, karaage and oden at the counter; beer, ice cream and daily goods on more floor; bento, cup noodles and manga on the most floor), knock through a wall, or buy a neon sign, second register, vending machine, gacha corner, ATM, bench, camera or delivery bike.
+
+New stores open on Tokyo lots. Each lot's neighbourhood type sets its foot traffic, rent, what the locals buy and how tough a rival it draws. Each lot also has a quirk: corner lot, bargain lease, haunted unit, tourist hotspot, bus stop or school. Rent rises the longer you hold a store. Rent and wages for the whole chain are due at midnight. If you're short, the bank forecloses your weakest store; with nothing left to take, the run ends. Street events (matsuri, heatwave, cold snap, TV feature, roadworks, health inspection) change a store's day. The heatwave's haze and the cold snap's snow show on the street.
+
+The city is 48 real neighbourhoods laid out roughly where they are:
+
+- Shinjuku, Shibuya, Ikebukuro, Ueno and Tokyo Station as Yamanote Line hubs;
+- Ginza and Azabu for luxury;
+- Roppongi and Ebisu for nightlife;
+- Akihabara for otaku;
+- Asakusa and Odaiba for tourists;
+- Sugamo's grandmothers and Tsukiji's early workers;
+- the Imperial Palace in the middle.
+
+It's drawn like a city builder:
+
+- Blocks split into side streets that meet in T-junctions, and curved avenues cut across them.
+- The elevated Shuto expressway rings the palace and runs out along the radial avenues, with ramps down to the street.
+- The Rainbow Bridge crosses to Odaiba, and Yamanote trains circle on their viaduct.
+- Every block is packed with 3D buildings drawn by a pixel facade shader: glass towers at the hubs, neon in the nightlife districts, wooden machiya in the old town, gable-roofed houses in the suburbs.
+- Beyond the built-up edge, homes thin out into fields and woods, and the bay opens to the south.
+
+Each store is played on its own street, carved into the city on its lot:
+
+- your shop as a cutaway;
+- the rival's shop along the street;
+- neighbours in that district's own building style;
+- a crossing whose lights the pedestrians wait for;
+- Tokyo carrying on around it.
+
+At night the windows and neon signs light up. Press M for the city map, which shows your branches and their rivals and highlights the lots on offer when you look for a new store.
 
 **Run:** open `project.godot` in Godot 4.6 and press Play.
 
-**Controls:** mouse or touch. `Space`/`Enter` opens the shop, skips the day replay and continues; `Tab` switches store; `M` toggles the city map (click a lot for details, a free lot to open a branch, a rival store to buy it out); `G` opens Expand; `E` toggles Arrange (click an object to pick it up, click a tile to drop it, right-click or `Esc` cancels); `1`-`4` picks an upgrade; `Esc` closes a dialog. The seed button starts a new run, optionally with a seed.
+**Controls:** mouse and keyboard (on a touch screen, taps act as clicks).
 
-**Check:** `godot --headless --path games/konbini-empire --script res://tests/balance.gd` plays 120 seeded runs with a greedy bot, asserts the supermarket and flagship are reachable, that runs can go bankrupt, that a seed replays identically, that every shopper the city generates either picks a store or stays home, that rivals open stores and chains go bankrupt across runs, and that floor-plan rules hold (overlaps and walled-in shelves refused, decor sells and survives a refit).
+- **Click:** threats, the till and shelves. Drag to pan, scroll to zoom.
+- **Space:** pause.
+- **F:** speed (1x, 2x, 3x).
+- **R:** ring up.
+- **1-5:** abilities.
+- **P:** open a pending card.
+- **S:** staff.
+- **G:** expand this store.
+- **N:** new store.
+- **M:** city map; right-drag turns it.
+- **Tab:** next store.
+- **Esc:** close.
 
-**Code:** `city.gd` lays Tokyo out (districts, water, parks, streets, avenues, expressway, lots, buildings; built once and cached), `sim.gd` holds the rules, `store_view.gd` draws the city and the shop, `main.gd` the UI.
+Cards, the staff panel and the nightly report pause the game. The seed button starts a new run, optionally with a seed.
 
-**Art:** sprites and backgrounds generated by Codex image_gen on a magenta key, cut and downsampled into `art/`; building facades are drawn in code. Font: Noto Sans (SIL Open Font License).
+**Check:** `godot --headless --path games/konbini-empire --script res://tests/balance.gd`. It checks:
+
+- the random generator against reference vectors;
+- the XP, expansion, reroll, store-price, rent-age and rival-HP curves;
+- appeal values and listing prices;
+- the starting state;
+- that a rejected action leaves the seed alone.
+
+A bot then plays eight days on two seeds, asserting invariants every step and that a seed replays identically.
+
+**Code:**
+
+- `sim.gd` holds the rules: no nodes, and positions in a street frame of 1 m units, with your door at x = -5.4 and the rival's at x = 14.
+- `city.gd` lays out Tokyo; it is built once and cached.
+- `store_view.gd` draws the city and each branch's street set, and turns clicks into actions.
+- `main.gd` holds the HUD, the cards and the real-time loop.
+
+**Art:** sprites and backgrounds were generated by Codex image_gen on a magenta key, then cut and downsampled into `art/`. Building facades and shop fittings are drawn in code. Font: Noto Sans (SIL Open Font License).

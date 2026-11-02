@@ -26,7 +26,7 @@ A game can instead be a Godot 4.6 project (`games/<slug>/project.godot`, GDScrip
 
 | Game | Slug | Core idea | Status | Artifact |
 |------|------|-----------|--------|----------|
-| [Konbini Empire](games/konbini-empire/) | `konbini-empire` | Stock a konbini day by day, pay weekly rent, grow into a supermarket and a three-store chain, build the flagship. Tokyo's neighbourhoods and four rival chains competing for shoppers (price wars, expansion, bankruptcies, buyouts). City-builder Tokyo with an elevated expressway, avenues, dense 3D blocks, farmland round the edge and the day's weather; rearrange and decorate the shop. Pixel art by Codex. | playable | Godot 4.6 project (no artifact) |
+| [Konbini Empire](games/konbini-empire/) | `konbini-empire` | Real-time konbini street battle: every sale hits the rival next door, click away its flyers, mascots, thieves and suits, ring up combos, hire staff, draft skills and expansions, open branches across a city-builder Tokyo (expressway, avenues, dense 3D blocks). Bills at midnight; foreclosure, then bankruptcy. Pixel art by Codex. | playable | Godot 4.6 project (no artifact) |
 
 Status: `idea` → `poc` → `playable` → `shelved`.
 

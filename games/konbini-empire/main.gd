@@ -1,5 +1,6 @@
 extends Control
-## Konbini Empire UI: builds every control in code and drives Sim through prep -> day -> report -> draft.
+## Konbini Empire UI: builds every control in code, runs the sim in real time (pausing for cards and reports) and
+## turns clicks and keys into sim actions.
 
 const Sim := preload("res://sim.gd")
 const StoreView := preload("res://store_view.gd")
@@ -11,44 +12,55 @@ const LINE := Color("cfc8b4")
 const GREEN := Color("2f9e5b")
 const ORANGE := Color("e07b1a")
 const RED := Color("d64545")
+const BLUE := Color("2f6fd6")
 const MUTED := Color("7d7768")
-const WEEKDAYS := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-const TIER_COLOR := [Color("2f7fd6"), INK, Color("c2410c")]
+const RARITY_COLOR := {"common": Color("7d7768"), "rare": Color("2f6fd6"), "epic": Color("9b4dca"), "legendary": Color("d99a0b")}
+const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
+const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
 
 var sim := Sim.new()
 var tex := {}
 var view: StoreView
-var cur := 0
-var phase := "prep"
-var report := {}
+var speed := 1
+var held := false  # paused with Space
+var focused := true
 var modal: Control
 var modal_keys := {}
+var modal_kind := ""
 var best := ConfigFile.new()
 var bold: FontVariation
+var toasts: Array = []  # [text, color, seconds left]
+var ui_t := 0.0
+var shelf_sig := ""
 
 var lbl_day: Label
-var lbl_weather: Label
 var lbl_cash: Label
-var lbl_rep: Label
-var lbl_rent: Label
+var lbl_level: Label
+var xp_bar: ProgressBar
+var lbl_rating: Label
+var lbl_bills: Label
+var speed_btn: Button
+var pause_btn: Button
 var seed_btn: Button
-var shelf_title: Label
-var slot_box: VBoxContainer
 var tabs: HBoxContainer
+var ability_row: HBoxContainer
+var pick_btn: Button
 var info: Label
-var perk_row: HBoxContainer
-var open_btn: Button
+var head: Label
+var sub: Label
+var rival_lbl: Label
+var rival_bar: ProgressBar
+var shelf_box: VBoxContainer
+var crew_lbl: Label
+var staff_btn: Button
 var grow_btn: Button
-var arrange_btn: Button
+var store_btn: Button
 var city_btn: Button
-var city_view := false
-var picked_lot := -1
-var foot: Label
-var arranging := false
+var banner: Label
 
 
 func _ready() -> void:
-	for n in ["products", "people", "perks", "stores", "decor", "outdoor", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "train", "bg_konbini", "bg_super"]:
+	for n in ["products", "perks", "decor", "outdoor", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "train", "bg_konbini"]:
 		tex[n] = load("res://art/%s.png" % n)
 	theme = make_theme()
 	best.load("user://best.cfg")
@@ -91,6 +103,8 @@ func make_theme() -> Theme:
 	th.set_color("font_color", "LineEdit", INK)
 	th.set_stylebox("panel", "TooltipPanel", box(INK, INK, 1, 6))
 	th.set_color("font_color", "TooltipLabel", PAPER)
+	th.set_stylebox("background", "ProgressBar", box(Color("ddd6c4"), Color("ddd6c4"), 0, 0))
+	th.set_stylebox("fill", "ProgressBar", box(GREEN, GREEN, 0, 0))
 	return th
 
 
@@ -105,6 +119,13 @@ func label(text: String, color := INK, px := 0) -> Label:
 	return l
 
 
+func para(text: String, color := MUTED, w := 270) -> Label:
+	var l := label(text, color)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size.x = w
+	return l
+
+
 func button(text: String, cb: Callable, tip := "") -> Button:
 	var b := Button.new()
 	b.text = text
@@ -114,16 +135,21 @@ func button(text: String, cb: Callable, tip := "") -> Button:
 	return b
 
 
-func atlas(sheet: String, i: int, cell: Vector2i) -> AtlasTexture:
+func progress(color: Color, h := 8) -> ProgressBar:
+	var p := ProgressBar.new()
+	p.show_percentage = false
+	p.custom_minimum_size.y = h
+	p.max_value = 1.0
+	p.add_theme_stylebox_override("fill", box(color, color, 0, 0))
+	return p
+
+
+func picture(sheet: String, i: int, cell: int, min_size: Vector2) -> TextureRect:
+	var r := TextureRect.new()
 	var t := AtlasTexture.new()
 	t.atlas = tex[sheet]
-	t.region = Rect2(i * cell.x, 0, cell.x, cell.y)
-	return t
-
-
-func picture(sheet: String, i: int, cell: Vector2i, min_size: Vector2) -> TextureRect:
-	var r := TextureRect.new()
-	r.texture = atlas(sheet, i, cell)
+	t.region = Rect2(i * cell, 0, cell, cell)
+	r.texture = t
 	r.custom_minimum_size = min_size
 	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -131,8 +157,17 @@ func picture(sheet: String, i: int, cell: Vector2i, min_size: Vector2) -> Textur
 	return r
 
 
+func icon(pid: String, px: float) -> TextureRect:
+	var ic: Array = Sim.PRODUCTS[pid].icon
+	return picture(ic[0], ic[1], {"products": 64, "perks": 80, "decor": 96}[ic[0]], Vector2(px, px))
+
+
 func yen(v: int) -> String:
 	return ("-¥" if v < 0 else "¥") + Sim.money(absi(v))
+
+
+func stars(r: float) -> String:
+	return "%.1f★" % r
 
 
 # ---------- layout ----------
@@ -145,95 +180,128 @@ func build() -> void:
 
 	var bar := ColorRect.new()
 	bar.color = INK
-	bar.position = Vector2.ZERO
 	bar.size = Vector2(960, 32)
 	add_child(bar)
 	var hb := HBoxContainer.new()
 	hb.position = Vector2(10, 0)
 	hb.size = Vector2(940, 32)
-	hb.add_theme_constant_override("separation", 22)
+	hb.add_theme_constant_override("separation", 16)
 	bar.add_child(hb)
 	lbl_day = label("", PAPER, 16)
-	lbl_weather = label("", Color("9fd8ff"), 16)
 	lbl_cash = label("", Color("ffd36b"), 16)
-	lbl_rep = label("", Color("b8f2c9"), 16)
-	lbl_rent = label("", PAPER, 16)
-	for l in [lbl_day, lbl_weather, lbl_cash, lbl_rep, lbl_rent]:
+	lbl_level = label("", Color("b8d8ff"), 16)
+	lbl_rating = label("", Color("b8f2c9"), 16)
+	lbl_bills = label("", PAPER, 14)
+	for l in [lbl_day, lbl_cash, lbl_level]:
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		l.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		hb.add_child(l)
+	xp_bar = progress(Color("6aa8ff"), 6)
+	xp_bar.custom_minimum_size.x = 60
+	xp_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hb.add_child(xp_bar)
+	for l in [lbl_rating, lbl_bills]:
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		l.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		hb.add_child(l)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb.add_child(sp)
+	pause_btn = button("II", toggle_hold, "Pause  [Space]")
+	speed_btn = button("1x", cycle_speed, "Game speed  [F]")
 	seed_btn = button("", show_new_run, "Start a new run (you can type a seed)")
-	seed_btn.custom_minimum_size.y = 26
-	seed_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hb.add_child(seed_btn)
+	for b in [pause_btn, speed_btn, seed_btn]:
+		b.custom_minimum_size.y = 26
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		hb.add_child(b)
 
 	view = StoreView.new()
 	view.tex = tex
 	view.position = Vector2(0, 32)
-	view.size = Vector2(640, 360)
+	view.size = Vector2(700, 420)
 	view.clip_contents = true
 	view.sim = sim
-	view.finished.connect(show_report)
-	view.changed.connect(refresh_ui)
+	view.act_requested.connect(do_act)
 	view.lot_clicked.connect(on_lot)
 	add_child(view)
+	banner = label("", Color.WHITE, 15)
+	banner.position = Vector2(220, 40)
+	banner.size = Vector2(470, 24)
+	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	banner.add_theme_constant_override("outline_size", 6)
+	banner.add_theme_color_override("font_outline_color", INK)
+	add_child(banner)
 
 	var bottom := VBoxContainer.new()
-	bottom.position = Vector2(10, 400)
-	bottom.size = Vector2(620, 132)
-	bottom.add_theme_constant_override("separation", 6)
+	bottom.position = Vector2(8, 456)
+	bottom.size = Vector2(686, 80)
+	bottom.add_theme_constant_override("separation", 4)
 	add_child(bottom)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	bottom.add_child(row)
 	tabs = HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 4)
-	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(tabs)
-	perk_row = HBoxContainer.new()
-	perk_row.add_theme_constant_override("separation", 2)
-	row.add_child(perk_row)
-	city_btn = button("CITY", toggle_city.bind(""), "Zoom out to the city: rivals, districts, free lots  [M]")
-	row.add_child(city_btn)
-	arrange_btn = button("ARRANGE", toggle_arrange, "Move shelves and the counter, buy decorations  [E]")
-	row.add_child(arrange_btn)
-	grow_btn = button("EXPAND", show_grow, "Renovate, open branches, build the flagship  [G]")
-	row.add_child(grow_btn)
-	open_btn = button("  OPEN SHOP  >  ", open_shop, "Run today's trading  [Space]")
-	open_btn.add_theme_stylebox_override("normal", box(Color("ffe7c2"), INK))
-	open_btn.add_theme_stylebox_override("hover", box(Color("ffd89a"), INK))
-	row.add_child(open_btn)
-	info = label("")
+	bottom.add_child(tabs)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	bottom.add_child(row)
+	ability_row = HBoxContainer.new()
+	ability_row.add_theme_constant_override("separation", 4)
+	row.add_child(ability_row)
+	pick_btn = button("", open_pick, "Choose your level-up skill or reward  [P]")
+	pick_btn.custom_minimum_size = Vector2(110, 40)
+	pick_btn.add_theme_stylebox_override("normal", box(Color("ffe7c2"), INK))
+	row.add_child(pick_btn)
+	info = label("", INK)
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.custom_minimum_size = Vector2(620, 56)
-	info.max_lines_visible = 4
-	bottom.add_child(info)
+	info.custom_minimum_size = Vector2(150, 40)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.max_lines_visible = 3
+	info.add_theme_font_size_override("font_size", 11)
+	row.add_child(info)
 
 	var side := PanelContainer.new()
-	side.position = Vector2(640, 32)
-	side.size = Vector2(320, 508)
+	side.position = Vector2(700, 32)
+	side.size = Vector2(260, 508)
 	side.add_theme_stylebox_override("panel", box(PAPER, INK, 2, 8))
 	add_child(side)
 	var sv := VBoxContainer.new()
-	sv.add_theme_constant_override("separation", 6)
+	sv.add_theme_constant_override("separation", 4)
 	side.add_child(sv)
-	shelf_title = label("", INK, 16)
-	sv.add_child(shelf_title)
+	head = label("", INK, 16)
+	head.clip_text = true
+	sv.add_child(head)
+	sub = para("", MUTED, 240)
+	sub.add_theme_font_size_override("font_size", 11)
+	sv.add_child(sub)
+	rival_lbl = label("", INK)
+	rival_lbl.clip_text = true
+	sv.add_child(rival_lbl)
+	rival_bar = progress(RED)
+	sv.add_child(rival_bar)
+	sv.add_child(label("SHELVES  (click a shelf or +)", MUTED))
+	shelf_box = VBoxContainer.new()
+	shelf_box.add_theme_constant_override("separation", 2)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.add_child(shelf_box)
+	shelf_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sv.add_child(scroll)
-	slot_box = VBoxContainer.new()
-	slot_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slot_box.add_theme_constant_override("separation", 4)
-	scroll.add_child(slot_box)
-	foot = label("", MUTED)
-	foot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	foot.custom_minimum_size.x = 296
-	sv.add_child(foot)
+	crew_lbl = para("", INK, 240)
+	crew_lbl.add_theme_font_size_override("font_size", 11)
+	sv.add_child(crew_lbl)
+	var g := GridContainer.new()
+	g.columns = 2
+	g.add_theme_constant_override("h_separation", 4)
+	g.add_theme_constant_override("v_separation", 4)
+	sv.add_child(g)
+	staff_btn = button("STAFF", show_staff, "Hire and fire at this store  [S]")
+	grow_btn = button("EXPAND", act_open.bind("openExpansion"), "Buy an expansion for this store  [G]")
+	store_btn = button("NEW STORE", act_open.bind("openListings"), "Open another branch  [N]")
+	city_btn = button("CITY", toggle_city, "Tokyo map: your branches and their rivals  [M]")
+	for b in [staff_btn, grow_btn, store_btn, city_btn]:
+		b.custom_minimum_size = Vector2(118, 30)
+		b.clip_text = true
+		g.add_child(b)
 
 
 # ---------- run flow ----------
@@ -245,371 +313,320 @@ func new_run(seed_str: String) -> void:
 		for i in 6:
 			seed_str += CH[randi() % CH.length()]
 	sim.start(seed_str)
-	cur = 0
-	phase = "prep"
-	arranging = false
-	city_view = false
-	view.edit = false
-	view.mode = "store"
-	view.pick = ""
+	held = false
+	speed = 1
+	toasts.clear()
+	shelf_sig = ""
 	close_modal()
-	refresh()
-
-
-func refresh() -> void:
-	refresh_ui()
-	view.show_store(sim.stores[cur], cur)
-
-
-func refresh_ui() -> void:
-	var prep := phase == "prep"
-	lbl_day.text = "DAY %d  %s" % [sim.day, WEEKDAYS[(sim.day - 1) % 7]]
-	lbl_weather.text = sim.weather.name.to_upper()
-	lbl_cash.text = yen(sim.cash)
-	lbl_rep.text = "REP %d" % roundi(sim.rep)
-	var dr := sim.days_to_rent()
-	lbl_rent.text = "RENT %s %s" % [yen(sim.weekly_rent()), "TONIGHT" if dr == 0 else "IN %dD" % dr]
-	lbl_rent.add_theme_color_override("font_color", RED.lightened(0.3) if dr <= 1 and sim.cash < sim.weekly_rent() + 20000 else PAPER)
-	seed_btn.text = "SEED %s" % sim.seed_text
-
-	for c in tabs.get_children():
-		c.queue_free()
-	for i in sim.stores.size():
-		var si: Dictionary = sim.stores[i]
-		var b := button("%d %s" % [i + 1, Sim.STORE[si.kind].name.to_upper()], select_store.bind(i), "Switch store  [Tab]")
-		if i == cur:
-			b.add_theme_stylebox_override("normal", box(Color("c5e6d0"), INK))
-		tabs.add_child(b)
-	grow_btn.disabled = not prep or arranging
-	open_btn.disabled = not prep
-	arrange_btn.disabled = not prep or city_view
-	arrange_btn.text = "DONE" if arranging else "ARRANGE"
-	city_btn.disabled = not prep or arranging
-	city_btn.text = "SHOP" if city_view else "CITY"
-
-	var st: Dictionary = sim.stores[cur]
-	var def: Dictionary = Sim.STORE[st.kind]
-	for c in slot_box.get_children():
-		c.queue_free()
-	if city_view:
-		city_panel()
-	elif arranging:
-		arrange_panel(st)
-	else:
-		shelf_title.text = "%s #%d  -  %d SHELVES" % [def.name.to_upper(), cur + 1, def.slots]
-		foot.text = "Tap a price tag to change it. Items marked * spoil: leftovers are binned at close."
-		for i in st.slots.size():
-			slot_box.add_child(slot_row(i, st.slots[i], prep))
-
-	var lines := ["%s. %s" % [sim.weather.name, weather_hint()]]
-	if sim.day == 1:
-		lines.push_front("Stock the shelves, then open the shop. Pay rent every Sunday or the run ends. Grow: supermarket, branches, flagship.")
-	if sim.event.id != "none":
-		lines.append(sim.event_text())
-	if sim.morning_note != "":
-		lines.append(sim.morning_note)
-	if sim.misses.size():
-		lines.append("Yesterday customers asked for: " + top_misses(sim.misses, 4))
-	info.text = "\n".join(lines)
-
-	for c in perk_row.get_children():
-		c.queue_free()
-	for p in Sim.PERKS:
-		var n := sim.has(p.id)
-		if n == 0:
-			continue
-		var pic := picture("perks", p.frame, Vector2i(80, 80), Vector2(28, 28))
-		pic.tooltip_text = "%s x%d: %s" % [p.name, n, sim.perk_desc(p)]
-		pic.mouse_filter = Control.MOUSE_FILTER_PASS
-		perk_row.add_child(pic)
-
-
-func arrange_panel(st: Dictionary) -> void:
-	var ap := Sim.appeal(st)
-	shelf_title.text = "ARRANGE #%d  -  APPEAL %d (+%d%%)" % [cur + 1, ap, ap * 2]
-	foot.text = "Right-click or Esc cancels. Customers need a path to every shelf and the till: blocked spots show red. Selling refunds half."
-	var ct: String = view.carried_type()
-	var msg := "Click a shelf, the counter or a decoration to pick it up."
-	if ct == "new":
-		msg = "Placing a %s: click a free floor tile." % Sim.DECOR[view.carry.new].name.to_lower()
-	elif ct != "":
-		msg = "Moving the %s: click where it goes." % ("shelf unit" if ct == "gondola" else ct)
-	var m := label(msg, INK)
-	m.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	m.custom_minimum_size.x = 290
-	slot_box.add_child(m)
-	if ct != "":
-		var h := HBoxContainer.new()
-		h.add_theme_constant_override("separation", 6)
-		h.add_child(button("CANCEL  [Esc]", view.cancel_carry))
-		if ct == "decor":
-			var o: Dictionary = st.objects[view.carry.idx]
-			h.add_child(button("SELL  +" + yen(Sim.DECOR[o.id].cost / 2), view.sell_carried))
-		slot_box.add_child(h)
-	for i in Sim.DECOR.size():
-		var d: Dictionary = Sim.DECOR[i]
-		var panel := PanelContainer.new()
-		panel.add_theme_stylebox_override("panel", box(Color.WHITE, LINE, 1, 4))
-		var h := HBoxContainer.new()
-		h.add_theme_constant_override("separation", 6)
-		panel.add_child(h)
-		h.add_child(picture("decor", i, Vector2i(96, 96), Vector2(40, 40)))
-		var v := VBoxContainer.new()
-		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		v.add_theme_constant_override("separation", 0)
-		h.add_child(v)
-		v.add_child(label(d.name, INK, 14))
-		var dl := label(d.desc, MUTED)
-		dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		dl.custom_minimum_size.x = 160
-		v.add_child(dl)
-		var b := button("BUY\n" + yen(d.cost), view.carry_new.bind(i))
-		b.custom_minimum_size.x = 70
-		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		b.disabled = sim.cash < d.cost
-		h.add_child(b)
-		slot_box.add_child(panel)
-
-
-func toggle_city(pick: String) -> void:
-	if phase != "prep" or modal or arranging:
-		return
-	city_view = pick != "" or not city_view
-	picked_lot = -1
-	view.pick = pick
-	view.set_mode("city" if city_view else "store")
-	refresh_ui()
-
-
-func on_lot(li: int) -> void:
-	picked_lot = li
-	refresh_ui()
-
-
-func district_of(li: int) -> String:
-	return sim.districts[sim.lots[li].block].name
-
-
-## Market leaderboard, then whatever lot you clicked, with what you can do there.
-func city_panel() -> void:
-	shelf_title.text = "CITY  -  MARKET"
-	foot.text = "Drag to pan, scroll to zoom. Click a lot for details."
-	if view.pick == "branch":
-		slot_box.add_child(label("Pick a free lot (outlined green) for your new branch.", GREEN))
-	elif view.pick == "buyout":
-		slot_box.add_child(label("Pick a rival store (outlined orange) to buy out.", ORANGE))
-	var shares: Array = sim.market_share()
-	var traded: bool = shares.any(func(m): return m.sales > 0)
-	slot_box.add_child(label("Yesterday's sales" if traded else "Stores (no trading yet)", MUTED))
-	for m in shares:
-		var h := HBoxContainer.new()
-		h.add_theme_constant_override("separation", 6)
-		var sw := ColorRect.new()
-		sw.color = Color(Sim.CHAINS[m.chain].color)
-		sw.custom_minimum_size = Vector2(12, 12)
-		sw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		h.add_child(sw)
-		var nm := label(m.name if m.alive else m.name + " (bankrupt)", INK if m.alive else MUTED, 14)
-		nm.custom_minimum_size.x = 150
-		h.add_child(nm)
-		h.add_child(label(("%d stores  %d%%" % [m.stores, roundi(m.share * 100)]) if traded else "%d stores" % m.stores, MUTED))
-		slot_box.add_child(h)
-	if picked_lot < 0:
-		return
-	var L: Dictionary = sim.lots[picked_lot]
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", box(Color.WHITE, LINE, 1, 8))
-	var v := VBoxContainer.new()
-	card.add_child(v)
-	slot_box.add_child(card)
-	var title := district_of(picked_lot).to_upper() + " LOT"
-	var body := ""
-	var mine := sim.stores.map(func(st): return st.lot).find(picked_lot)
-	var rv: Dictionary = sim.rival_at(picked_lot)
-	match L.use:
-		"free":
-			var est := roundi(sim.lot_score(picked_lot, sim.crowding()))
-			body = "Empty lot. A konbini here would draw about %d shoppers a day. Rent x%.1f." % [est, L.rent]
-			var cost := sim.branch_cost(picked_lot)
-			var b := button("OPEN BRANCH HERE  " + yen(cost), open_on.bind("branch", picked_lot))
-			b.disabled = not sim.expansions().any(func(e): return e.id == "branch") or sim.cash < cost
-			v.add_child(label(title, INK, 15))
-			v.add_child(para(body))
-			v.add_child(b)
-			return
-		"shop":
-			body = "An ordinary neighbourhood shop. Not a competitor."
-		"store":
-			if mine >= 0:
-				title = "YOUR %s #%d" % [Sim.STORE[sim.stores[mine].kind].name.to_upper(), mine + 1]
-				body = "Rent x%.1f." % L.rent
-				v.add_child(label(title, INK, 15))
-				v.add_child(para(body))
-				v.add_child(button("MANAGE THIS STORE", manage.bind(mine)))
-				return
-			var c: Dictionary = Sim.CHAINS[rv.chain]
-			title = "%s %s" % [c.name.to_upper(), Sim.STORE[rv.kind].name.to_upper()]
-			body = "%s prices.%s%s%s" % [["Discount", "Fair", "Premium"][c.price + 1], (" About %d shoppers yesterday." % roundi(rv.customers)) if rv.customers > 0 else "", " In a price war." if rv.war > 0 else "", " Losing money." if rv.loss_weeks > 0 else ""]
-			var cost := sim.buyout_cost(rv)
-			var b := button("BUY OUT  " + yen(cost), open_on.bind("buyout", picked_lot))
-			b.disabled = not sim.expansions().any(func(e): return e.id == "buyout") or sim.cash < cost
-			v.add_child(label(title, INK, 15))
-			v.add_child(para(body))
-			v.add_child(b)
-			return
-	v.add_child(label(title, INK, 15))
-	v.add_child(para(body))
-
-
-func para(text: String) -> Label:
-	var l := label(text, MUTED)
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.custom_minimum_size.x = 270
-	return l
-
-
-func open_on(id: String, li: int) -> void:
-	if not sim.expand(id, li):
-		return
-	cur = sim.stores.size() - 1
-	manage(cur)
-
-
-func manage(i: int) -> void:
-	cur = i
-	city_view = false
 	view.set_mode("store")
-	refresh()
-
-
-func toggle_arrange() -> void:
-	if phase != "prep" or modal:
-		return
-	arranging = not arranging
-	view.set_edit(arranging)
+	view.show_branch(0)
 	refresh_ui()
+	show_intro()
 
 
-func weather_hint() -> String:
-	var m: Dictionary = sim.weather.mult
-	if m.is_empty():
-		return "A normal day."
-	var up := []
-	for id in m:
-		if m[id] > 1.0:
-			up.append(Sim.P[sim.idx[id]].name)
-	return "Selling well: " + ", ".join(up) + "."
+## The host loop: real time, x1-x3, halted by cards, reports, the staff panel, Space and losing focus.
+func _process(delta: float) -> void:
+	var running := sim.phase == "playing" and modal == null and not held and focused
+	if running:
+		sim.tick(minf(0.05, delta) * speed)
+	drain()
+	for t in toasts:
+		t[2] -= delta
+	toasts = toasts.filter(func(t): return t[2] > 0.0)
+	ui_t -= delta
+	if ui_t <= 0.0:
+		ui_t = 0.1
+		refresh_ui()
 
 
-func top_misses(m: Dictionary, n: int) -> String:
-	var keys := m.keys()
-	keys.sort_custom(func(a, b): return m[a] > m[b])
-	return ", ".join(keys.slice(0, n).map(func(k): return "%s x%d" % [Sim.P[k].name, m[k]]))
+func drain() -> void:
+	if sim.events.is_empty():
+		return
+	var evs: Array = sim.events
+	sim.events = []
+	view.add_events(evs)
+	var mine: int = sim.branches[sim.active].id if sim.active < sim.branches.size() else -1
+	var day_end = null
+	for e in evs:
+		var where := ""
+		for b in sim.branches:
+			if b.id == e.get("branch", -1) and b.id != mine:
+				where = b.name + ": "
+		match e.type:
+			"levelUp":
+				toast("Level %d! Pick a skill  [P]" % e.level, BLUE)
+			"rivalDefeated":
+				toast("%s%s closed for good! Reward waiting  [P]" % [where, Sim.RIVALS[e.rival].name], GREEN)
+			"rivalArrives":
+				toast("%s%s moved in next door (tier %d)." % [where, Sim.RIVALS[e.rival].name, e.tier], RED)
+			"attack":
+				if e.attack == "priceWar" or where == "":
+					toast("%s%s!" % [where, Sim.ATTACKS[e.attack].name], RED)
+			"blocked":
+				toast(where + "The camera blocked a fake review.", GREEN)
+			"caught":
+				toast(where + "The camera caught a shoplifter: +¥200.", GREEN)
+			"streetEvent":
+				toast("%s%s today: %s" % [where, Sim.EVENTS[e.event].name, Sim.EVENTS[e.event].desc], ORANGE)
+			"inspection":
+				toast(where + ("Health inspection passed: +0.2★." if e.passed else "Health inspection: fined ¥%s for mess." % Sim.money(e.fine)), GREEN if e.passed else RED)
+			"milestone":
+				toast("Milestone: %s! Reward waiting  [P]" % Sim.MILESTONES[e.id].name, GREEN)
+			"storeOpened":
+				toast("%s opened. %s is next door." % [e.name, Sim.RIVALS[e.rival].name], GREEN)
+			"foreclosed":
+				toast("The bank took %s (paid back %s)." % [e.name, yen(e.value)], RED)
+			"hired":
+				toast("Hired %s (%s) for %s." % [e.name, Sim.ROLES[e.role].name, yen(e.fee)], GREEN)
+			"roleFull":
+				toast("No room for another %s." % Sim.ROLES[e.role].name.to_lower(), RED)
+			"cantAffordHire", "cantAffordStore", "cantAffordExpansion":
+				toast("Need %s more." % yen(e.short), RED)
+			"cantAfford":
+				if where == "":
+					toast("Can't afford to restock %s." % Sim.PRODUCTS[e.product].name, RED)
+			"pickPayout":
+				toast("Nothing left to pick: +%s instead." % yen(e.amount), GREEN)
+			"storeCap":
+				toast("Six stores is the most you can run.", RED)
+			"takeoverHit":
+				toast("%sA suit took %s!" % [where, yen(e.amount)], RED)
+			"reviewPosted":
+				toast(where + "A fake review went up: -0.35★.", RED)
+			"dayEnd":
+				day_end = e
+	if day_end != null:
+		if day_end.bankrupt:
+			show_over()
+		else:
+			show_report(day_end.report)
 
 
-func slot_row(i: int, s: Dictionary, prep: bool) -> Control:
-	if s.pid < 0:
-		var b := button("+  STOCK SHELF %d" % (i + 1), show_picker.bind(i))
-		b.custom_minimum_size.y = 44
-		b.disabled = not prep
-		return b
-	var p: Dictionary = Sim.P[s.pid]
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", box(Color.WHITE, LINE, 1, 4))
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 4)
-	panel.add_child(h)
-	h.add_child(picture("products", s.pid, Vector2i(64, 64), Vector2(32, 32)))
-	var v := VBoxContainer.new()
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	v.add_theme_constant_override("separation", 0)
-	h.add_child(v)
-	var nm := label(p.name + (" *" if p.perish else ""), INK, 14)
-	nm.clip_text = true
-	v.add_child(nm)
-	var cap := sim.cap_of(cur)
-	var stock := label("%d/%d  sold %d" % [s.qty, cap, s.sold], RED if s.qty == 0 else MUTED)
-	stock.clip_text = true
-	v.add_child(stock)
-	var tier := button("%s\n%s" % [Sim.TIER_NAME[s.tier], yen(sim.price_of(s.pid, s.tier))], on_tier.bind(i), "Price: LOW sells to everyone, HIGH earns more from relaxed shoppers")
-	tier.add_theme_color_override("font_color", TIER_COLOR[s.tier])
-	tier.add_theme_color_override("font_hover_color", TIER_COLOR[s.tier])
-	tier.custom_minimum_size.x = 46
-	tier.disabled = not prep
-	h.add_child(tier)
-	var unit: int = sim.wholesale[s.pid]
-	var add := button("+10", on_buy.bind(i, s.pid, 10), "Buy 10 at %s each (%s)" % [yen(unit), yen(unit * mini(10, cap - s.qty))])
-	add.disabled = not prep or s.qty >= cap or sim.cash < unit
-	h.add_child(add)
-	var fill := button("FILL", on_buy.bind(i, s.pid, cap), "Fill to %d at %s each (%s)" % [cap, yen(unit), yen(unit * (cap - s.qty))])
-	fill.disabled = add.disabled
-	h.add_child(fill)
-	var x := button("X", on_clear.bind(i), "Clear this shelf (stock is thrown away)")
-	x.disabled = not prep
-	h.add_child(x)
-	return panel
+func toast(text: String, color := INK) -> void:
+	toasts.append([text, color, 6.0])
+	if toasts.size() > 3:
+		toasts.pop_front()
+
+
+func do_act(a: Dictionary) -> void:
+	if modal != null:
+		return
+	sim.act(a)
+	drain()
+	if sim.phase == "choice":
+		show_choice()
+	ui_t = 0.0
+
+
+func act_open(type: String) -> void:
+	if view.mode == "city":
+		toggle_city()
+	do_act({"type": type})
+
+
+func open_pick() -> void:
+	act_open("openPick")
+
+
+func toggle_hold() -> void:
+	held = not held
+	ui_t = 0.0
+
+
+func cycle_speed() -> void:
+	speed = speed % 3 + 1
+	ui_t = 0.0
 
 
 func select_store(i: int) -> void:
-	if phase != "prep":
+	if modal != null:
 		return
-	cur = i
-	refresh()
+	sim.act({"type": "switchStore", "index": i})
+	drain()
+	view.show_branch(sim.active)
+	shelf_sig = ""
+	ui_t = 0.0
 
 
-func on_tier(i: int) -> void:
-	if phase != "prep":
+func toggle_city() -> void:
+	if modal != null:
 		return
-	sim.cycle_tier(cur, i)
-	refresh()
-
-
-func on_buy(i: int, pid: int, qty: int) -> void:
-	if phase != "prep":
-		return
-	sim.buy(cur, i, pid, qty)
-	refresh()
-
-
-func on_clear(i: int) -> void:
-	if phase != "prep":
-		return
-	sim.clear_slot(cur, i)
-	refresh()
-
-
-func open_shop() -> void:
-	if phase != "prep" or modal:
-		return
-	if arranging:
-		arranging = false
-		view.set_edit(false)
-	if city_view:
-		city_view = false
+	if view.mode == "city":
+		if sim.phase == "choice":
+			sim.act({"type": "closeChoice"})
 		view.set_mode("store")
-		refresh_ui()
-	var pre: Array = sim.stores[cur].slots.map(func(s): return s.qty)
-	report = sim.simulate_day()
-	phase = "day"
-	open_btn.disabled = true
-	grow_btn.disabled = true
-	arrange_btn.disabled = true
-	city_btn.disabled = true
-	view.play(report.stores[cur].events, pre, report.stores[cur].left)
+		view.show_branch(sim.active)
+	else:
+		view.set_mode("city")
+	ui_t = 0.0
+
+
+func on_lot(li: int) -> void:
+	if sim.phase == "choice" and sim.choice.source == "listing":
+		for k in sim.choice.options.size():
+			if sim.choice.options[k].lot == li:
+				show_choice()
+				return
+	var b = sim.branch_on(li)
+	if b != null:
+		view.set_mode("store")
+		select_store(sim.branches.find(b))
 
 
 func _notification(what: int) -> void:
-	if view == null:
-		return
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
-		view.paused = true
+		focused = false
 	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
-		view.paused = false
+		focused = true
+	if view:
+		view.paused = not focused
+
+
+# ---------- HUD ----------
+
+func refresh_ui() -> void:
+	if sim.branches.is_empty():
+		return
+	var b: Dictionary = sim.branches[sim.active]
+	var st: Dictionary = b.store
+	lbl_day.text = "DAY %d" % sim.day
+	lbl_cash.text = yen(sim.player.cash)
+	lbl_level.text = "LV %d" % sim.player.level
+	xp_bar.value = sim.player.xp / sim.player.xp_next
+	lbl_rating.text = stars(st.rating)
+	var bills := sim.bills_due()
+	lbl_bills.text = "BILLS TONIGHT %s" % yen(bills)
+	lbl_bills.add_theme_color_override("font_color", Color("ff9b8a") if sim.player.cash < bills else PAPER)
+	seed_btn.text = "SEED %s" % sim.seed_text
+	speed_btn.text = "%dx" % speed
+	pause_btn.text = ">" if held else "II"
+	banner.text = "PAUSED  [Space]" if held else ("CLICK A NUMBERED LOT  ·  Esc to go back" if view.pick == "listing" and view.mode == "city" else "")
+
+	if tabs.get_child_count() != sim.branches.size():
+		for c in tabs.get_children():
+			c.queue_free()
+		for i in sim.branches.size():
+			var t := button("", select_store.bind(i), "Switch store  [Tab]")
+			t.custom_minimum_size.y = 24
+			tabs.add_child(t)
+	for i in sim.branches.size():
+		var o: Dictionary = sim.branches[i]
+		var t: Button = tabs.get_child(i)
+		var alert := ""
+		if o.threats.any(func(x): return x.type != "spill") or o.rival.telegraph != "":
+			alert = " !"
+		if o.store.products.values().any(func(p): return float(p.stock) / p.capacity < Sim.LOW_STOCK):
+			alert += " ▾"
+		t.text = "%d %s%s" % [i + 1, o.name.to_upper(), alert]
+		t.add_theme_stylebox_override("normal", box(Color("c5e6d0") if i == sim.active else PAPER, INK))
+		t.add_theme_color_override("font_color", RED if alert != "" and i != sim.active else INK)
+
+	if ability_row.get_child_count() == 0:
+		for i in ABILITY_KEYS.size():
+			var a := button("", do_act.bind({"type": "useAbility", "id": ABILITY_KEYS[i]}))
+			a.custom_minimum_size = Vector2(78, 40)
+			a.clip_text = true
+			a.add_theme_font_size_override("font_size", 11)
+			ability_row.add_child(a)
+	for i in ABILITY_KEYS.size():
+		var id: String = ABILITY_KEYS[i]
+		var a: Button = ability_row.get_child(i)
+		var ab = sim.player.abilities.get(id)
+		var def: Dictionary = Sim.ABILITIES[id]
+		if ab == null:
+			a.text = "%d  —\nlocked" % (i + 1)
+			a.disabled = true
+			a.tooltip_text = "%s: unlock it from a level-up card." % def.name
+		else:
+			a.text = "%d %s %s\n%s" % [i + 1, def.name.get_slice(" ", 0).to_upper(), "I".repeat(ab.level), "READY" if ab.cd <= 0.0 else "%ds" % ceili(ab.cd)]
+			a.disabled = ab.cd > 0.0 or sim.phase != "playing"
+			a.tooltip_text = "%s (level %d)  [%d]" % [def.name, ab.level, i + 1]
+	pick_btn.visible = not sim.pending.is_empty()
+	pick_btn.text = "PICK  (%d)\n[P]" % sim.pending.size()
+	var lines := toasts.map(func(t): return t[0])
+	if lines.is_empty():
+		lines = [hint(b)]
+	info.text = "\n".join(lines.slice(maxi(0, lines.size() - 3)))
+	info.add_theme_color_override("font_color", toasts[-1][1] if not toasts.is_empty() else MUTED)
+
+	head.text = b.name.to_upper()
+	var d: Dictionary = Sim.DISTRICTS[b.district]
+	var ev: String = "" if b.event == null else "  ·  " + Sim.EVENTS[b.event.id].name
+	sub.text = "%s, %s%s\n%s  ·  rent %s + wages %s  ·  %d served, %d lost" % [d.name, Sim.QUIRKS[b.quirk].name.to_lower(), ev, stars(st.rating), yen(sim.rent(b)), yen(sim.wages(b)), b.day_stats.customers, b.day_stats.lost]
+	var rv: Dictionary = b.rival
+	if rv.defeated:
+		rival_lbl.text = "%s CLOSED  ·  new rival in %d day%s" % [Sim.RIVALS[rv.id].name.to_upper(), 2 - rv.closed_days, "" if 2 - rv.closed_days == 1 else "s"]
+		rival_bar.value = 0.0
+	else:
+		rival_lbl.text = "%s  T%d  %s / %s" % [Sim.RIVALS[rv.id].name.to_upper(), rv.tier, Sim.money(ceili(rv.hp)), Sim.money(int(rv.max_hp))]
+		rival_bar.value = rv.hp / rv.max_hp
+	refresh_shelves(b)
+	var crew: Array = st.crew.map(func(m): return "%s %s" % [ROLE_ICON[m.role], m.name])
+	crew_lbl.text = "CREW  " + ", ".join(crew) + ("" if b.regulars == 0 else "\n%d regulars on the way" % b.regulars)
+	var exp_ok := not sim.eligible("expansion", st).is_empty()
+	grow_btn.text = "EXPAND %s" % yen(Sim.expansion_cost(st)) if exp_ok else "EXPAND (all)"
+	grow_btn.disabled = not exp_ok or sim.phase != "playing"
+	store_btn.text = "NEW STORE"
+	store_btn.disabled = sim.branches.size() >= Sim.MAX_STORES or sim.phase != "playing"
+	store_btn.tooltip_text = "Open another branch: from %s  [N]" % yen(sim.store_cost())
+	staff_btn.disabled = sim.phase != "playing"
+	city_btn.text = "SHOP" if view.mode == "city" else "CITY"
+
+
+func hint(b: Dictionary) -> String:
+	if sim.day == 1 and sim.time < 40.0:
+		return "Click the till to ring customers up (combos earn XP), click threats to chase them off, click shelves to restock. Every sale hurts the rival next door."
+	if b.store.registers.any(func(r): return r.active and r.queue.size() >= 4):
+		return "The queue is long: ring up at the till [R] or hire a cashier."
+	return "Bills are paid at midnight. Run out of cash and the run ends."
+
+
+func refresh_shelves(b: Dictionary) -> void:
+	var st: Dictionary = b.store
+	var sig := "%d:%s" % [b.id, ",".join(st.products.keys())]
+	if sig != shelf_sig:
+		shelf_sig = sig
+		for c in shelf_box.get_children():
+			c.queue_free()
+		for pid in st.products:
+			var h := HBoxContainer.new()
+			h.add_theme_constant_override("separation", 4)
+			h.add_child(icon(pid, 26))
+			var v := VBoxContainer.new()
+			v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			v.add_theme_constant_override("separation", 0)
+			var nm := label(Sim.PRODUCTS[pid].name)
+			nm.clip_text = true
+			nm.add_theme_font_size_override("font_size", 11)
+			v.add_child(nm)
+			v.add_child(progress(GREEN, 6))
+			h.add_child(v)
+			var r := button("", do_act.bind({"type": "restock", "product": pid}))
+			r.custom_minimum_size = Vector2(84, 28)
+			r.add_theme_font_size_override("font_size", 11)
+			h.add_child(r)
+			shelf_box.add_child(h)
+	var i := 0
+	for pid in st.products:
+		if i >= shelf_box.get_child_count():
+			break
+		var p: Dictionary = st.products[pid]
+		var row: HBoxContainer = shelf_box.get_child(i)
+		var bar: ProgressBar = row.get_child(1).get_child(1)
+		var frac: float = float(p.stock) / p.capacity
+		bar.value = frac
+		bar.add_theme_stylebox_override("fill", box(RED if frac < Sim.LOW_STOCK else GREEN, RED if frac < Sim.LOW_STOCK else GREEN, 0, 0))
+		var missing: int = p.capacity - p.stock
+		var cost := Sim.rnd(missing * Sim.PRODUCTS[pid].cost * sim.mods().restock)
+		var btn: Button = row.get_child(2)
+		btn.text = "%d/%d  +%s" % [p.stock, p.capacity, yen(cost)] if missing > 0 else "%d/%d  FULL" % [p.stock, p.capacity]
+		btn.disabled = missing == 0 or sim.phase != "playing"
+		i += 1
 
 
 # ---------- modals ----------
 
-func open_modal(title: String, body: Control, keys := {}) -> void:
+func open_modal(title: String, body: Control, keys := {}, kind := "") -> void:
 	close_modal()
 	modal = Control.new()
 	modal.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -626,10 +643,11 @@ func open_modal(title: String, body: Control, keys := {}) -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	panel.add_child(v)
-	v.add_child(label(title, INK, 32))
+	v.add_child(label(title, INK, 28))
 	v.add_child(body)
 	add_child(modal)
 	modal_keys = keys
+	modal_kind = kind
 
 
 func close_modal() -> void:
@@ -637,201 +655,265 @@ func close_modal() -> void:
 		modal.queue_free()
 		modal = null
 	modal_keys = {}
+	modal_kind = ""
 
 
-func show_picker(slot: int) -> void:
-	if phase != "prep":
-		return
-	var g := GridContainer.new()
-	g.columns = 5
-	g.add_theme_constant_override("h_separation", 6)
-	g.add_theme_constant_override("v_separation", 6)
-	for pid in Sim.P.size():
-		var p: Dictionary = Sim.P[pid]
-		var tags := []
-		if sim.weather.mult.get(p.id, 1.0) > 1.0 or (sim.event.id == "viral" and sim.event_arg == p.id):
-			tags.append("HOT")
-		if sim.misses.has(pid):
-			tags.append("ASKED x%d" % sim.misses[pid])
-		if p.perish:
-			tags.append("FRESH")
-		var ok := sim.can_stock(cur, pid)
-		var t := "%s\n%s > %s\n%s" % [p.name, yen(sim.wholesale[pid]), yen(p.price), " ".join(tags) if ok else "SUPERMARKET"]
-		var b := button(t, pick_product.bind(slot, pid))
-		b.icon = atlas("products", pid, Vector2i(64, 64))
-		b.add_theme_constant_override("icon_max_width", 32)
-		b.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.custom_minimum_size = Vector2(168, 54)
-		b.clip_text = true
-		b.disabled = not ok
-		g.add_child(b)
+func show_intro() -> void:
+	var b: Dictionary = sim.branches[0]
 	var v := VBoxContainer.new()
-	v.add_child(label("Wholesale today > shelf price. FRESH items are binned at close.", MUTED))
-	v.add_child(g)
-	v.add_child(button("CANCEL  [Esc]", close_modal))
-	open_modal("STOCK SHELF %d" % (slot + 1), v, {KEY_ESCAPE: close_modal})
-
-
-func pick_product(slot: int, pid: int) -> void:
-	sim.buy(cur, slot, pid, 10)
-	if sim.stores[cur].slots[slot].pid < 0:  # couldn't afford any: still assign the shelf
-		sim.stores[cur].slots[slot].pid = pid
-	close_modal()
-	refresh()
-
-
-func show_report() -> void:
-	var r := report
-	phase = "modal"
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 4)
-	var lines := [
-		["Customers", "%d" % r.customers + ("  (%d walked out: add checkouts)" % r.walkouts if r.walkouts else "")],
-		["Sales", yen(r.sales)],
-	]
-	if r.extras:
-		lines.append(["Coffee & hot snacks", yen(r.extras)])
-	lines.append(["Stock bought this morning", "-" + yen(r.spent)])
-	lines.append(["Wages & power", "-" + yen(r.upkeep)])
-	if r.rent:
-		lines.append(["Weekly rent", "-" + yen(r.rent)])
-	if r.waste:
-		lines.append(["Stock binned at close (at cost)", yen(r.waste)])
-	for l in lines:
-		var h := HBoxContainer.new()
-		var a := label(l[0])
-		a.custom_minimum_size.x = 260
-		h.add_child(a)
-		h.add_child(label(l[1], RED if l[1].begins_with("-") else INK))
-		v.add_child(h)
-	if r.stores.size() > 1:
-		v.add_child(label("  ".join(r.stores.map(func(s): return "%s %s" % [Sim.STORE[s.kind].name, yen(s.sales)])), MUTED))
-	var net_h := HBoxContainer.new()
-	var na := label("Cash flow today", INK, 24)
-	na.custom_minimum_size.x = 260
-	net_h.add_child(na)
-	net_h.add_child(label(yen(r.net), GREEN if r.net >= 0 else RED, 24))
-	v.add_child(net_h)
-	v.add_child(label("Cash %s    Reputation %d (%s%d)" % [yen(r.cash), roundi(sim.rep), "+" if r.rep_delta >= 0 else "", roundi(r.rep_delta)]))
-	if r.misses.size():
-		v.add_child(label("Asked for but not on the shelf: " + top_misses(r.misses, 4), ORANGE))
-	var rank: int = r.market.map(func(m): return m.chain).find(0)
-	v.add_child(label("Market share %d%%  (#%d of %d chains)" % [roundi(r.market[rank].share * 100), rank + 1, r.market.filter(func(m): return m.alive).size()], INK))
-	for line in r.news:
-		var nl := label(line, Color("2f6fd6"))
-		nl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		nl.custom_minimum_size.x = 520
-		v.add_child(nl)
+	v.add_theme_constant_override("separation", 6)
+	v.add_child(para("Your first konbini opens in %s. %s is next door and wants your customers. Every sale you make hits its takings; drive it out of business and a bigger chain moves in." % [b.name, Sim.RIVALS[b.rival.id].name], INK, 520))
+	v.add_child(para("Click the till when a customer is waiting (fast ring-ups build combos), click threats the rival sends (flyers, trash, mascots, thieves...), click a shelf to restock it. Hire staff, buy expansions, pick a card at every level, open more branches across Tokyo. Rent and wages are due every midnight; run out of cash and it's over.", MUTED, 520))
+	v.add_child(para("Keys: Space pause, F speed, R ring up, 1-5 abilities, P pick, S staff, G expand, N new store, M map, Tab next store.", MUTED, 520))
 	var go := func():
-		if sim.over:
-			show_over()
-		else:
-			show_draft()
-	v.add_child(button("CONTINUE  [Space]", go))
-	open_modal("DAY %d CLOSED" % r.day, v, {KEY_SPACE: go, KEY_ENTER: go})
+		close_modal()
+		sim.act({"type": "start"})
+	v.add_child(button("OPEN THE SHOP  [Space]", go))
+	open_modal("KONBINI EMPIRE", v, {KEY_SPACE: go, KEY_ENTER: go}, "intro")
 
 
-func show_draft() -> void:
+## Whatever pick card the sim has open: level-up skills, rewards, expansions or new-store listings.
+func show_choice() -> void:
+	if sim.choice == null:
+		return
+	var c: Dictionary = sim.choice
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	var keys := {}
-	for i in sim.draft.size():
-		var p: Dictionary = sim.draft[i]
+	for i in c.options.size():
 		var card := PanelContainer.new()
 		card.add_theme_stylebox_override("panel", box(Color.WHITE, INK, 2, 10))
-		var v := VBoxContainer.new()
-		v.custom_minimum_size = Vector2(170, 0)
-		v.add_theme_constant_override("separation", 6)
-		card.add_child(v)
-		v.add_child(picture("perks", p.frame, Vector2i(80, 80), Vector2(80, 80)))
-		var n := label(p.name.to_upper())
-		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		v.add_child(n)
-		var d := label(sim.perk_desc(p), MUTED)
-		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		d.custom_minimum_size = Vector2(170, 64)
-		v.add_child(d)
-		v.add_child(button("TAKE  [%d]" % (i + 1), take.bind(i)))
+		var col := VBoxContainer.new()
+		col.custom_minimum_size = Vector2(190, 0)
+		col.add_theme_constant_override("separation", 6)
+		card.add_child(col)
+		if c.source == "listing":
+			listing_card(col, c.options[i])
+		else:
+			var u: Dictionary = Sim.UPGRADES[c.options[i]]
+			col.add_child(label(u.rarity.to_upper(), RARITY_COLOR[u.rarity]))
+			if u.has("product"):
+				col.add_child(icon(u.product, 56))
+			col.add_child(label(u.name.to_upper(), INK, 15))
+			var n: int = (sim.branches[sim.active].store.taken if c.source == "expansion" else sim.player.taken).get(c.options[i], 0)
+			col.add_child(para(u.desc + ("" if n == 0 else "  (have %d)" % n), MUTED, 190))
+		var take := func(): pick(c.options[i] if c.source != "listing" else i)
+		var b := button("TAKE  [%d]" % (i + 1), take)
+		if c.source == "listing":
+			b.text = "OPEN %s  [%d]" % [yen(c.options[i].cost), i + 1]
+			b.disabled = sim.player.cash < c.options[i].cost
+		elif c.source == "expansion":
+			b.disabled = sim.player.cash < c.cost
+		col.add_child(b)
 		h.add_child(card)
-		keys[KEY_1 + i] = take.bind(i)
-	open_modal("PICK AN UPGRADE", h, keys)
-
-
-func take(i: int) -> void:
-	sim.next_day(i)
-	phase = "prep"
-	close_modal()
-	refresh()
-
-
-func show_grow() -> void:
-	if phase != "prep":
-		return
+		keys[KEY_1 + i] = take
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
-	v.add_child(label("Konbini  >  Supermarket  >  three stores  >  Flagship hypermarket wins the run.", MUTED))
-	for e in sim.expansions():
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		row.add_child(picture("stores", e.frame, Vector2i(320, 256), Vector2(100, 80)))
-		var col := VBoxContainer.new()
-		col.custom_minimum_size.x = 330
-		col.add_child(label(e.name.to_upper()))
-		var d := label(e.desc, MUTED)
-		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		col.add_child(d)
-		row.add_child(col)
-		var b := button(("PICK LOT\nfrom " if e.get("lot", false) else "BUILD\n") + yen(e.cost), build_it.bind(e.id))
-		b.custom_minimum_size = Vector2(110, 52)
-		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		b.disabled = e.get("locked", false) or sim.cash < e.cost
-		row.add_child(b)
-		v.add_child(row)
-	v.add_child(button("CLOSE  [Esc]", close_modal))
-	open_modal("EXPAND", v, {KEY_ESCAPE: close_modal, KEY_G: close_modal})
+	var title := "PICK A SKILL"
+	match c.source:
+		"reward":
+			title = "REWARD"
+			v.add_child(label(c.reason, GREEN))
+		"expansion":
+			title = "EXPAND %s" % sim.branches[sim.active].name.to_upper()
+			v.add_child(label("Costs %s. Cash %s." % [yen(c.cost), yen(sim.player.cash)], MUTED))
+		"listing":
+			title = "NEW STORE"
+			v.add_child(label("Three lots on offer. Cash %s; bills tonight %s." % [yen(sim.player.cash), yen(sim.bills_due())], MUTED))
+	v.add_child(h)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var rc := sim.reroll_cost()
+	var spare: int = sim.player.cash - (c.cost if c.source == "expansion" else 0)
+	var rr := button("REROLL %s  [R]" % yen(rc), reroll)
+	rr.disabled = spare < rc
+	row.add_child(rr)
+	if c.source == "listing":
+		row.add_child(button("SEE ON MAP", see_listings))
+	row.add_child(button("LATER  [Esc]", later))
+	v.add_child(row)
+	keys[KEY_R] = reroll
+	keys[KEY_ESCAPE] = later
+	open_modal(title, v, keys, "choice")
 
 
-func build_it(id: String) -> void:
-	if id == "branch" or id == "buyout":
-		close_modal()
-		toggle_city(id)
-		return
-	if not sim.expand(id):
-		return
-	if sim.won:
-		show_over()
+func listing_card(v: VBoxContainer, L: Dictionary) -> void:
+	var tokyo: String = sim.districts[sim.lots[L.lot].block].name
+	var d: Dictionary = Sim.DISTRICTS[L.district]
+	var q: Dictionary = Sim.QUIRKS[L.quirk]
+	var rv: Dictionary = Sim.RIVALS[L.rival]
+	v.add_child(label(tokyo.to_upper(), INK, 15))
+	v.add_child(label(d.name, MUTED))
+	var quirk: String = q.name
+	v.add_child(para("%s. Foot traffic x%.2f, rent about %s a night." % [quirk, d.traffic * q.get("traffic", 1.0), yen(Sim.rnd(d.rent * q.get("rent", 1.0)))], INK, 190))
+	if not d.demand.is_empty():
+		v.add_child(para("Locals buy: " + ", ".join(d.demand.keys().map(func(k): return Sim.PRODUCTS[k].name.to_lower())), MUTED, 190))
+	v.add_child(label("Rival: %s (tier %d)" % [rv.name, L.tier], Color(rv.color).darkened(0.2)))
+
+
+func pick(id) -> void:
+	sim.act({"type": "pickChoice", "id": id})
+	drain()
+	if sim.phase == "choice":
+		show_choice()
 		return
 	close_modal()
-	if id == "branch":
-		cur = sim.stores.size() - 1
-	refresh()
+	if view.mode == "city":
+		view.set_mode("store")
+	view.show_branch(sim.active)
+	shelf_sig = ""
+	ui_t = 0.0
+
+
+func reroll() -> void:
+	sim.act({"type": "reroll"})
+	drain()
+	show_choice()
+
+
+func later() -> void:
+	sim.act({"type": "closeChoice"})
+	close_modal()
+	ui_t = 0.0
+
+
+func see_listings() -> void:
+	close_modal()
+	view.pick = "listing"
+	view.set_mode("city")
+	view.pick = "listing"
+	ui_t = 0.0
+
+
+func show_staff() -> void:
+	if sim.phase != "playing":
+		return
+	var b: Dictionary = sim.branches[sim.active]
+	var st: Dictionary = b.store
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	v.add_child(label("Cash %s. Hiring costs a day's wage now; wages are paid every midnight." % yen(sim.player.cash), MUTED))
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 18)
+	v.add_child(cols)
+	var crew := VBoxContainer.new()
+	crew.custom_minimum_size.x = 250
+	crew.add_theme_constant_override("separation", 2)
+	crew.add_child(label("CREW", INK, 15))
+	for m in st.crew:
+		var h := HBoxContainer.new()
+		h.add_child(member_label(m, 190))
+		h.add_child(small_button("FIRE", staff_act.bind("fire", m.id)))
+		crew.add_child(h)
+	crew.add_child(para("Cashiers run a till each. Stock clerks refill low shelves but keep tonight's bills in the till. Cleaners mop spills and bag trash. A guard sees off flyers, mascots, thieves, suits and blackouts. A promoter pulls in walkers.", MUTED, 240))
+	cols.add_child(crew)
+	var apps := GridContainer.new()
+	apps.columns = 3
+	apps.add_theme_constant_override("h_separation", 8)
+	apps.add_theme_constant_override("v_separation", 2)
+	for role in Sim.ROLES:
+		var have: int = st.crew.filter(func(m): return m.role == role).size()
+		var cap := sim.role_cap(st, role)
+		for a in st.applicants.filter(func(x): return x.role == role):
+			apps.add_child(label("%s %d/%d" % [ROLE_ICON[role], have, cap], MUTED))
+			apps.add_child(member_label(a, 280, false))
+			var fee := Sim.rnd(a.wage * sim.mods().wage)
+			var hb := small_button("HIRE %s" % yen(fee), staff_act.bind("hire", a.id))
+			hb.disabled = have >= cap or sim.player.cash < fee
+			apps.add_child(hb)
+	var right := VBoxContainer.new()
+	right.add_child(label("APPLICANTS TODAY", INK, 15))
+	right.add_child(apps)
+	cols.add_child(right)
+	v.add_child(button("CLOSE  [Esc]", close_staff))
+	open_modal("STAFF  ·  %s" % b.name.to_upper(), v, {KEY_ESCAPE: close_staff, KEY_S: close_staff}, "staff")
+
+
+func small_button(text: String, cb: Callable) -> Button:
+	var b := button(text, cb)
+	b.add_theme_font_size_override("font_size", 11)
+	b.custom_minimum_size = Vector2(76, 24)
+	b.add_theme_stylebox_override("normal", box(PAPER, INK, 2, 2))
+	b.add_theme_stylebox_override("hover", box(Color("e3f3e8"), INK, 2, 2))
+	b.add_theme_stylebox_override("disabled", box(Color("ebe6da"), LINE, 2, 2))
+	return b
+
+
+func member_label(m: Dictionary, w: int, role := true) -> Label:
+	var trait_def: Dictionary = Sim.TRAITS[m.trait_id]
+	var l := label("%s%s, %s%s  %s/day" % [(ROLE_ICON[m.role] + "  ") if role else "", m.name, trait_def.name, (" (%s)" % trait_def.desc) if trait_def.has("desc") else "", yen(Sim.rnd(m.wage * sim.mods().wage))])
+	l.custom_minimum_size.x = w
+	l.clip_text = true
+	l.tooltip_text = l.text
+	l.mouse_filter = Control.MOUSE_FILTER_PASS
+	l.add_theme_font_size_override("font_size", 11)
+	return l
+
+
+func staff_act(type: String, id: int) -> void:
+	sim.act({"type": type, "id": id})
+	drain()
+	show_staff()
+
+
+func close_staff() -> void:
+	close_modal()
+	ui_t = 0.0
+
+
+func show_report(r: Dictionary) -> void:
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 4)
+	var g := GridContainer.new()
+	g.columns = 8
+	g.add_theme_constant_override("h_separation", 14)
+	for h in ["STORE", "SALES", "SERVED", "LOST", "STOCK", "RENT+WAGES", "NET", "RIVAL"]:
+		g.add_child(label(h, MUTED))
+	for row in r.rows:
+		var s: Dictionary = row.stats
+		var cells := [row.name, yen(s.revenue), str(s.customers), str(s.lost), "-" + yen(s.restock + s.fines), "-" + yen(row.rent + row.wages), yen(row.net), "closed" if row.defeated else "%d%%" % roundi(100.0 * row.rival_hp / row.rival_max)]
+		for k in cells.size():
+			g.add_child(label(cells[k], (GREEN if row.net >= 0 else RED) if k == 6 else INK))
+	v.add_child(g)
+	if r.interest > 0:
+		v.add_child(label("Interest +%s" % yen(r.interest), GREEN))
+	v.add_child(label("Bills paid %s" % yen(r.bills), INK))
+	var h := HBoxContainer.new()
+	var a := label("Cash", INK, 24)
+	a.custom_minimum_size.x = 120
+	h.add_child(a)
+	h.add_child(label("%s  >  %s" % [yen(r.cash_before), yen(r.cash_after)], GREEN if r.cash_after >= r.cash_before else RED, 24))
+	v.add_child(h)
+	if r.foreclosed != null:
+		v.add_child(label("You ran short: the bank took %s and paid back %s." % [r.foreclosed.name, yen(r.foreclosed.value)], RED))
+	v.add_child(label("Tomorrow's bills: about %s." % yen(sim.bills_due()), MUTED))
+	var go := func():
+		close_modal()
+		view.show_branch(sim.active)
+		ui_t = 0.0
+	v.add_child(button("NEXT DAY  [Space]", go))
+	open_modal("DAY %d CLOSED" % r.day, v, {KEY_SPACE: go, KEY_ENTER: go}, "report")
 
 
 func show_over() -> void:
-	phase = "over"
-	var key := "win_day" if sim.won else "max_day"
-	var prev: int = best.get_value("best", key, 0)
-	var better := prev == 0 or (sim.day < prev if sim.won else sim.day > prev)
-	if better:
-		best.set_value("best", key, sim.day)
+	var rs: Dictionary = sim.run_stats
+	var score: int = rs.days * 5000 + rs.revenue
+	var prev: int = best.get_value("best", "score", 0)
+	if score > prev:
+		best.set_value("best", "score", score)
 		best.save("user://best.cfg")
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 4)
-	v.add_child(label("Your flagship opens. The empire is yours." if sim.won else "Rent bounced. The landlord changed the locks.", GREEN if sim.won else RED))
+	v.add_child(label("Midnight bills of %s bounced. The landlord changed the locks." % yen(sim.summary.bills), RED))
 	for l in [
-		"Days: %d" % sim.day,
-		"Stores: %s" % ", ".join(sim.stores.map(func(s): return Sim.STORE[s.kind].name)),
-		"Customers served: %s" % Sim.money(sim.stats.served),
-		"Total sales: %s" % yen(sim.stats.sales),
-		"Peak cash: %s" % yen(sim.stats.peak),
-		"Upgrades: %d" % sim.perks.values().reduce(func(a, b): return a + b, 0),
-		"Seed: %s" % sim.seed_text,
+		"Days survived: %d" % rs.days,
+		"Revenue: %s from %s customers" % [yen(rs.revenue), Sim.money(rs.customers)],
+		"Rivals closed: %d    Threats repelled: %d" % [rs.rivals_defeated, rs.threats_repelled],
+		"Stores opened: %d (peak %d at once)%s" % [rs.stores_opened, rs.peak_stores, "" if rs.foreclosed == 0 else ", %d foreclosed" % rs.foreclosed],
+		"Level %d    Seed %s" % [sim.player.level, sim.seed_text],
 	]:
 		v.add_child(label(l))
-	var w: int = best.get_value("best", "win_day", 0)
-	var m: int = best.get_value("best", "max_day", 0)
-	v.add_child(label(("Best: flagship on day %d" % w) if w else ("Longest run: day %d" % m), MUTED))
+	v.add_child(label("Score %s%s" % [Sim.money(score), "  NEW BEST" if score > prev else "  (best %s)" % Sim.money(prev)], GREEN if score > prev else MUTED, 16))
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
 	var again := func(): new_run(sim.seed_text)
@@ -839,14 +921,14 @@ func show_over() -> void:
 	h.add_child(button("RETRY SEED", again))
 	h.add_child(button("NEW RUN  [Space]", fresh))
 	v.add_child(h)
-	open_modal("EMPIRE BUILT" if sim.won else "BANKRUPT", v, {KEY_SPACE: fresh, KEY_ENTER: fresh})
+	open_modal("BANKRUPT", v, {KEY_SPACE: fresh, KEY_ENTER: fresh}, "over")
 
 
 func show_new_run() -> void:
-	if phase == "day" or phase == "modal":
+	if modal_kind in ["report", "over"]:
 		return
 	var v := VBoxContainer.new()
-	v.add_child(label("Same seed, same weather, events and upgrades. Leave blank for a random run.", MUTED))
+	v.add_child(label("Same seed, same street, same rivals and cards. Leave blank for a random run.", MUTED))
 	var edit := LineEdit.new()
 	edit.placeholder_text = "seed"
 	edit.custom_minimum_size.x = 300
@@ -856,14 +938,16 @@ func show_new_run() -> void:
 	var start := func(): new_run(edit.text)
 	edit.text_submitted.connect(func(_t): start.call())
 	h.add_child(button("START", start))
+	var prev := modal_kind
 	var cancel := func():
-		if sim.over:
-			show_over()
-		else:
-			close_modal()
+		close_modal()
+		if prev == "intro":
+			show_intro()
+		elif sim.phase == "choice":
+			show_choice()
 	h.add_child(button("CANCEL", cancel))
 	v.add_child(h)
-	open_modal("NEW RUN", v, {KEY_ESCAPE: cancel})
+	open_modal("NEW RUN", v, {KEY_ESCAPE: cancel}, "seed")
 	edit.grab_focus.call_deferred()
 
 
@@ -876,25 +960,33 @@ func _unhandled_input(e: InputEvent) -> void:
 			modal_keys[k].call()
 			get_viewport().set_input_as_handled()
 		return
-	match phase:
-		"prep":
-			if k == KEY_SPACE or k == KEY_ENTER:
-				open_shop()
-			elif k == KEY_TAB:
-				select_store((cur + 1) % sim.stores.size())
-			elif k == KEY_G and not arranging:
-				show_grow()
-			elif k == KEY_E and not city_view:
-				toggle_arrange()
-			elif k == KEY_M:
-				toggle_city("")
-			elif k == KEY_ESCAPE and city_view:
-				toggle_city("")
-			elif k == KEY_ESCAPE and arranging:
-				if view.carry.is_empty():
-					toggle_arrange()
-				else:
-					view.cancel_carry()
-		"day":
-			if k == KEY_SPACE or k == KEY_ENTER:
-				view.skip()
+	if view.mode == "city" and k == KEY_ESCAPE:
+		toggle_city()
+		return
+	match k:
+		KEY_SPACE:
+			toggle_hold()
+		KEY_F:
+			cycle_speed()
+		KEY_TAB:
+			select_store((sim.active + 1) % sim.branches.size())
+		KEY_M:
+			toggle_city()
+		KEY_S:
+			show_staff()
+		KEY_G:
+			act_open("openExpansion")
+		KEY_N:
+			act_open("openListings")
+		KEY_P:
+			open_pick()
+		KEY_R:
+			var b: Dictionary = sim.branches[sim.active]
+			for reg in b.store.registers:
+				if reg.active and not reg.queue.is_empty():
+					var a = sim.agent_by_id(b, reg.queue[0])
+					if a != null and a.at_head:
+						do_act({"type": "ringUp", "register": reg.id})
+						break
+		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
+			do_act({"type": "useAbility", "id": ABILITY_KEYS[k - KEY_1]})
