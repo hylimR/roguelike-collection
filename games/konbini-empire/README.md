@@ -46,11 +46,13 @@ It's drawn like a city builder:
 
 Each store is played on its own street, carved into the city on its lot:
 
-- your shop as a cutaway;
-- the rival's shop along the street;
+- your shop as a cutaway, with a till on the counter, shelf boards, glass-door fridges, and potted plants and a sandwich board at the door;
+- the rival's shop along the street: its shelves behind mullioned glass, a fascia in the chain's stripes, air-conditioning units on the roof;
 - neighbours in that district's own building style;
-- a crossing whose lights the pedestrians wait for;
+- a crossing whose lights the pedestrians wait for, speckled asphalt with manhole covers, yellow tactile paving down both sidewalks, and utility poles with sagging wires along the far side;
 - Tokyo carrying on around it.
+
+Every box in the scene is shaded per face (top brightest, the street face next), so counters, shelves and buildings read as solid.
 
 The light follows the clock: a pink dawn, plain daylight, a golden hour before the evening rush, a violet dusk, then night. After dark the street goes dark blue while windows and neon signs light up, street lamps and vending machines throw pools of light, the rival's glass front glows, and your shop stays brightly lit with everyone inside it. The camera starts close on your shop with the rival's sign in frame. Press M for the city map, which shows your branches and their rivals and highlights the lots on offer when you look for a new store.
 

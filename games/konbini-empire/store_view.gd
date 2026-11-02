@@ -191,6 +191,7 @@ var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the s
 var pool_mat: StandardMaterial3D
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
+var box_mesh: ArrayMesh
 var shadow_mesh: CylinderMesh
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
@@ -281,12 +282,31 @@ func mat(color: Color, texture: Texture2D = null, indoor := false) -> StandardMa
 
 func block(parent: Node3D, size_: Vector3, pos: Vector3, color: Color, indoor := false) -> void:
 	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size_
-	mi.mesh = bm
-	mi.material_override = mat(color, null, indoor or parent == room)
+	mi.mesh = shaded_box()
+	mi.scale = size_
+	var m := mat(color, null, indoor or parent == room)
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	mi.material_override = m
 	mi.position = pos
 	parent.add_child(mi)
+
+
+## A unit cube with each face pre-shaded as if lit from the sun's side (top brightest, the street face next), so
+## unshaded boxes still read as solid.
+func shaded_box() -> ArrayMesh:
+	if box_mesh:
+		return box_mesh
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for f in [[Vector3.UP, 1.0], [Vector3.BACK, 0.92], [Vector3.RIGHT, 0.8], [Vector3.LEFT, 0.88], [Vector3.FORWARD, 0.85], [Vector3.DOWN, 0.7]]:
+		var n: Vector3 = f[0]
+		var u := n.cross(Vector3.RIGHT if absf(n.x) < 0.5 else Vector3.UP) * 0.5
+		var v := n.cross(u)
+		st.set_color(Color(f[1], f[1], f[1]))
+		add_quad(st, [n * 0.5 - u - v, n * 0.5 + u - v, n * 0.5 + u + v, n * 0.5 - u + v], [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	box_mesh = st.commit()
+	return box_mesh
 
 
 func plane(parent: Node3D, size_: Vector2, pos: Vector3, m: Material) -> void:
@@ -311,6 +331,21 @@ func sprite(sheet: String, region: Rect2, px: float, billboard := true) -> Sprit
 	if billboard:
 		s.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	return s
+
+
+## A picture on an upright quad facing +z (shop art, the rival's window), mipmapped so it stays clean when small.
+func art_panel(parent: Node3D, img: Image, size_: Vector2, pos: Vector3, tint := Color.WHITE, reps := 1.0) -> void:
+	img.generate_mipmaps()
+	var m := mat(tint, ImageTexture.create_from_image(img), true)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	m.uv1_scale = Vector3(reps, 1, 1)
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = size_
+	mi.mesh = q
+	mi.material_override = m
+	mi.position = pos
+	parent.add_child(mi)
 
 
 func radial(colors: Array, offsets: Array) -> GradientTexture2D:
@@ -1492,8 +1527,8 @@ func build_set() -> void:
 	var walk := surface(mat(Color.WHITE, tiles(Color("c9c4bb"), Color("a9a49b"))))
 	rect_quad(walk, Rect2(SET.position.x, -7.2, SET.size.x, 3.5), -0.045, 0.0, false, 0.5)
 	rect_quad(walk, Rect2(SET.position.x, 3.7, SET.size.x, 3.5), -0.045, 0.0, false, 0.5)
-	var tar := surface(mat(Color("5d5f66")))
-	rect_quad(tar, Rect2(SET.position.x, -3.7, SET.size.x, 7.4), -0.045)
+	var tar := surface(tiled(speckle([Color("5d5f66"), Color("585a61"), Color("63656c"), Color("55575d")]), Vector2.ONE))
+	rect_quad(tar, Rect2(SET.position.x, -3.7, SET.size.x, 7.4), -0.045, 0.0, false, 0.5)
 	var paint := surface(mat(Color("ebe7dc")))
 	var x := SET.position.x
 	while x < SET.end.x:
@@ -1507,12 +1542,48 @@ func build_set() -> void:
 	var kerb := surface(mat(Color("8f8b84")))
 	for kz in [-3.8, 3.6]:
 		rect_quad(kerb, Rect2(SET.position.x, kz, SET.size.x, 0.2), -0.04)
+	var tactile := surface(mat(Color("d2b862")))  # the yellow guide strip down each sidewalk
+	for tz in [-5.4, 5.0]:
+		rect_quad(tactile, Rect2(SET.position.x, tz, SET.size.x, 0.32), -0.042)
 	# your parking: bays and bicycles between your shop and the alley, nothing tall to hide the till
 	var bay := surface(mat(Color("74767c")))
 	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042)
 	for bx in [-2.2, 0.2, 2.6]:
 		rect_quad(paint, Rect2(bx, -15.6, 0.12, 4.6), -0.038)
-	commit([gnd, walk, tar, paint, kerb, bay], set_node)
+	commit([gnd, walk, tar, paint, kerb, bay, tactile], set_node)
+	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
+		for ring in [[0.46, Color("74767c"), -0.039], [0.36, Color("4d4f55"), -0.037]]:
+			var disc := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = ring[0]
+			cm.bottom_radius = ring[0]
+			cm.height = 0.002
+			cm.radial_segments = 20
+			disc.mesh = cm
+			disc.material_override = mat(ring[1])
+			disc.position = Vector3(mh.x, ring[2], mh.y)
+			set_node.add_child(disc)
+	# utility poles and their sagging wires along the far sidewalk
+	var wires := surface(mat(Color("34343a")))
+	var poles := [SET.position.x, -42.0, -19.0, 12.0, 36.0, SET.end.x]
+	for k in poles.size():
+		var px: float = poles[k]
+		if k > 0 and k < poles.size() - 1:
+			block(set_node, Vector3(0.24, 7.0, 0.24), Vector3(px, 3.5, 6.85), Color("a19d94"))
+			block(set_node, Vector3(0.3, 1.1, 0.3), Vector3(px, 0.55, 6.85), Color("e3c34a"))
+			block(set_node, Vector3(0.12, 0.12, 1.4), Vector3(px, 6.6, 6.85), Color("6f6c66"))
+			if k % 2 == 0:
+				block(set_node, Vector3(0.5, 0.75, 0.5), Vector3(px, 5.5, 7.2), Color("8a979c"))
+		if k == 0:
+			continue
+		var x0: float = poles[k - 1]
+		for dz in [-0.55, 0.0, 0.55]:
+			var pts := PackedVector3Array()
+			for i in 9:
+				var t := i / 8.0
+				pts.append(Vector3(lerpf(x0, px, t), 6.66 - 0.035 * (px - x0) * 4.0 * t * (1.0 - t), 6.85 + dz))
+			wall(wires, pts, 0.0, -0.025, 0.025)
+	commit([wires], set_node)
 	# neighbours: the district's own mix of buildings either side of your shop and the rival, a row behind them
 	var mix: Array = Sim.City.MIX[type]
 	var r := RandomNumberGenerator.new()
@@ -1544,8 +1615,9 @@ func build_set() -> void:
 		mm_node(rm, building_mat, set_node)
 	# the part of your unit you haven't knocked through yet
 	if mine > -16.5:
-		block(set_node, Vector3(mine + 16.5, 3.6, 9.0), Vector3((mine - 16.5) / 2, 1.8, -11.7), Color("d9d3c4"))
-		block(set_node, Vector3(mine + 16.4, 2.6, 0.06), Vector3((mine - 16.5) / 2, 1.3, -7.18), Color("a7a399"))
+		# stops short of your left wall, so the two faces don't fight
+		block(set_node, Vector3(mine + 16.2, 3.6, 9.0), Vector3((mine - 16.8) / 2, 1.8, -11.7), Color("d9d3c4"))
+		block(set_node, Vector3(mine + 16.2, 2.6, 0.06), Vector3((mine - 16.8) / 2, 1.3, -7.18), Color("a7a399"))
 	build_rival(span)
 	build_room()
 	# street furniture
@@ -1563,6 +1635,11 @@ func build_set() -> void:
 		if p[0] == 6:
 			pool(set_node, Vector3(p[1].x, 0, p[1].y), Vector2(7.0, 7.0))
 	pool(set_node, Vector3(Sim.ORIGIN.x + (zl + 6.6) / 2, 0, Sim.ORIGIN.y + 4.7), Vector2(10.6 - zl, 6.0))  # your shop's glass front
+	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6], [5, Vector2(-8.3, -6.2), 0.7]]:
+		var s := sprite("decor", Rect2(d[0] * DECOR, 0, DECOR, DECOR), DECOR_PX * d[2])
+		s.position = Vector3(d[1].x, DECOR / 2.0 * DECOR_PX * d[2], d[1].y)
+		set_node.add_child(s)
+		lit_sprites.append(s)
 	for pole in [Vector3(Sim.CROSS_X - 1.8, 0, -4.0), Vector3(Sim.CROSS_X + 1.8, 0, 4.0)]:
 		block(set_node, Vector3(0.12, 2.6, 0.12), pole + Vector3(0, 1.3, 0), Color("4a4d57"))
 		block(set_node, Vector3(0.36, 0.7, 0.3), pole + Vector3(0, 2.5, 0), Color("2b2d42"))
@@ -1620,8 +1697,29 @@ func build_rival(span: Vector2) -> void:
 	if rv.defeated:
 		block(set_node, Vector3(w - 0.8, 2.9, 0.08), Vector3(cx, 1.45, -7.12), Color("a9a59c"))
 		return
-	block(set_node, Vector3(w - 0.8, 2.6, 0.08), Vector3(cx, 1.3, -7.12), Color("7fb2dd"), true)
-	block(set_node, Vector3(1.4, 2.6, 0.1), Vector3(rv.x, 1.3, -7.08), Color("dbeaf5"))
+	# fascia in the chain's stripes, a grey roof inside a white rim with its air-conditioning units
+	var band := Image.create(1, 10, false, Image.FORMAT_RGB8)
+	band.fill(c)
+	band.set_pixel(0, 6, Color.WHITE)
+	for y in [7, 8, 9]:
+		band.set_pixel(0, y, c.darkened(0.25))
+	art_panel(set_node, band, Vector2(w + 0.1, 0.8), Vector3(cx, 3.65, -7.095))
+	block(set_node, Vector3(w - 0.6, 0.05, 8.4), Vector3(cx, 4.22, -11.7), Color("a3a29e"))
+	for k in 3:
+		block(set_node, Vector3(1.0, 0.55, 0.9), Vector3(cx - w * 0.3 + k * 1.4, 4.5, -13.5 + k % 2 * 1.6), Color("cfd0cc"))
+	# the shop floor behind the glass (the chain's shelves, lit at night), mullions, the sliding door
+	var shelves: Image = load("res://art/bg_super.png").get_image().get_region(Rect2i(80, 126, 560, 119))
+	art_panel(set_node, shelves, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
+	block(set_node, Vector3(w - 0.8, 0.12, 0.12), Vector3(cx, 2.6, -7.06), Color("5e6670"))
+	block(set_node, Vector3(w - 0.8, 0.16, 0.14), Vector3(cx, 0.08, -7.06), Color("5e6670"))
+	var x0 := span.x + 0.4
+	while x0 < span.y - 0.3:
+		if absf(x0 - rv.x) > 0.8:
+			block(set_node, Vector3(0.08, 2.6, 0.1), Vector3(x0, 1.3, -7.05), Color("5e6670"))
+		x0 += 2.0
+	block(set_node, Vector3(1.4, 2.6, 0.1), Vector3(rv.x, 1.3, -7.05), Color(0.86, 0.93, 0.98, 0.55), true)
+	for dx in [-0.72, 0.0, 0.72]:
+		block(set_node, Vector3(0.07, 2.6, 0.12), Vector3(rv.x + dx, 1.3, -7.03), Color("8b96a1"))
 	block(set_node, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
 	pool(set_node, Vector3(cx, 0, -7.2), Vector2(w + 2.0, 5.0))
 
@@ -1643,16 +1741,7 @@ func build_room() -> void:
 	var crop: Image = tex[L.bg].get_image().get_region(L.wall)
 	var wall_h := 3.0
 	block(room, Vector3(w + 0.25, wall_h, 0.25), Vector3(cx, wall_h / 2, -4.62), Color("e6dcc6"))
-	var art := MeshInstance3D.new()
-	var q := QuadMesh.new()
-	q.size = Vector2(w, wall_h)
-	art.mesh = q
-	var am := mat(Color.WHITE, ImageTexture.create_from_image(crop), true)
-	am.uv1_scale = Vector3(w / (wall_h * crop.get_width() / crop.get_height()), 1, 1)
-	am.texture_repeat = true
-	art.material_override = am
-	art.position = Vector3(cx, wall_h / 2, -4.49)
-	room.add_child(art)
+	art_panel(room, crop, Vector2(w, wall_h), Vector3(cx, wall_h / 2, -4.49), Color.WHITE, w / (wall_h * crop.get_width() / crop.get_height()))
 	block(room, Vector3(0.25, wall_h, 9.25), Vector3(zl - 0.125, wall_h / 2, 0.0), Color("efe6d2"))
 	block(room, Vector3(0.02, 0.16, 9.0), Vector3(zl + 0.01, wall_h * 0.72, 0.0), L.stripe[0])
 	block(room, Vector3(0.02, 0.16, 9.0), Vector3(zl + 0.01, wall_h * 0.62, 0.0), L.stripe[1])
@@ -1669,7 +1758,9 @@ func build_room() -> void:
 	for reg in st.registers:
 		if reg.active:
 			var p: Vector2 = Sim.REGISTERS[reg.id].pos
-			block(room, Vector3(0.45, 0.32, 0.5), Vector3(p.x, 1.16, p.y), Color("3b3f52"))
+			var till := sprite("perks", Rect2(10 * 80, 0, 80, 80), 0.0075)
+			till.position = Vector3(p.x, 1.28, p.y)
+			room.add_child(till)
 	# a fixture per product line, its stock as up to three product icons
 	for pid in st.products:
 		var slot: Dictionary = Sim.SLOTS[Sim.PRODUCTS[pid].slot]
@@ -1680,10 +1771,17 @@ func build_room() -> void:
 				h = 2.0
 				block(room, Vector3(2.3, h, 0.8), Vector3(p.x, h / 2, p.y), Color("dfe9ef"))
 				block(room, Vector3(2.2, h - 0.3, 0.05), Vector3(p.x, h / 2, p.y + 0.41), Color("9fd3ea"))
+				for y in [0.55, 0.95, 1.35]:  # shelves seen through the glass doors
+					block(room, Vector3(2.2, 0.04, 0.02), Vector3(p.x, y, p.y + 0.44), Color("78b6d0"))
+				for dx in [-0.37, 0.37]:
+					block(room, Vector3(0.06, h - 0.3, 0.07), Vector3(p.x + dx, h / 2, p.y + 0.43), Color("c3ccd2"))
+				block(room, Vector3(2.3, 0.18, 0.06), Vector3(p.x, h - 0.09, p.y + 0.42), LAYOUT.stripe[1])
 			"shelfA", "shelfB", "shelfC":
 				h = 1.4
 				block(room, Vector3(2.3, h, 0.8), Vector3(p.x, h / 2, p.y), Color("e9e4d6"))
 				block(room, Vector3(2.4, 0.1, 0.9), Vector3(p.x, h + 0.05, p.y), Color("3b3f52"))
+				for y in [h / 3, h * 2 / 3]:
+					block(room, Vector3(2.34, 0.05, 0.84), Vector3(p.x, y, p.y), Color("cfc4ac"))
 			"frontA", "island":
 				h = 0.9
 				block(room, Vector3(2.3, h, 0.8), Vector3(p.x, h / 2, p.y), Color("eef3f6") if pid == "icecream" else Color("e9e4d6"))
@@ -1691,8 +1789,12 @@ func build_room() -> void:
 				h = 1.3
 				block(room, Vector3(2.0, h, 0.45), Vector3(p.x, h / 2, p.y), Color("b9a37f"))
 			_:
-				h = 1.0
-				block(room, Vector3(0.5, 0.45, 0.6), Vector3(p.x, 1.22, p.y), {"coffee": Color("6b4a35"), "chicken": Color("c9ccd1"), "oden": Color("8a5a3c")}.get(pid, Color.GRAY))
+				if pid == "coffee":
+					var machine := sprite("perks", Rect2(3 * 80, 0, 80, 80), 0.0075)
+					machine.position = Vector3(p.x, 1.28, p.y)
+					room.add_child(machine)
+				else:
+					block(room, Vector3(0.5, 0.45, 0.6), Vector3(p.x, 1.22, p.y), {"chicken": Color("c9ccd1"), "oden": Color("8a5a3c")}.get(pid, Color.GRAY))
 				h = 1.45
 		var icons := []
 		var ic: Array = Sim.PRODUCTS[pid].icon
@@ -1832,8 +1934,18 @@ func make_threat(t: Dictionary, col: Color) -> Dictionary:
 				m.radius = 0.32
 				m.height = 0.5
 				mi.mesh = m
-				mi.material_override = mat(Color("2f3a36"))
+				mi.material_override = mat(Color("8597ad"))
 				mi.position.y = 0.25
+				# a lit bulge on the sun side and the tied knot, so the bag reads round
+				for part in [[0.22, Vector3(-0.06, 0.06, 0.12), Color("b3c3d6")], [0.1, Vector3(0, 0.27, 0), Color("8597ad")]]:
+					var bit := MeshInstance3D.new()
+					var bm := SphereMesh.new()
+					bm.radius = part[0]
+					bm.height = part[0] * 2.0
+					bit.mesh = bm
+					bit.material_override = mat(part[2])
+					bit.position = part[1]
+					mi.add_child(bit)
 			"spill":
 				var m := CylinderMesh.new()
 				m.top_radius = 0.45
