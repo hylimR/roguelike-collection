@@ -169,6 +169,8 @@ var C: Dictionary  # the City map
 var trains: Array = []  # movers on the Yamanote
 var paths: Array = []  # every road as a path for movers: {pts, cum, w, kind, closed, box}
 var rail_path: Dictionary
+var set_feet: Array = []  # world footprints of what the street set builds behind its street, where the city gives way
+var pillar_deck: Array = []  # per pillar: the deck piece it holds up
 var elevated: Array = []  # [MeshInstance3D, a, b]: deck pieces, hidden when they would cover the focused shop
 var brecs: Array = []  # per building: {foot, h, box: [instance], roof: instance or -1, hidden}
 var box_mm: MultiMesh
@@ -737,6 +739,8 @@ func build_elevated() -> void:
 			pts.append(pts[0])
 			pts.append(pts[1])
 		var half: float = rt[2] / 2
+		var deck_at := []  # per point: the deck piece over it, so its pillar can go with it
+		deck_at.resize(pts.size())
 		var i := 0
 		while i < pts.size() - 1 - (1 if rt[1] else 0):
 			var j := mini(i + 8, pts.size() - 1 - (1 if rt[1] else 0))
@@ -765,6 +769,8 @@ func build_elevated() -> void:
 						ribbon(extra, part, s + 0.07, s - 0.07, 0.32, 0.5, f, l)
 			var mi := commit([top, side, mark, extra], city)
 			elevated.append([mi, Vector2(pts[i].x, pts[i].z), Vector2(pts[j].x, pts[j].z)])
+			for k in range(i, j + 1):
+				deck_at[k] = mi
 			i = j
 		# pillars every so often where the deck is high enough to need one
 		var gap := 10.0 if rt[3] == "rail" else 14.0
@@ -773,11 +779,13 @@ func build_elevated() -> void:
 			walked += pts[k - 1].distance_to(pts[k])
 			if walked >= gap and pts[k].y > 1.5:
 				walked = 0.0
-				pillars.append([pts[k], 0.7 if rt[3] == "rail" else (1.0 if rt[3] == "ramp" else 1.5)])
+				pillars.append([pts[k], 0.7 if rt[3] == "rail" else (1.0 if rt[3] == "ramp" else 1.5), deck_at[k]])
 	var pm := BoxMesh.new()
 	pillar_mm = multimesh(pm, pillars.size())
 	pillar_base.clear()
+	pillar_deck.clear()
 	for k in pillars.size():
+		pillar_deck.append(pillars[k][2])
 		var p: Vector3 = pillars[k][0]
 		var tf := Transform3D(Basis.from_scale(Vector3(pillars[k][1], p.y, pillars[k][1])), Vector3(p.x, p.y / 2.0, p.z))
 		pillar_mm.set_instance_transform(k, tf)
@@ -1144,25 +1152,27 @@ func city_signature() -> String:
 	return ",".join(parts)
 
 
-## Store mode carves the street set into Tokyo: city buildings, trees, decks and sprites inside it go, and those in
-## front of it that would cover the street are cut away.
+## Store mode carves the street set into Tokyo: city buildings, trees, decks and sprites on its street, on the open
+## ground in front of it or where the set builds its own go, and those in front that would cover the street are cut
+## away. Everywhere else behind the street the city stays, its roads included.
 func update_fade() -> void:
 	var on := mode == "store" and not branch.is_empty()
-	var area := Rect2()
+	var front := Rect2()  # the set's street and the open ground between it and the camera
 	var scr := Rect2()
 	var depth := INF
 	if on:
 		var o := site.position
-		area = Rect2(o.x + SET.position.x, o.z + SET.position.y, SET.size.x, SET.size.y)
+		front = Rect2(o.x + SET.position.x, o.z - 7.2, SET.size.x, SET.end.y + 7.2)
 		scr = foot_rect(Rect2(o.x - 24.0, o.z - 18.0, 54.0, 26.0), 5.0)
 		depth = o.x + o.z
+	var taken := func(f: Rect2) -> bool: return on and (f.intersects(front) or set_feet.any(func(q): return f.intersects(q)))
 	for e in lm_sprites + lot_sprites:
 		var s: Sprite3D = e[0]
 		var at_ := Vector2(s.position.x, s.position.z)
 		var base := iso(s.position - Vector3(0, s.position.y, 0))
 		var tall: float = s.region_rect.size.y * s.pixel_size
 		var r := Rect2(base + Vector2(-e[1], -tall * 0.87), Vector2(e[1] * 2, tall * 0.87))
-		s.visible = not (on and area.has_point(at_))
+		s.visible = not taken.call(Rect2(at_ - Vector2(0.5, 0.5), Vector2.ONE))
 		var fade_it: bool = on and r.intersects(scr) and at_.x + at_.y > depth
 		s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED if fade_it else SpriteBase3D.ALPHA_CUT_DISCARD
 		s.set_meta("base", Color(1, 1, 1, 0.25) if fade_it else Color.WHITE)
@@ -1170,7 +1180,7 @@ func update_fade() -> void:
 	var away := Transform3D(Basis.from_scale(Vector3.ONE * 0.001), Vector3(0, -50, 0))
 	for rec in brecs:
 		var f: Rect2 = rec.foot
-		var cut: bool = on and (f.intersects(area) or (f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr)))
+		var cut: bool = taken.call(f) or (on and f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr))
 		if cut != rec.hidden:
 			rec.hidden = cut
 			for k in rec.box:
@@ -1180,16 +1190,19 @@ func update_fade() -> void:
 	for tm in tree_mms:
 		for k in tm[1].size():
 			var p: Vector3 = tm[1][k].origin
-			var cut: bool = on and (area.has_point(Vector2(p.x, p.z)) or (p.x + p.z > depth and foot_rect(Rect2(p.x - 1.5, p.z - 1.5, 3, 3), tm[2]).intersects(scr)))
+			var cut: bool = taken.call(Rect2(p.x - 1.5, p.z - 1.5, 3, 3)) or (on and p.x + p.z > depth and foot_rect(Rect2(p.x - 1.5, p.z - 1.5, 3, 3), tm[2]).intersects(scr))
 			tm[0].set_instance_transform(k, away if cut else tm[1][k])
-	var big := area.grow(14.0)
-	for k in pillar_base.size():
-		var p: Vector3 = pillar_base[k].origin
-		pillar_mm.set_instance_transform(k, away if on and big.has_point(Vector2(p.x, p.z)) else pillar_base[k])
+	# a deck 6 m up hides the ground about 10 m behind it, so decks go only over the street and in front of it
+	var over := Rect2(front.position.x - 4.0, front.position.y - 1.3, front.size.x + 8.0, 28.0)
 	for part in elevated:
-		part[0].visible = not on or not seg_hits(big, part[1], part[2])
+		part[0].visible = not on or not seg_hits(over, part[1], part[2])
 		if part.size() > 3:
 			part[3].visible = part[0].visible
+	for k in pillar_base.size():  # a pillar goes with its deck
+		var p: Vector3 = pillar_base[k].origin
+		var deck: MeshInstance3D = pillar_deck[k]
+		var cut: bool = taken.call(Rect2(p.x - 1.0, p.z - 1.0, 2, 2)) or (deck != null and not deck.visible)
+		pillar_mm.set_instance_transform(k, away if cut else pillar_base[k])
 	if mask_vp:
 		mask_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
@@ -1302,11 +1315,12 @@ func view_rect() -> Rect2:
 	return Rect2(view_center() - Vector2(r, r), Vector2(r, r) * 2.0)
 
 
-## The street set's footprint in the world (empty outside store mode): city movers keep out of it.
+## The set's own street, sidewalk to sidewalk, in the world (empty outside store mode): city movers keep off it,
+## while the city roads either side of it stay open to them.
 func set_area() -> Rect2:
 	if mode != "store" or branch.is_empty():
 		return Rect2()
-	return Rect2(site.position.x + SET.position.x, site.position.z + SET.position.y, SET.size.x, SET.size.y)
+	return Rect2(site.position.x + SET.position.x, site.position.z - 7.2, SET.size.x, 14.4)
 
 
 ## A walker on a sidewalk (or a car in a lane) of a road in view; new ones start near the view's edge.
@@ -1479,6 +1493,7 @@ func show_branch(i: int) -> void:
 		clear_actors()
 		floaters.clear()
 		set_sig = ""
+		set_feet.clear()
 		site.position = frame_origin(b.lot)
 	refresh_city(moved)
 
@@ -1519,15 +1534,25 @@ func build_set() -> void:
 	var type: String = sim.districts[sim.lots[b.lot].block].type
 	var zl: float = Sim.ZONE_LEFT[st.size]
 	shop_area = Rect2(site.position.x + Sim.ORIGIN.x + zl, site.position.z + Sim.ORIGIN.y - 4.7, 6.6 - zl, 9.4)
-	# ground: blocks behind both sidewalks, the sidewalks, the road with its centre line and crossing
-	var gnd := surface(mat(Color("cdc6b6")))
-	rect_quad(gnd, Rect2(SET.position.x, SET.position.y, SET.size.x, -7.2 - SET.position.y), -0.05)
-	rect_quad(gnd, Rect2(SET.position.x, 7.2, SET.size.x, SET.end.y - 7.2), -0.05)
+	# ground: the sidewalks, the road with its centre line and crossing. Either side the city's own blocks and roads
+	# show, so the side streets and avenues that cross the set run on through it.
+	var span := rival_span(b.rival)
+	var roads := roads_near()
+	var side_roads := roads.filter(func(rd): return rd is Array or rd.size.y > rd.size.x)  # avenues and cross streets
+	var far_gaps := mouths(-8.2, -3.6, side_roads, Vector2(-16.5, span.y))  # none between your shop and the rival
+	var near_gaps := mouths(3.6, 8.2, side_roads)
 	var walk := surface(mat(Color.WHITE, tiles(Color("c9c4bb"), Color("a9a49b"))))
-	rect_quad(walk, Rect2(SET.position.x, -7.2, SET.size.x, 3.5), -0.045, 0.0, false, 0.5)
-	rect_quad(walk, Rect2(SET.position.x, 3.7, SET.size.x, 3.5), -0.045, 0.0, false, 0.5)
 	var tar := surface(tiled(speckle([Color("5d5f66"), Color("585a61"), Color("63656c"), Color("55575d")]), Vector2.ONE))
 	rect_quad(tar, Rect2(SET.position.x, -3.7, SET.size.x, 7.4), -0.045, 0.0, false, 0.5)
+	var kerb := surface(mat(Color("8f8b84")))
+	var tactile := surface(mat(Color("d2b862")))  # the yellow guide strip down each sidewalk
+	for sd in [[far_gaps, -7.2, -3.8, -5.4], [near_gaps, 3.7, 3.6, 5.0]]:
+		for o in open_spans(sd[0]):
+			rect_quad(walk, Rect2(o.x, sd[1], o.y - o.x, 3.5), -0.045, 0.0, false, 0.5)
+			rect_quad(kerb, Rect2(o.x, sd[2], o.y - o.x, 0.2), -0.04)
+			rect_quad(tactile, Rect2(o.x, sd[3], o.y - o.x, 0.32), -0.042)
+		for g in sd[0]:  # a side road's mouth: the asphalt runs through the sidewalk
+			rect_quad(tar, Rect2(g.x, sd[1], g.y - g.x, 3.5), -0.045, 0.0, false, 0.5)
 	var paint := surface(mat(Color("ebe7dc")))
 	var x := SET.position.x
 	while x < SET.end.x:
@@ -1538,18 +1563,12 @@ func build_set() -> void:
 	while z < 3.4:
 		rect_quad(paint, Rect2(Sim.CROSS_X - 1.5, z, 3.0, 0.42), -0.04)
 		z += 0.84
-	var kerb := surface(mat(Color("8f8b84")))
-	for kz in [-3.8, 3.6]:
-		rect_quad(kerb, Rect2(SET.position.x, kz, SET.size.x, 0.2), -0.04)
-	var tactile := surface(mat(Color("d2b862")))  # the yellow guide strip down each sidewalk
-	for tz in [-5.4, 5.0]:
-		rect_quad(tactile, Rect2(SET.position.x, tz, SET.size.x, 0.32), -0.042)
 	# your parking: bays and bicycles between your shop and the alley, nothing tall to hide the till
 	var bay := surface(mat(Color("74767c")))
 	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042)
 	for bx in [-2.2, 0.2, 2.6]:
 		rect_quad(paint, Rect2(bx, -15.6, 0.12, 4.6), -0.038)
-	commit([gnd, walk, tar, paint, kerb, bay, tactile], set_node)
+	commit([walk, tar, paint, kerb, bay, tactile], set_node)
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
 		for ring in [[0.46, Color("74767c"), -0.039], [0.36, Color("4d4f55"), -0.037]]:
 			var disc := MeshInstance3D.new()
@@ -1564,7 +1583,7 @@ func build_set() -> void:
 			set_node.add_child(disc)
 	# utility poles and their sagging wires along the far sidewalk
 	var wires := surface(mat(Color("34343a")))
-	var poles := [SET.position.x, -42.0, -19.0, 12.0, 36.0, SET.end.x]
+	var poles := [SET.position.x, -42.0, -19.0, 12.0, 36.0, SET.end.x].filter(func(px): return absf(px) == SET.end.x or not in_gaps(px, near_gaps))
 	for k in poles.size():
 		var px: float = poles[k]
 		if k > 0 and k < poles.size() - 1:
@@ -1587,14 +1606,13 @@ func build_set() -> void:
 	var mix: Array = Sim.City.MIX[type]
 	var r := RandomNumberGenerator.new()
 	r.seed = b.lot * 7919 + 3
-	var span := rival_span(b.rival)
 	var boxes := []
 	var roofs := []
 	var mine: float = -10.0 + Sim.ZONE_LEFT[st.size]
 	for seg in [[SET.position.x, -27.75], [-26.25, -16.5], [span.y, 29.75], [31.25, SET.end.x]]:
-		set_row(seg[0], seg[1], -7.2, 13.0, mix, r, boxes, roofs, 0.7)
-	set_row(5.35, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 1.4)  # low, so it doesn't hide your till
-	set_row(SET.position.x, SET.end.x, -20.5, 11.0, mix, r, boxes, roofs, 1.0)
+		set_row(seg[0], seg[1], -7.2, 13.0, mix, r, boxes, roofs, 0.7, roads)
+	set_row(5.35, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 1.4, roads)  # low, so it doesn't hide your till
+	set_row(SET.position.x, SET.end.x, -20.5, 11.0, mix, r, boxes, roofs, 1.0, roads)
 	var bm := multimesh(BoxMesh.new(), boxes.size(), true, true)
 	for k in boxes.size():
 		var e: Array = boxes[k]
@@ -1627,6 +1645,8 @@ func build_set() -> void:
 	if b.quirk == "busStop":
 		props_at.append([11, Vector2(-24.5, -4.4)])
 	for p in props_at:
+		if in_gaps(p[1].x, far_gaps if p[1].y < 0.0 else near_gaps):
+			continue
 		var s := sprite("outdoor", Rect2(p[0] * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55)
 		s.position = Vector3(p[1].x, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55 - 0.05, p[1].y)
 		set_node.add_child(s)
@@ -1639,7 +1659,7 @@ func build_set() -> void:
 		s.position = Vector3(d[1].x, DECOR / 2.0 * DECOR_PX * d[2], d[1].y)
 		set_node.add_child(s)
 		lit_sprites.append(s)
-	for pole in [Vector3(Sim.CROSS_X - 1.8, 0, -4.0), Vector3(Sim.CROSS_X + 1.8, 0, 4.0)]:
+	for pole in [Vector3(Sim.CROSS_X - 1.8, 0, -4.0), Vector3(Sim.CROSS_X + 1.8, 0, 4.0)].filter(func(q): return not in_gaps(q.x, far_gaps if q.z < 0.0 else near_gaps)):
 		block(set_node, Vector3(0.12, 2.6, 0.12), pole + Vector3(0, 1.3, 0), Color("4a4d57"))
 		block(set_node, Vector3(0.36, 0.7, 0.3), pole + Vector3(0, 2.5, 0), Color("2b2d42"))
 	# outside facilities
@@ -1658,12 +1678,24 @@ func build_set() -> void:
 				pool(set_node, e[2] + Vector3(0, 0, 0.6), Vector2(3.5, 3.5))
 	if st.facilities.has("neon"):
 		block(set_node, Vector3(6.0, 0.7, 0.2), Vector3(-6.5, 3.75, -7.1), Color("ff4fa0"), true)
+	# the city gives way to everything built behind the street: your shop, the rival and the rows of neighbours
+	var o2 := Vector2(site.position.x, site.position.z)
+	set_feet = [Rect2(o2 + Vector2(-16.5, -20.2), Vector2(span.y + 16.5, 13.0))]
+	for e in boxes:
+		set_feet.append(Rect2(o2 + Vector2(e[1].x - e[0].x / 2, e[1].z - e[0].z / 2), Vector2(e[0].x, e[0].z)))
+	update_fade()
 	set_sig = scene_signature()
 	night = -1.0  # relight the new set
 
 
 ## A row of district buildings fronting z = zf (northwards into the block), shoulder to shoulder from x0 to x1.
-func set_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: RandomNumberGenerator, boxes: Array, roofs: Array, tall: float) -> void:
+## Gaps are left wherever a city road crosses the row, so the road runs on between the buildings.
+func set_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: RandomNumberGenerator, boxes: Array, roofs: Array, tall: float, roads: Array) -> void:
+	for run in free_runs(x0, x1, zf - max_depth, zf, roads):
+		fill_row(run.x, run.y, zf, max_depth, mix, r, boxes, roofs, tall)
+
+
+func fill_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: RandomNumberGenerator, boxes: Array, roofs: Array, tall: float) -> void:
 	var w8 := PackedFloat32Array(mix.map(func(m): return float(m[0])))
 	var pos := x0
 	while x1 - pos > 2.5:
@@ -1683,6 +1715,67 @@ func set_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: R
 			var rh := minf(fp.size.x, fp.size.y) * 0.32
 			roofs.append([Vector3(fp.size.x, rh, fp.size.y), Vector3(fp.get_center().x, h + rh / 2, fp.get_center().y), Color(bd.roof)])
 		pos += w
+
+
+## The city's streets (rects) and avenue pieces ([a, b, half width]) that cross the set, in the street frame.
+func roads_near() -> Array:
+	var o := Vector2(site.position.x, site.position.z)
+	var area := Rect2(o + SET.position, SET.size)
+	var out := []
+	for s in C.streets:
+		var rr := Rect2(s.from, s.line, s.to - s.from, s.w) if s.axis == "h" else Rect2(s.line, s.from, s.w, s.to - s.from)
+		if rr.intersects(area):
+			out.append(Rect2(rr.position - o, rr.size))
+	for av in C.avenues:
+		for i in range(1, av.pts.size()):
+			if seg_hits(area.grow(av.w / 2), av.pts[i - 1], av.pts[i]):
+				out.append([av.pts[i - 1] - o, av.pts[i] - o, av.w / 2])
+	return out
+
+
+## Where side roads meet the set's sidewalk band z0..z1, as x spans, leaving out any that touch `keep`.
+func mouths(z0: float, z1: float, roads: Array, keep := Vector2(INF, INF)) -> Array:
+	var out := []
+	var x := SET.position.x
+	for run in free_runs(SET.position.x, SET.end.x, z0, z1, roads) + [Vector2(SET.end.x, SET.end.x)]:
+		if run.x > x and (x >= keep.y or run.x <= keep.x):
+			out.append(Vector2(x, run.x))
+		x = run.y
+	return out
+
+
+## The set's length with the gaps taken out.
+static func open_spans(gaps: Array) -> Array:
+	var out := []
+	var x := SET.position.x
+	for g in gaps + [Vector2(SET.end.x, SET.end.x)]:
+		if g.x > x:
+			out.append(Vector2(x, g.x))
+		x = g.y
+	return out
+
+
+static func in_gaps(x: float, gaps: Array) -> bool:
+	return gaps.any(func(g): return x > g.x - 0.6 and x < g.y + 0.6)
+
+
+## The stretches of x0..x1 where the band z0..z1 is clear of every road, as Vector2(from, to), on a 0.5 m grid.
+static func free_runs(x0: float, x1: float, z0: float, z1: float, roads: Array) -> Array:
+	var runs := []
+	var start := INF
+	var x := x0
+	while x < x1:
+		var cell := Rect2(x, z0 + 0.05, minf(0.5, x1 - x), z1 - z0 - 0.1)  # inset, so a road only touching the band doesn't count
+		var hit := roads.any(func(rd): return cell.intersects(rd) if rd is Rect2 else Sim.City.seg_rect_dist(rd[0], rd[1], cell) <= rd[2])
+		if hit and start < INF:
+			runs.append(Vector2(start, x))
+			start = INF
+		elif not hit and start == INF:
+			start = x
+		x += 0.5
+	if start < INF:
+		runs.append(Vector2(start, x1))
+	return runs
 
 
 ## The rival's shop: chain colours on the fascia and awning, glass front; shutters once it has closed.
