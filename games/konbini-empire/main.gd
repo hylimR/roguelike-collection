@@ -241,6 +241,17 @@ func key_button(cb: Callable, tip: String, ic: Texture2D, w: int, h: int, radius
 	return b
 
 
+## Anchors a HUD group to a screen edge or corner; `o` holds the left, top, right and bottom offsets.
+func pin(c: Control, preset: Control.LayoutPreset, o: Rect2) -> void:
+	c.set_anchors_preset(preset)
+	c.offset_left = o.position.x
+	c.offset_top = o.position.y
+	c.offset_right = o.size.x
+	c.offset_bottom = o.size.y
+	c.grow_horizontal = Control.GROW_DIRECTION_BEGIN if c.anchor_left == 1.0 else Control.GROW_DIRECTION_END
+	c.grow_vertical = Control.GROW_DIRECTION_BEGIN if c.anchor_top == 1.0 else Control.GROW_DIRECTION_END
+
+
 func picture(sheet: String, i: int, cell: int, min_size: Vector2) -> TextureRect:
 	var r := TextureRect.new()
 	r.texture = frame(sheet, i, cell)
@@ -283,7 +294,7 @@ func build() -> void:
 	view = StoreView.new()
 	view.tex = tex
 	view.bold = bold
-	view.size = Vector2(960, 540)
+	view.set_anchors_preset(Control.PRESET_FULL_RECT)  # wider or taller windows see more street
 	view.clip_contents = true
 	view.sim = sim
 	view.act_requested.connect(do_act)
@@ -291,8 +302,7 @@ func build() -> void:
 	add_child(view)
 
 	var top := HBoxContainer.new()
-	top.position = Vector2(214, 8)
-	top.size = Vector2(952 - 214, 30)
+	pin(top, Control.PRESET_TOP_WIDE, Rect2(214, 8, -8, 38))
 	top.alignment = BoxContainer.ALIGNMENT_END
 	top.add_theme_constant_override("separation", 6)
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -327,8 +337,7 @@ func build() -> void:
 	add_child(banner)
 
 	var bottom := VBoxContainer.new()
-	bottom.position = Vector2(10, 400)
-	bottom.size = Vector2(940, 130)  # contents sit at its bottom, 10 px off the edge
+	pin(bottom, Control.PRESET_BOTTOM_WIDE, Rect2(10, -140, -10, -10))  # contents sit at its bottom, 10 px off the edge
 	bottom.alignment = BoxContainer.ALIGNMENT_END
 	bottom.add_theme_constant_override("separation", 6)
 	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -389,7 +398,7 @@ func build() -> void:
 	# the store card: only as tall as its content, so the street keeps the rest of the screen
 	store_card = PanelContainer.new()
 	store_card.add_theme_stylebox_override("panel", box(PAPER, 20, 10, 0, 5))
-	store_card.position = Vector2(952 - CARD_W, 46)
+	pin(store_card, Control.PRESET_TOP_RIGHT, Rect2(-8 - CARD_W, 46, -8, 46))
 	add_child(store_card)
 	var sv := VBoxContainer.new()
 	sv.add_theme_constant_override("separation", 4)
@@ -668,7 +677,7 @@ func refresh_ui() -> void:
 	banner.text = "Paused  [Space]" if held else ("Click a numbered lot  ·  Esc to go back" if view.pick == "listing" and view.mode == "city" else "")
 	banner.visible = banner.text != ""
 	banner.reset_size()
-	banner.position.x = (960 - banner.size.x) / 2.0
+	banner.position.x = (size.x - banner.size.x) / 2.0
 
 	if tabs.get_child_count() != sim.branches.size():
 		for c in tabs.get_children():

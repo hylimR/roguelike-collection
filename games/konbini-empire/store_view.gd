@@ -222,6 +222,7 @@ func _ready() -> void:
 	screen_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(screen_rect)
 	get_window().size_changed.connect(fit_viewport)
+	resized.connect(fit_viewport)
 	fit_viewport.call_deferred()
 	env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
@@ -1297,7 +1298,7 @@ func facing(node: Sprite3D, dir: Vector3, frame0: int, cell: Vector2i) -> void:
 
 
 func view_rect() -> Rect2:
-	var r := cam.size * 1.5
+	var r := cam.size * 0.85 * maxf(size.x / size.y, 16.0 / 9.0)  # wide screens see further along the street
 	return Rect2(view_center() - Vector2(r, r), Vector2(r, r) * 2.0)
 
 
@@ -2025,7 +2026,8 @@ func add_events(evs: Array) -> void:
 
 # ---------- input ----------
 
-## Sizes the 3D render to the real pixels this view covers (the UI itself is laid out at 960x540).
+## Sizes the 3D render to the real pixels this view covers. The UI is laid out at 960x540 or more: the window
+## stretches it by min(width / 960, height / 540) and shows the extra width or height as more of the scene.
 func fit_viewport() -> void:
 	var win := Vector2(get_window().size)
 	vp_scale = clampf(minf(win.x / 960.0, win.y / 540.0), 1.0, 3.0)

@@ -63,7 +63,7 @@ The HUD floats over the street in rounded cream bubbles, island-life style, and 
 - a small store card in the top-right corner that is only as tall as its content: district, rent and wages, the rival's takings, and one key per product showing its stock bar and restock price (click to restock);
 - store tabs, round ability keys, a speech bubble for news and a dock of colored app keys (Staff, Expand, Store, City) along the bottom.
 
-The store card hides on the city map.
+The store card hides on the city map. The game fills any window shape: a wider (ultrawide) or taller window shows more of the street instead of black bars, and the 3D scene renders at the screen's own resolution.
 
 Sound follows the street on screen: the door chime as customers walk in, coins on every sale, a scanner beep that climbs with your ring-up combo, a whoosh and a poof for chased-off threats, an alert before each attack. Level-ups, closed rivals and the nightly report get their own jingles. The music changes with the hour, like a clock radio: a morning, an afternoon, an evening and a night piece, crossfading as the day goes on.
 
