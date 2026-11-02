@@ -4,6 +4,7 @@ extends Control
 
 const Sim := preload("res://sim.gd")
 const StoreView := preload("res://store_view.gd")
+const Audio := preload("res://audio.gd")
 
 # island-life palette: cream bubbles, cocoa text, mint tags, a yellow highlight under the pointer
 const INK := Color("6b5236")
@@ -34,6 +35,8 @@ var modal: Control
 var modal_keys := {}
 var modal_kind := ""
 var best := ConfigFile.new()
+var audio: Audio
+var sound_btn: Button
 var bold: FontVariation
 var toasts: Array = []  # [text, color, seconds left]
 var ui_t := 0.0
@@ -70,6 +73,8 @@ func _ready() -> void:
 		tex[n] = load("res://art/%s.png" % n)
 	theme = make_theme()
 	best.load("user://best.cfg")
+	audio = Audio.new()
+	add_child(audio)
 	build()
 	new_run("")
 
@@ -164,6 +169,7 @@ func button(text: String, cb: Callable, tip := "") -> Button:
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
 	b.tooltip_text = tip
+	b.pressed.connect(audio.play.bind("click"))
 	b.pressed.connect(cb)
 	return b
 
@@ -301,9 +307,11 @@ func build() -> void:
 	add_child(clock_row)
 	pause_btn = button("II", toggle_hold, "Pause  [Space]")
 	speed_btn = button("1x", cycle_speed, "Game speed  [F]")
-	for b in [pause_btn, speed_btn]:
+	sound_btn = button("", cycle_sound, "Sound: on, music off, muted  [V]")
+	for b in [pause_btn, speed_btn, sound_btn]:
 		b.custom_minimum_size = Vector2(40, 28)
 		clock_row.add_child(b)
+	cycle_sound(best.get_value("settings", "sound", 0))
 	banner = label("", PAPER, 15)
 	banner.add_theme_stylebox_override("normal", pill_box(INK, 0, 3))
 	banner.position.y = 48
@@ -465,6 +473,7 @@ func drain() -> void:
 		for b in sim.branches:
 			if b.id == e.get("branch", -1) and b.id != mine:
 				where = b.name + ": "
+		sound(e, where == "")
 		match e.type:
 			"levelUp":
 				toast("Level %d! Pick a skill  [P]" % e.level, BLUE)
@@ -515,6 +524,57 @@ func drain() -> void:
 			show_report(day_end.report)
 
 
+## An event's sound: street noise only from the store on screen, good and bad news from any of them.
+func sound(e: Dictionary, here: bool) -> void:
+	match e.type:
+		"sale":
+			if here and not e.passive:
+				audio.play("sale", randf_range(0.94, 1.08), 0.09)
+		"enter":
+			if here:
+				audio.play("door", 1.0, 0.6)
+		"combo":
+			if here:
+				audio.play("scan", 1.0 + 0.06 * mini(e.count - 1, 8), 0.0)
+		"threatHit":
+			audio.play("shoo")
+		"repelled", "cleaned":
+			audio.play("poof")
+		"telegraph":
+			if here:
+				audio.play("alert")
+		"attack":
+			if here:
+				audio.play("attack")
+		"restock":
+			if here:
+				audio.play("restock", 1.0, 0.2)
+		"ability":
+			audio.play("ability")
+		"levelUp":
+			audio.play("levelup")
+		"rivalDefeated", "milestone", "storeOpened":
+			audio.play("fanfare")
+		"hired", "reroll":
+			audio.play("card")
+		"poached":
+			if here:
+				audio.play("bad", 1.0, 1.5)
+		"cantAfford", "reviewPosted", "stolen", "takeoverHit":
+			if here:
+				audio.play("bad")
+		"cantAffordHire", "cantAffordStore", "cantAffordExpansion", "roleFull", "storeCap", "foreclosed":
+			audio.play("bad")
+
+
+func cycle_sound(m := -1) -> void:
+	audio.set_mode((audio.mode + 1) % 3 if m < 0 else m)
+	sound_btn.text = ["♪", "♪ sfx", "mute"][audio.mode]
+	sound_btn.tooltip_text = "%s  [V]" % Audio.MODES[audio.mode]
+	best.set_value("settings", "sound", audio.mode)
+	best.save("user://best.cfg")
+
+
 func toast(text: String, color := INK) -> void:
 	toasts.append([text, color, 6.0])
 	if toasts.size() > 3:
@@ -527,6 +587,7 @@ func do_act(a: Dictionary) -> void:
 	sim.act(a)
 	drain()
 	if sim.phase == "choice":
+		audio.play("card")
 		show_choice()
 	ui_t = 0.0
 
@@ -593,6 +654,8 @@ func _notification(what: int) -> void:
 		focused = true
 	if view:
 		view.paused = not focused
+	if audio:
+		audio.set_focused(focused)
 
 
 # ---------- HUD ----------
@@ -602,6 +665,8 @@ func refresh_ui() -> void:
 		return
 	var b: Dictionary = sim.branches[sim.active]
 	var st: Dictionary = b.store
+	if sim.phase != "gameOver":
+		audio.follow(Sim.band(sim.hour()).name)
 	lbl_cash.text = yen(sim.player.cash)
 	lbl_level.text = "Lv %d" % sim.player.level
 	xp_bar.value = sim.player.xp / sim.player.xp_next
@@ -776,7 +841,7 @@ func show_intro() -> void:
 	v.add_theme_constant_override("separation", 6)
 	v.add_child(para("Your first konbini opens in %s. %s is next door and wants your customers. Every sale you make hits its takings; drive it out of business and a bigger chain moves in." % [b.name, Sim.RIVALS[b.rival.id].name], INK, 520))
 	v.add_child(para("Click the till when a customer is waiting (fast ring-ups build combos), click threats the rival sends (flyers, trash, mascots, thieves...), click a shelf to restock it. Hire staff, buy expansions, pick a card at every level, open more branches across Tokyo. Rent and wages are due every midnight; run out of cash and it's over.", MUTED, 520))
-	v.add_child(para("Keys: Space pause, F speed, R ring up, 1-5 abilities, P pick, S staff, G expand, N new store, M map, Tab next store.", MUTED, 520))
+	v.add_child(para("Keys: Space pause, F speed, R ring up, 1-5 abilities, P pick, S staff, G expand, N new store, M map, Tab next store, V sound.", MUTED, 520))
 	var go := func():
 		close_modal()
 		sim.act({"type": "start"})
@@ -981,6 +1046,7 @@ func close_staff() -> void:
 
 
 func show_report(r: Dictionary) -> void:
+	audio.play("closing")
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 4)
 	var g := GridContainer.new()
@@ -1015,6 +1081,8 @@ func show_report(r: Dictionary) -> void:
 
 
 func show_over() -> void:
+	audio.stop_music()
+	audio.play("bankrupt")
 	var rs: Dictionary = sim.run_stats
 	var score: int = rs.days * 5000 + rs.revenue
 	var prev: int = best.get_value("best", "score", 0)
@@ -1097,6 +1165,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			act_open("openExpansion")
 		KEY_N:
 			act_open("openListings")
+		KEY_V:
+			cycle_sound()
 		KEY_P:
 			open_pick()
 		KEY_R:
