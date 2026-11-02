@@ -5,18 +5,24 @@ extends Control
 const Sim := preload("res://sim.gd")
 const StoreView := preload("res://store_view.gd")
 
-const INK := Color("2b2d42")
-const PAPER := Color("f7f3e8")
-const GROUND := Color("e8e1cf")
-const LINE := Color("cfc8b4")
-const GREEN := Color("2f9e5b")
-const ORANGE := Color("e07b1a")
-const RED := Color("d64545")
-const BLUE := Color("2f6fd6")
-const MUTED := Color("7d7768")
-const RARITY_COLOR := {"common": Color("7d7768"), "rare": Color("2f6fd6"), "epic": Color("9b4dca"), "legendary": Color("d99a0b")}
+# island-life palette: cream bubbles, cocoa text, mint tags, a yellow highlight under the pointer
+const INK := Color("6b5236")
+const PAPER := Color("fffaea")
+const GROUND := Color("f3e9cc")
+const LINE := Color("e6d7b0")
+const GREEN := Color("3f9e4a")
+const ORANGE := Color("e98a1d")
+const RED := Color("e05a4e")
+const BLUE := Color("1f9e8e")
+const MUTED := Color("a08c69")
+const MINT := Color("4fc4ab")
+const YELLOW := Color("fbe27c")
+const SHADOW := Color(0.42, 0.3, 0.15, 0.25)
+const RARITY_COLOR := {"common": Color("a08c69"), "rare": Color("3a9bd9"), "epic": Color("a36fd6"), "legendary": Color("e8a317")}
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
+const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
 const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
+const CARD_W := 244  # the store card floats over the street's right edge; the camera shifts the street left of it
 
 var sim := Sim.new()
 var tex := {}
@@ -33,12 +39,12 @@ var toasts: Array = []  # [text, color, seconds left]
 var ui_t := 0.0
 var shelf_sig := ""
 
-var lbl_day: Label
 var lbl_cash: Label
 var lbl_level: Label
 var xp_bar: ProgressBar
 var lbl_rating: Label
 var lbl_bills: Label
+var bills_chip: PanelContainer
 var speed_btn: Button
 var pause_btn: Button
 var seed_btn: Button
@@ -70,41 +76,68 @@ func _ready() -> void:
 
 # ---------- theme & widget helpers ----------
 
-func box(bg: Color, border: Color, bw := 2, pad := 6) -> StyleBoxFlat:
+## A rounded bubble: `lip` darkens the bottom edge like a pressable key, `shadow` lifts it off the page.
+func box(bg: Color, radius := 12, pad := 6, lip := 0, shadow := 0) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = bg
-	s.border_color = border
-	s.set_border_width_all(bw)
+	s.set_corner_radius_all(radius)
 	s.set_content_margin_all(pad)
+	s.border_width_bottom = lip
+	s.border_color = bg.darkened(0.16)
+	s.shadow_size = shadow
+	s.shadow_offset = Vector2(0, shadow / 2.0)
+	s.shadow_color = SHADOW
+	return s
+
+
+func pill_box(bg: Color, lip := 3, shadow := 2) -> StyleBoxFlat:
+	var s := box(bg, 14, 4, lip, shadow)
+	s.content_margin_left = 12
+	s.content_margin_right = 12
 	return s
 
 
 func make_theme() -> Theme:
 	var th := Theme.new()
-	var f: FontFile = load("res://fonts/NotoSans-Regular.ttf")
+	var f: FontFile = load("res://fonts/Nunito.ttf")
+	f.fallbacks = [load("res://fonts/NotoSans-Regular.ttf")]  # ★ and friends
+	var wght := TextServerManager.get_primary_interface().name_to_tag("wght")  # a "wght" string key is ignored
+	var regular := FontVariation.new()
+	regular.base_font = f
+	regular.variation_opentype = {wght: 700}
 	bold = FontVariation.new()
 	bold.base_font = f
-	bold.variation_embolden = 0.7
-	th.default_font = f
+	bold.variation_opentype = {wght: 900}
+	th.default_font = regular
 	th.default_font_size = 13
 	th.set_font("font", "Button", bold)
-	th.set_stylebox("normal", "Button", box(PAPER, INK))
-	th.set_stylebox("hover", "Button", box(Color("e3f3e8"), INK))
-	th.set_stylebox("pressed", "Button", box(Color("c5e6d0"), INK))
-	th.set_stylebox("disabled", "Button", box(Color("ebe6da"), LINE))
+	th.set_stylebox("normal", "Button", pill_box(PAPER))
+	th.set_stylebox("hover", "Button", pill_box(YELLOW))
+	th.set_stylebox("pressed", "Button", pill_box(YELLOW.darkened(0.06), 1, 1))
+	th.set_stylebox("disabled", "Button", pill_box(Color("f1e8d2"), 0, 0))
 	th.set_stylebox("focus", "Button", StyleBoxEmpty.new())
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
 		th.set_color(c, "Button", INK)
-	th.set_color("font_disabled_color", "Button", Color("a39d8e"))
-	th.set_stylebox("panel", "PanelContainer", box(PAPER, INK, 2, 10))
+	th.set_color("font_disabled_color", "Button", Color("cdbd9a"))
+	th.set_color("icon_disabled_color", "Button", Color(1, 1, 1, 0.35))
+	th.set_stylebox("panel", "PanelContainer", box(PAPER, 20, 12, 0, 5))
 	th.set_color("font_color", "Label", INK)
-	th.set_stylebox("normal", "LineEdit", box(Color.WHITE, INK))
-	th.set_stylebox("focus", "LineEdit", box(Color.WHITE, GREEN))
+	var field := box(Color.WHITE, 14, 8)
+	field.set_border_width_all(2)
+	field.border_color = LINE
+	th.set_stylebox("normal", "LineEdit", field)
+	var focus: StyleBoxFlat = field.duplicate()
+	focus.border_color = MINT
+	th.set_stylebox("focus", "LineEdit", focus)
 	th.set_color("font_color", "LineEdit", INK)
-	th.set_stylebox("panel", "TooltipPanel", box(INK, INK, 1, 6))
+	th.set_color("font_placeholder_color", "LineEdit", MUTED)
+	th.set_stylebox("panel", "TooltipPanel", box(INK, 10, 6))
 	th.set_color("font_color", "TooltipLabel", PAPER)
-	th.set_stylebox("background", "ProgressBar", box(Color("ddd6c4"), Color("ddd6c4"), 0, 0))
-	th.set_stylebox("fill", "ProgressBar", box(GREEN, GREEN, 0, 0))
+	th.set_stylebox("background", "ProgressBar", box(Color("ece0c0"), 4, 0))
+	th.set_stylebox("fill", "ProgressBar", box(MINT, 4, 0))
+	th.set_stylebox("scroll", "VScrollBar", box(Color("f1e8d2"), 4, 0))
+	for k in ["grabber", "grabber_highlight", "grabber_pressed"]:
+		th.set_stylebox(k, "VScrollBar", box(LINE.darkened(0.1), 4, 0))
 	return th
 
 
@@ -140,8 +173,62 @@ func progress(color: Color, h := 8) -> ProgressBar:
 	p.show_percentage = false
 	p.custom_minimum_size.y = h
 	p.max_value = 1.0
-	p.add_theme_stylebox_override("fill", box(color, color, 0, 0))
+	p.add_theme_stylebox_override("fill", box(color, roundi(h / 2.0), 0))
+	p.add_theme_stylebox_override("background", box(Color("ece0c0"), roundi(h / 2.0), 0))
 	return p
+
+
+## A cream tag holding a few widgets, for the floating HUD.
+func chip(parts: Array, bg := PAPER) -> PanelContainer:
+	var p := PanelContainer.new()
+	var s := pill_box(bg, 0, 3)
+	s.content_margin_top = 2
+	s.content_margin_bottom = 2
+	p.add_theme_stylebox_override("panel", s)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for c in parts:
+		c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		h.add_child(c)
+	p.add_child(h)
+	return p
+
+
+## A name tag: a label on a colored pill, tilted a little.
+func tag(l: Label, bg: Color) -> PanelContainer:
+	var p := chip([l], bg)
+	p.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	p.rotation = deg_to_rad(-2.5)
+	return p
+
+
+func frame(sheet: String, i: int, cell: int) -> AtlasTexture:
+	var t := AtlasTexture.new()
+	t.atlas = tex[sheet]
+	t.region = Rect2(i * cell, 0, cell, cell)
+	return t
+
+
+## A colored app tile with its icon over a white caption and a darker lip.
+func app_button(text: String, cb: Callable, tip: String, c: Color, ic: Texture2D) -> Button:
+	var b := button(text, cb, tip)
+	for k in ["normal", "hover", "pressed"]:
+		var s := box(c.lightened(0.15) if k == "hover" else c, 16, 4, 1 if k == "pressed" else 3, 1 if k == "pressed" else 2)
+		b.add_theme_stylebox_override(k, s)
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(k, Color.WHITE)
+	b.add_theme_font_size_override("font_size", 12)
+	b.icon = ic
+	b.expand_icon = true  # otherwise the 80 px frame sets the tile's height
+	b.add_theme_constant_override("icon_max_width", 26)
+	b.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.custom_minimum_size = Vector2(0, 50)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.clip_text = true
+	return b
 
 
 func picture(sheet: String, i: int, cell: int, min_size: Vector2) -> TextureRect:
@@ -172,112 +259,135 @@ func stars(r: float) -> String:
 
 # ---------- layout ----------
 
+## The street fills the screen and the HUD floats over it in bubbles: money and level up top, store tabs,
+## abilities and a speech bubble at the bottom, the store card on the right. The view draws the clock.
 func build() -> void:
 	var bg := ColorRect.new()
 	bg.color = GROUND
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
-	var bar := ColorRect.new()
-	bar.color = INK
-	bar.size = Vector2(960, 32)
-	add_child(bar)
-	var hb := HBoxContainer.new()
-	hb.position = Vector2(10, 0)
-	hb.size = Vector2(940, 32)
-	hb.add_theme_constant_override("separation", 16)
-	bar.add_child(hb)
-	lbl_day = label("", PAPER, 16)
-	lbl_cash = label("", Color("ffd36b"), 16)
-	lbl_level = label("", Color("b8d8ff"), 16)
-	lbl_rating = label("", Color("b8f2c9"), 16)
-	lbl_bills = label("", PAPER, 14)
-	for l in [lbl_day, lbl_cash, lbl_level]:
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		l.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		hb.add_child(l)
-	xp_bar = progress(Color("6aa8ff"), 6)
-	xp_bar.custom_minimum_size.x = 60
-	xp_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hb.add_child(xp_bar)
-	for l in [lbl_rating, lbl_bills]:
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		l.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		hb.add_child(l)
-	var sp := Control.new()
-	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hb.add_child(sp)
-	pause_btn = button("II", toggle_hold, "Pause  [Space]")
-	speed_btn = button("1x", cycle_speed, "Game speed  [F]")
-	seed_btn = button("", show_new_run, "Start a new run (you can type a seed)")
-	for b in [pause_btn, speed_btn, seed_btn]:
-		b.custom_minimum_size.y = 26
-		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		hb.add_child(b)
-
 	view = StoreView.new()
 	view.tex = tex
-	view.position = Vector2(0, 32)
-	view.size = Vector2(700, 420)
+	view.bold = bold
+	view.shift = (CARD_W + 16) / 2.0
+	view.size = Vector2(960, 540)
 	view.clip_contents = true
 	view.sim = sim
 	view.act_requested.connect(do_act)
 	view.lot_clicked.connect(on_lot)
 	add_child(view)
-	banner = label("", Color.WHITE, 15)
-	banner.position = Vector2(220, 40)
-	banner.size = Vector2(470, 24)
-	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	banner.add_theme_constant_override("outline_size", 6)
-	banner.add_theme_color_override("font_outline_color", INK)
+
+	var top := HBoxContainer.new()
+	top.position = Vector2(214, 8)
+	top.size = Vector2(946 - CARD_W - 214, 30)
+	top.alignment = BoxContainer.ALIGNMENT_END
+	top.add_theme_constant_override("separation", 6)
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(top)
+	lbl_cash = label("", INK, 16)
+	lbl_level = label("", INK, 15)
+	xp_bar = progress(MINT)
+	xp_bar.custom_minimum_size.x = 56
+	lbl_rating = label("", INK, 15)
+	lbl_bills = label("", INK)
+	bills_chip = chip([lbl_bills])
+	for c in [chip([picture("perks", 11, 80, Vector2(22, 22)), lbl_cash]), chip([lbl_level, xp_bar]), chip([lbl_rating]), bills_chip]:
+		top.add_child(c)
+	var clock_row := HBoxContainer.new()  # under the clock the view draws
+	clock_row.position = Vector2(16, 92)
+	clock_row.add_theme_constant_override("separation", 6)
+	clock_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(clock_row)
+	pause_btn = button("II", toggle_hold, "Pause  [Space]")
+	speed_btn = button("1x", cycle_speed, "Game speed  [F]")
+	for b in [pause_btn, speed_btn]:
+		b.custom_minimum_size = Vector2(40, 28)
+		clock_row.add_child(b)
+	banner = label("", PAPER, 15)
+	banner.add_theme_stylebox_override("normal", pill_box(INK, 0, 3))
+	banner.position.y = 48
 	add_child(banner)
 
 	var bottom := VBoxContainer.new()
-	bottom.position = Vector2(8, 456)
-	bottom.size = Vector2(686, 80)
-	bottom.add_theme_constant_override("separation", 4)
+	bottom.position = Vector2(10, 400)
+	bottom.size = Vector2(946 - CARD_W - 18, 130)  # contents sit at its bottom, 10 px off the edge
+	bottom.alignment = BoxContainer.ALIGNMENT_END
+	bottom.add_theme_constant_override("separation", 6)
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bottom)
 	tabs = HBoxContainer.new()
-	tabs.add_theme_constant_override("separation", 4)
+	tabs.add_theme_constant_override("separation", 6)
+	tabs.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bottom.add_child(tabs)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bottom.add_child(row)
 	ability_row = HBoxContainer.new()
-	ability_row.add_theme_constant_override("separation", 4)
+	ability_row.add_theme_constant_override("separation", 6)
+	ability_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(ability_row)
+	for i in ABILITY_KEYS.size():
+		var a := button("", do_act.bind({"type": "useAbility", "id": ABILITY_KEYS[i]}))
+		a.custom_minimum_size = Vector2(54, 54)
+		a.size_flags_vertical = Control.SIZE_SHRINK_END
+		a.icon = frame("perks", ABILITY_ICON[ABILITY_KEYS[i]], 80)
+		a.expand_icon = true
+		a.add_theme_constant_override("icon_max_width", 28)
+		a.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+		a.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		a.add_theme_font_size_override("font_size", 11)
+		for k in ["normal", "hover", "pressed", "disabled"]:
+			var s: StyleBoxFlat = theme.get_stylebox(k, "Button").duplicate()
+			s.set_corner_radius_all(27)
+			s.set_content_margin_all(5)
+			a.add_theme_stylebox_override(k, s)
+		ability_row.add_child(a)
 	pick_btn = button("", open_pick, "Choose your level-up skill or reward  [P]")
-	pick_btn.custom_minimum_size = Vector2(110, 40)
-	pick_btn.add_theme_stylebox_override("normal", box(Color("ffe7c2"), INK))
+	pick_btn.custom_minimum_size = Vector2(92, 54)
+	pick_btn.size_flags_vertical = Control.SIZE_SHRINK_END
+	pick_btn.add_theme_stylebox_override("normal", box(YELLOW, 18, 6, 3, 3))
+	pick_btn.add_theme_stylebox_override("hover", box(YELLOW.lightened(0.3), 18, 6, 3, 3))
 	row.add_child(pick_btn)
+	var bubble := PanelContainer.new()
+	bubble.add_theme_stylebox_override("panel", box(PAPER, 20, 8, 0, 4))
+	bubble.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bubble.size_flags_vertical = Control.SIZE_SHRINK_END
+	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(bubble)
+	var bh := HBoxContainer.new()
+	bh.add_theme_constant_override("separation", 8)
+	bh.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bubble.add_child(bh)
+	bh.add_child(picture("perks", 0, 80, Vector2(38, 38)))
 	info = label("", INK)
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.custom_minimum_size = Vector2(150, 40)
+	info.custom_minimum_size = Vector2(150, 38)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	info.max_lines_visible = 3
 	info.add_theme_font_size_override("font_size", 11)
-	row.add_child(info)
+	bh.add_child(info)
 
 	var side := PanelContainer.new()
-	side.position = Vector2(700, 32)
-	side.size = Vector2(260, 508)
-	side.add_theme_stylebox_override("panel", box(PAPER, INK, 2, 8))
+	side.position = Vector2(952 - CARD_W, 8)
+	side.size = Vector2(CARD_W, 524)
 	add_child(side)
 	var sv := VBoxContainer.new()
-	sv.add_theme_constant_override("separation", 4)
+	sv.add_theme_constant_override("separation", 5)
 	side.add_child(sv)
-	head = label("", INK, 16)
-	head.clip_text = true
-	sv.add_child(head)
-	sub = para("", MUTED, 240)
+	head = label("", Color.WHITE, 16)
+	sv.add_child(tag(head, MINT))
+	sub = para("", MUTED, CARD_W - 24)
 	sub.add_theme_font_size_override("font_size", 11)
 	sv.add_child(sub)
 	rival_lbl = label("", INK)
 	rival_lbl.clip_text = true
 	sv.add_child(rival_lbl)
-	rival_bar = progress(RED)
+	rival_bar = progress(RED, 10)
 	sv.add_child(rival_bar)
-	sv.add_child(label("SHELVES  (click a shelf or +)", MUTED))
+	sv.add_child(label("Shelves  ·  click a shelf or +", MUTED))
 	shelf_box = VBoxContainer.new()
 	shelf_box.add_theme_constant_override("separation", 2)
 	var scroll := ScrollContainer.new()
@@ -286,22 +396,25 @@ func build() -> void:
 	scroll.add_child(shelf_box)
 	shelf_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sv.add_child(scroll)
-	crew_lbl = para("", INK, 240)
+	crew_lbl = para("", INK, CARD_W - 24)
 	crew_lbl.add_theme_font_size_override("font_size", 11)
 	sv.add_child(crew_lbl)
 	var g := GridContainer.new()
 	g.columns = 2
-	g.add_theme_constant_override("h_separation", 4)
-	g.add_theme_constant_override("v_separation", 4)
+	g.add_theme_constant_override("h_separation", 6)
+	g.add_theme_constant_override("v_separation", 6)
 	sv.add_child(g)
-	staff_btn = button("STAFF", show_staff, "Hire and fire at this store  [S]")
-	grow_btn = button("EXPAND", act_open.bind("openExpansion"), "Buy an expansion for this store  [G]")
-	store_btn = button("NEW STORE", act_open.bind("openListings"), "Open another branch  [N]")
-	city_btn = button("CITY", toggle_city, "Tokyo map: your branches and their rivals  [M]")
+	staff_btn = app_button("Staff", show_staff, "Hire and fire at this store  [S]", Color("ee9234"), frame("perks", 0, 80))
+	grow_btn = app_button("Expand", act_open.bind("openExpansion"), "Buy an expansion for this store  [G]", Color("5aae55"), frame("perks", 2, 80))
+	store_btn = app_button("New store", act_open.bind("openListings"), "Open another branch  [N]", Color("4a9fdc"), frame("perks", 10, 80))
+	city_btn = app_button("City", toggle_city, "Tokyo map: your branches and their rivals  [M]", Color("e57fa4"), frame("outdoor", 2, 128))
 	for b in [staff_btn, grow_btn, store_btn, city_btn]:
-		b.custom_minimum_size = Vector2(118, 30)
-		b.clip_text = true
 		g.add_child(b)
+	seed_btn = button("", show_new_run, "Start a new run (you can type a seed)")
+	seed_btn.add_theme_font_size_override("font_size", 11)
+	seed_btn.add_theme_color_override("font_color", MUTED)
+	seed_btn.add_theme_stylebox_override("normal", box(Color("f6eed8"), 12, 3))
+	sv.add_child(seed_btn)
 
 
 # ---------- run flow ----------
@@ -489,25 +602,29 @@ func refresh_ui() -> void:
 		return
 	var b: Dictionary = sim.branches[sim.active]
 	var st: Dictionary = b.store
-	lbl_day.text = "DAY %d" % sim.day
 	lbl_cash.text = yen(sim.player.cash)
-	lbl_level.text = "LV %d" % sim.player.level
+	lbl_level.text = "Lv %d" % sim.player.level
 	xp_bar.value = sim.player.xp / sim.player.xp_next
 	lbl_rating.text = stars(st.rating)
 	var bills := sim.bills_due()
-	lbl_bills.text = "BILLS TONIGHT %s" % yen(bills)
-	lbl_bills.add_theme_color_override("font_color", Color("ff9b8a") if sim.player.cash < bills else PAPER)
-	seed_btn.text = "SEED %s" % sim.seed_text
+	var short: bool = sim.player.cash < bills
+	lbl_bills.text = "Bills tonight %s" % yen(bills)
+	lbl_bills.add_theme_color_override("font_color", Color.WHITE if short else INK)
+	(bills_chip.get_theme_stylebox("panel") as StyleBoxFlat).bg_color = RED if short else PAPER
+	seed_btn.text = "Seed %s  ·  new run" % sim.seed_text
 	speed_btn.text = "%dx" % speed
 	pause_btn.text = ">" if held else "II"
-	banner.text = "PAUSED  [Space]" if held else ("CLICK A NUMBERED LOT  ·  Esc to go back" if view.pick == "listing" and view.mode == "city" else "")
+	banner.text = "Paused  [Space]" if held else ("Click a numbered lot  ·  Esc to go back" if view.pick == "listing" and view.mode == "city" else "")
+	banner.visible = banner.text != ""
+	banner.reset_size()
+	banner.position.x = (952 - CARD_W - banner.size.x) / 2.0
 
 	if tabs.get_child_count() != sim.branches.size():
 		for c in tabs.get_children():
 			c.queue_free()
 		for i in sim.branches.size():
 			var t := button("", select_store.bind(i), "Switch store  [Tab]")
-			t.custom_minimum_size.y = 24
+			t.custom_minimum_size.y = 26
 			tabs.add_child(t)
 	for i in sim.branches.size():
 		var o: Dictionary = sim.branches[i]
@@ -517,60 +634,54 @@ func refresh_ui() -> void:
 			alert = " !"
 		if o.store.products.values().any(func(p): return float(p.stock) / p.capacity < Sim.LOW_STOCK):
 			alert += " ▾"
-		t.text = "%d %s%s" % [i + 1, o.name.to_upper(), alert]
-		t.add_theme_stylebox_override("normal", box(Color("c5e6d0") if i == sim.active else PAPER, INK))
-		t.add_theme_color_override("font_color", RED if alert != "" and i != sim.active else INK)
+		t.text = "%d  %s%s" % [i + 1, o.name, alert]
+		t.add_theme_stylebox_override("normal", pill_box(MINT if i == sim.active else PAPER))
+		t.add_theme_color_override("font_color", Color.WHITE if i == sim.active else (RED if alert != "" else INK))
 
-	if ability_row.get_child_count() == 0:
-		for i in ABILITY_KEYS.size():
-			var a := button("", do_act.bind({"type": "useAbility", "id": ABILITY_KEYS[i]}))
-			a.custom_minimum_size = Vector2(78, 40)
-			a.clip_text = true
-			a.add_theme_font_size_override("font_size", 11)
-			ability_row.add_child(a)
 	for i in ABILITY_KEYS.size():
 		var id: String = ABILITY_KEYS[i]
 		var a: Button = ability_row.get_child(i)
 		var ab = sim.player.abilities.get(id)
 		var def: Dictionary = Sim.ABILITIES[id]
 		if ab == null:
-			a.text = "%d  —\nlocked" % (i + 1)
+			a.text = "%d" % (i + 1)
 			a.disabled = true
 			a.tooltip_text = "%s: unlock it from a level-up card." % def.name
 		else:
-			a.text = "%d %s %s\n%s" % [i + 1, def.name.get_slice(" ", 0).to_upper(), "I".repeat(ab.level), "READY" if ab.cd <= 0.0 else "%ds" % ceili(ab.cd)]
+			a.text = "%d %s" % [i + 1, "I".repeat(ab.level)] if ab.cd <= 0.0 else "%ds" % ceili(ab.cd)
 			a.disabled = ab.cd > 0.0 or sim.phase != "playing"
 			a.tooltip_text = "%s (level %d)  [%d]" % [def.name, ab.level, i + 1]
 	pick_btn.visible = not sim.pending.is_empty()
-	pick_btn.text = "PICK  (%d)\n[P]" % sim.pending.size()
+	pick_btn.text = "New card!\n%d  [P]" % sim.pending.size()
 	var lines := toasts.map(func(t): return t[0])
 	if lines.is_empty():
 		lines = [hint(b)]
 	info.text = "\n".join(lines.slice(maxi(0, lines.size() - 3)))
-	info.add_theme_color_override("font_color", toasts[-1][1] if not toasts.is_empty() else MUTED)
+	info.add_theme_color_override("font_color", toasts[-1][1] if not toasts.is_empty() else INK)
 
-	head.text = b.name.to_upper()
+	head.text = b.name
 	var d: Dictionary = Sim.DISTRICTS[b.district]
 	var ev: String = "" if b.event == null else "  ·  " + Sim.EVENTS[b.event.id].name
 	sub.text = "%s, %s%s\n%s  ·  rent %s + wages %s  ·  %d served, %d lost" % [d.name, Sim.QUIRKS[b.quirk].name.to_lower(), ev, stars(st.rating), yen(sim.rent(b)), yen(sim.wages(b)), b.day_stats.customers, b.day_stats.lost]
 	var rv: Dictionary = b.rival
 	if rv.defeated:
-		rival_lbl.text = "%s CLOSED  ·  new rival in %d day%s" % [Sim.RIVALS[rv.id].name.to_upper(), 2 - rv.closed_days, "" if 2 - rv.closed_days == 1 else "s"]
+		rival_lbl.text = "%s closed  ·  new rival in %d day%s" % [Sim.RIVALS[rv.id].name, 2 - rv.closed_days, "" if 2 - rv.closed_days == 1 else "s"]
 		rival_bar.value = 0.0
 	else:
-		rival_lbl.text = "%s  T%d  %s / %s" % [Sim.RIVALS[rv.id].name.to_upper(), rv.tier, Sim.money(ceili(rv.hp)), Sim.money(int(rv.max_hp))]
+		rival_lbl.text = "%s  T%d  %s / %s" % [Sim.RIVALS[rv.id].name, rv.tier, Sim.money(ceili(rv.hp)), Sim.money(int(rv.max_hp))]
 		rival_bar.value = rv.hp / rv.max_hp
+		(rival_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = Color(Sim.RIVALS[rv.id].color)
 	refresh_shelves(b)
 	var crew: Array = st.crew.map(func(m): return "%s %s" % [ROLE_ICON[m.role], m.name])
-	crew_lbl.text = "CREW  " + ", ".join(crew) + ("" if b.regulars == 0 else "\n%d regulars on the way" % b.regulars)
+	crew_lbl.text = "Crew: " + ", ".join(crew) + ("" if b.regulars == 0 else "\n%d regulars on the way" % b.regulars)
 	var exp_ok := not sim.eligible("expansion", st).is_empty()
-	grow_btn.text = "EXPAND %s" % yen(Sim.expansion_cost(st)) if exp_ok else "EXPAND (all)"
+	grow_btn.text = "Expand %s" % yen(Sim.expansion_cost(st)) if exp_ok else "Expanded"
 	grow_btn.disabled = not exp_ok or sim.phase != "playing"
-	store_btn.text = "NEW STORE"
+	store_btn.text = "New store"
 	store_btn.disabled = sim.branches.size() >= Sim.MAX_STORES or sim.phase != "playing"
 	store_btn.tooltip_text = "Open another branch: from %s  [N]" % yen(sim.store_cost())
 	staff_btn.disabled = sim.phase != "playing"
-	city_btn.text = "SHOP" if view.mode == "city" else "CITY"
+	city_btn.text = "Shop" if view.mode == "city" else "City"
 
 
 func hint(b: Dictionary) -> String:
@@ -599,10 +710,11 @@ func refresh_shelves(b: Dictionary) -> void:
 			nm.clip_text = true
 			nm.add_theme_font_size_override("font_size", 11)
 			v.add_child(nm)
-			v.add_child(progress(GREEN, 6))
+			v.add_child(progress(MINT, 6))
 			h.add_child(v)
 			var r := button("", do_act.bind({"type": "restock", "product": pid}))
-			r.custom_minimum_size = Vector2(84, 28)
+			r.custom_minimum_size = Vector2(84, 26)
+			r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			r.add_theme_font_size_override("font_size", 11)
 			h.add_child(r)
 			shelf_box.add_child(h)
@@ -615,7 +727,7 @@ func refresh_shelves(b: Dictionary) -> void:
 		var bar: ProgressBar = row.get_child(1).get_child(1)
 		var frac: float = float(p.stock) / p.capacity
 		bar.value = frac
-		bar.add_theme_stylebox_override("fill", box(RED if frac < Sim.LOW_STOCK else GREEN, RED if frac < Sim.LOW_STOCK else GREEN, 0, 0))
+		(bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = RED if frac < Sim.LOW_STOCK else MINT
 		var missing: int = p.capacity - p.stock
 		var cost := Sim.rnd(missing * Sim.PRODUCTS[pid].cost * sim.mods().restock)
 		var btn: Button = row.get_child(2)
@@ -626,24 +738,24 @@ func refresh_shelves(b: Dictionary) -> void:
 
 # ---------- modals ----------
 
-func open_modal(title: String, body: Control, keys := {}, kind := "") -> void:
+func open_modal(title: String, body: Control, keys := {}, kind := "", color := MINT) -> void:
 	close_modal()
 	modal = Control.new()
 	modal.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var dim := ColorRect.new()
-	dim.color = Color(0.1, 0.1, 0.16, 0.62)
+	dim.color = Color(0.32, 0.23, 0.1, 0.45)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	modal.add_child(dim)
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	modal.add_child(center)
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", box(PAPER, INK, 3, 16))
+	panel.add_theme_stylebox_override("panel", box(PAPER, 26, 20, 0, 10))
 	center.add_child(panel)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	panel.add_child(v)
-	v.add_child(label(title, INK, 28))
+	v.add_child(tag(label(title, Color.WHITE, 22), color))
 	v.add_child(body)
 	add_child(modal)
 	modal_keys = keys
@@ -668,8 +780,8 @@ func show_intro() -> void:
 	var go := func():
 		close_modal()
 		sim.act({"type": "start"})
-	v.add_child(button("OPEN THE SHOP  [Space]", go))
-	open_modal("KONBINI EMPIRE", v, {KEY_SPACE: go, KEY_ENTER: go}, "intro")
+	v.add_child(button("Open the shop!  [Space]", go))
+	open_modal("Konbini Empire", v, {KEY_SPACE: go, KEY_ENTER: go}, "intro")
 
 
 ## Whatever pick card the sim has open: level-up skills, rewards, expansions or new-store listings.
@@ -682,7 +794,7 @@ func show_choice() -> void:
 	var keys := {}
 	for i in c.options.size():
 		var card := PanelContainer.new()
-		card.add_theme_stylebox_override("panel", box(Color.WHITE, INK, 2, 10))
+		card.add_theme_stylebox_override("panel", box(Color("fffdf5"), 18, 12, 4, 2))
 		var col := VBoxContainer.new()
 		col.custom_minimum_size = Vector2(190, 0)
 		col.add_theme_constant_override("separation", 6)
@@ -691,50 +803,55 @@ func show_choice() -> void:
 			listing_card(col, c.options[i])
 		else:
 			var u: Dictionary = Sim.UPGRADES[c.options[i]]
-			col.add_child(label(u.rarity.to_upper(), RARITY_COLOR[u.rarity]))
+			var r := chip([label(u.rarity.capitalize(), Color.WHITE, 11)], RARITY_COLOR[u.rarity])
+			r.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			col.add_child(r)
 			if u.has("product"):
 				col.add_child(icon(u.product, 56))
-			col.add_child(label(u.name.to_upper(), INK, 15))
+			col.add_child(label(u.name, INK, 16))
 			var n: int = (sim.branches[sim.active].store.taken if c.source == "expansion" else sim.player.taken).get(c.options[i], 0)
 			col.add_child(para(u.desc + ("" if n == 0 else "  (have %d)" % n), MUTED, 190))
 		var take := func(): pick(c.options[i] if c.source != "listing" else i)
-		var b := button("TAKE  [%d]" % (i + 1), take)
+		var b := button("Take  [%d]" % (i + 1), take)
 		if c.source == "listing":
-			b.text = "OPEN %s  [%d]" % [yen(c.options[i].cost), i + 1]
+			b.text = "Open for %s  [%d]" % [yen(c.options[i].cost), i + 1]
 			b.disabled = sim.player.cash < c.options[i].cost
 		elif c.source == "expansion":
 			b.disabled = sim.player.cash < c.cost
+		var gap := Control.new()  # keeps every card's button on one line
+		gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		col.add_child(gap)
 		col.add_child(b)
 		h.add_child(card)
 		keys[KEY_1 + i] = take
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
-	var title := "PICK A SKILL"
+	var title := "Pick a skill"
 	match c.source:
 		"reward":
-			title = "REWARD"
+			title = "Reward!"
 			v.add_child(label(c.reason, GREEN))
 		"expansion":
-			title = "EXPAND %s" % sim.branches[sim.active].name.to_upper()
+			title = "Expand %s" % sim.branches[sim.active].name
 			v.add_child(label("Costs %s. Cash %s." % [yen(c.cost), yen(sim.player.cash)], MUTED))
 		"listing":
-			title = "NEW STORE"
+			title = "New store"
 			v.add_child(label("Three lots on offer. Cash %s; bills tonight %s." % [yen(sim.player.cash), yen(sim.bills_due())], MUTED))
 	v.add_child(h)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var rc := sim.reroll_cost()
 	var spare: int = sim.player.cash - (c.cost if c.source == "expansion" else 0)
-	var rr := button("REROLL %s  [R]" % yen(rc), reroll)
+	var rr := button("Reroll %s  [R]" % yen(rc), reroll)
 	rr.disabled = spare < rc
 	row.add_child(rr)
 	if c.source == "listing":
-		row.add_child(button("SEE ON MAP", see_listings))
-	row.add_child(button("LATER  [Esc]", later))
+		row.add_child(button("See on map", see_listings))
+	row.add_child(button("Later  [Esc]", later))
 	v.add_child(row)
 	keys[KEY_R] = reroll
 	keys[KEY_ESCAPE] = later
-	open_modal(title, v, keys, "choice")
+	open_modal(title, v, keys, "choice", {"reward": RARITY_COLOR.legendary, "expansion": Color("5aae55"), "listing": Color("4a9fdc")}.get(c.source, MINT))
 
 
 func listing_card(v: VBoxContainer, L: Dictionary) -> void:
@@ -742,7 +859,7 @@ func listing_card(v: VBoxContainer, L: Dictionary) -> void:
 	var d: Dictionary = Sim.DISTRICTS[L.district]
 	var q: Dictionary = Sim.QUIRKS[L.quirk]
 	var rv: Dictionary = Sim.RIVALS[L.rival]
-	v.add_child(label(tokyo.to_upper(), INK, 15))
+	v.add_child(label(tokyo, INK, 16))
 	v.add_child(label(d.name, MUTED))
 	var quirk: String = q.name
 	v.add_child(para("%s. Foot traffic x%.2f, rent about %s a night." % [quirk, d.traffic * q.get("traffic", 1.0), yen(Sim.rnd(d.rent * q.get("rent", 1.0)))], INK, 190))
@@ -799,11 +916,11 @@ func show_staff() -> void:
 	var crew := VBoxContainer.new()
 	crew.custom_minimum_size.x = 250
 	crew.add_theme_constant_override("separation", 2)
-	crew.add_child(label("CREW", INK, 15))
+	crew.add_child(label("Crew", INK, 15))
 	for m in st.crew:
 		var h := HBoxContainer.new()
 		h.add_child(member_label(m, 190))
-		h.add_child(small_button("FIRE", staff_act.bind("fire", m.id)))
+		h.add_child(small_button("Fire", staff_act.bind("fire", m.id)))
 		crew.add_child(h)
 	crew.add_child(para("Cashiers run a till each. Stock clerks refill low shelves but keep tonight's bills in the till. Cleaners mop spills and bag trash. A guard sees off flyers, mascots, thieves, suits and blackouts. A promoter pulls in walkers.", MUTED, 240))
 	cols.add_child(crew)
@@ -818,24 +935,26 @@ func show_staff() -> void:
 			apps.add_child(label("%s %d/%d" % [ROLE_ICON[role], have, cap], MUTED))
 			apps.add_child(member_label(a, 280, false))
 			var fee := Sim.rnd(a.wage * sim.mods().wage)
-			var hb := small_button("HIRE %s" % yen(fee), staff_act.bind("hire", a.id))
+			var hb := small_button("Hire %s" % yen(fee), staff_act.bind("hire", a.id))
 			hb.disabled = have >= cap or sim.player.cash < fee
 			apps.add_child(hb)
 	var right := VBoxContainer.new()
-	right.add_child(label("APPLICANTS TODAY", INK, 15))
+	right.add_child(label("Applicants today", INK, 15))
 	right.add_child(apps)
 	cols.add_child(right)
-	v.add_child(button("CLOSE  [Esc]", close_staff))
-	open_modal("STAFF  ·  %s" % b.name.to_upper(), v, {KEY_ESCAPE: close_staff, KEY_S: close_staff}, "staff")
+	v.add_child(button("Close  [Esc]", close_staff))
+	open_modal("Staff  ·  %s" % b.name, v, {KEY_ESCAPE: close_staff, KEY_S: close_staff}, "staff")
 
 
 func small_button(text: String, cb: Callable) -> Button:
 	var b := button(text, cb)
 	b.add_theme_font_size_override("font_size", 11)
 	b.custom_minimum_size = Vector2(76, 24)
-	b.add_theme_stylebox_override("normal", box(PAPER, INK, 2, 2))
-	b.add_theme_stylebox_override("hover", box(Color("e3f3e8"), INK, 2, 2))
-	b.add_theme_stylebox_override("disabled", box(Color("ebe6da"), LINE, 2, 2))
+	for k in ["normal", "hover", "pressed", "disabled"]:
+		var s: StyleBoxFlat = theme.get_stylebox(k, "Button").duplicate()
+		s.content_margin_top = 2
+		s.content_margin_bottom = 2
+		b.add_theme_stylebox_override(k, s)
 	return b
 
 
@@ -867,7 +986,7 @@ func show_report(r: Dictionary) -> void:
 	var g := GridContainer.new()
 	g.columns = 8
 	g.add_theme_constant_override("h_separation", 14)
-	for h in ["STORE", "SALES", "SERVED", "LOST", "STOCK", "RENT+WAGES", "NET", "RIVAL"]:
+	for h in ["Store", "Sales", "Served", "Lost", "Stock", "Rent+wages", "Net", "Rival"]:
 		g.add_child(label(h, MUTED))
 	for row in r.rows:
 		var s: Dictionary = row.stats
@@ -891,8 +1010,8 @@ func show_report(r: Dictionary) -> void:
 		close_modal()
 		view.show_branch(sim.active)
 		ui_t = 0.0
-	v.add_child(button("NEXT DAY  [Space]", go))
-	open_modal("DAY %d CLOSED" % r.day, v, {KEY_SPACE: go, KEY_ENTER: go}, "report")
+	v.add_child(button("Next day  [Space]", go))
+	open_modal("Day %d closed" % r.day, v, {KEY_SPACE: go, KEY_ENTER: go}, "report", ORANGE)
 
 
 func show_over() -> void:
@@ -913,15 +1032,15 @@ func show_over() -> void:
 		"Level %d    Seed %s" % [sim.player.level, sim.seed_text],
 	]:
 		v.add_child(label(l))
-	v.add_child(label("Score %s%s" % [Sim.money(score), "  NEW BEST" if score > prev else "  (best %s)" % Sim.money(prev)], GREEN if score > prev else MUTED, 16))
+	v.add_child(label("Score %s%s" % [Sim.money(score), "  New best!" if score > prev else "  (best %s)" % Sim.money(prev)], GREEN if score > prev else MUTED, 16))
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
 	var again := func(): new_run(sim.seed_text)
 	var fresh := func(): new_run("")
-	h.add_child(button("RETRY SEED", again))
-	h.add_child(button("NEW RUN  [Space]", fresh))
+	h.add_child(button("Retry seed", again))
+	h.add_child(button("New run  [Space]", fresh))
 	v.add_child(h)
-	open_modal("BANKRUPT", v, {KEY_SPACE: fresh, KEY_ENTER: fresh}, "over")
+	open_modal("Bankrupt", v, {KEY_SPACE: fresh, KEY_ENTER: fresh}, "over", RED)
 
 
 func show_new_run() -> void:
@@ -937,7 +1056,7 @@ func show_new_run() -> void:
 	h.add_theme_constant_override("separation", 8)
 	var start := func(): new_run(edit.text)
 	edit.text_submitted.connect(func(_t): start.call())
-	h.add_child(button("START", start))
+	h.add_child(button("Start", start))
 	var prev := modal_kind
 	var cancel := func():
 		close_modal()
@@ -945,9 +1064,9 @@ func show_new_run() -> void:
 			show_intro()
 		elif sim.phase == "choice":
 			show_choice()
-	h.add_child(button("CANCEL", cancel))
+	h.add_child(button("Cancel", cancel))
 	v.add_child(h)
-	open_modal("NEW RUN", v, {KEY_ESCAPE: cancel}, "seed")
+	open_modal("New run", v, {KEY_ESCAPE: cancel}, "seed")
 	edit.grab_focus.call_deferred()
 
 

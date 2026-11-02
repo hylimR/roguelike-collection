@@ -142,6 +142,9 @@ var floaters: Array = []
 var paused := false
 var hover := {}  # the action a click would take
 var drag := 0.0
+var bold: Font  # the HUD's heavy weight, for the clock and street tags
+var shift := 0.0  # px the scene sits left of centre, clear of the HUD's store card
+var styles := {}  # rounded boxes for tags and bars, by color and radius
 
 var walkers: Array = []
 var cars: Array = []
@@ -205,7 +208,7 @@ func _ready() -> void:
 	fit_viewport.call_deferred()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color("2b2d42")
+	env.background_color = Color("3f7fbf")  # open sea round the island
 	var we := WorldEnvironment.new()
 	we.environment = env
 	vp.add_child(we)
@@ -310,10 +313,11 @@ func update_camera() -> void:
 	if mode == "city":
 		var b: Rect2 = sim.city_bounds()
 		target = Vector3(b.get_center().x, 0, b.get_center().y)
-		cam.size = (b.size.x + b.size.y) * 0.32 * zoom
+		cam.size = (b.size.x + b.size.y) * 0.4 * zoom
 	else:
 		target = site.position + Vector3(-3.0, 1.0, -7.5)
-		cam.size = 23.0 * zoom
+		cam.size = 29.5 * zoom
+	cam.h_offset = shift * cam.size / size.y
 	var pitch := deg_to_rad(PITCH)
 	target += cam_offset
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * 400.0
@@ -1983,9 +1987,57 @@ func text(at: Vector2, s: String, px: int, c: Color, w := 0.0, outline := Color(
 	overlay.draw_string(font, p, s, HORIZONTAL_ALIGNMENT_LEFT, -1, px, c)
 
 
-func bar(r: Rect2, frac: float, c: Color, bg := Color(0.17, 0.18, 0.26, 0.75)) -> void:
-	overlay.draw_rect(r, bg)
-	overlay.draw_rect(Rect2(r.position, Vector2(r.size.x * clampf(frac, 0.0, 1.0), r.size.y)), c)
+func round_box(c: Color, r: float) -> StyleBoxFlat:
+	var k := "%s/%d" % [c.to_html(), roundi(r)]
+	if not styles.has(k):
+		var s := StyleBoxFlat.new()
+		s.bg_color = c
+		s.set_corner_radius_all(roundi(r))
+		styles[k] = s
+	return styles[k]
+
+
+## A rounded tag centred on `at` (its text's baseline), like the name bubbles over things on the island.
+func pill(at: Vector2, s: String, px: int, bg: Color, fg := Color.WHITE) -> void:
+	var font: Font = bold if bold else get_theme_default_font()
+	var w := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x
+	var asc := font.get_ascent(px)
+	var r := Rect2(at.x - w / 2 - 7, at.y - asc - 2, w + 14, asc + font.get_descent(px) + 4)
+	overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), r.size.y / 2), Rect2(r.position + Vector2(0, 2), r.size))
+	overlay.draw_style_box(round_box(bg, r.size.y / 2), r)
+	overlay.draw_string(font, Vector2(at.x - w / 2, at.y), s, HORIZONTAL_ALIGNMENT_LEFT, -1, px, fg)
+
+
+## A rounded meter in a cream rim.
+func bar(r: Rect2, frac: float, c: Color, bg := Color("dccca4")) -> void:
+	overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.95), r.size.y / 2 + 2), r.grow(2))
+	overlay.draw_style_box(round_box(bg, r.size.y / 2), r)
+	var f := clampf(frac, 0.0, 1.0)
+	if f > 0.0:
+		overlay.draw_style_box(round_box(c, r.size.y / 2), Rect2(r.position, Vector2(maxf(r.size.y, r.size.x * f), r.size.y)))
+
+
+## The clock as the island shows it: big white time, a rule, the day in a white pill and the hour's name.
+func draw_clock() -> void:
+	var font: Font = bold if bold else get_theme_default_font()
+	var h: float = sim.hour()
+	var hh := int(h) % 24
+	var t := "%d:%02d" % [12 if hh % 12 == 0 else hh % 12, int(fmod(h, 1.0) * 60.0)]
+	var shade := Color(0.33, 0.23, 0.1, 0.55)
+	var big := 34
+	var w := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, big).x
+	for part in [[Vector2(16, 46), t, big], [Vector2(22 + w, 46), "AM" if hh < 12 else "PM", 16]]:
+		overlay.draw_string_outline(font, part[0] + Vector2(1, 2), part[1], HORIZONTAL_ALIGNMENT_LEFT, -1, part[2], 4, shade)
+		overlay.draw_string(font, part[0], part[1], HORIZONTAL_ALIGNMENT_LEFT, -1, part[2], Color.WHITE)
+	overlay.draw_style_box(round_box(shade, 2), Rect2(16, 55, 176, 3))
+	overlay.draw_style_box(round_box(Color.WHITE, 2), Rect2(16, 53, 176, 3))
+	var day := "Day %d" % sim.day
+	var dw := font.get_string_size(day, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	pill(Vector2(16 + 7 + dw / 2, 78), day, 13, Color.WHITE, Color("6b5236"))
+	var band := Sim.band(h)
+	var at := Vector2(16 + dw + 22, 78)
+	overlay.draw_string_outline(font, at + Vector2(1, 2), band.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, 4, shade)
+	overlay.draw_string(font, at, band.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("ffe27c") if band.rush else Color.WHITE)
 
 
 func draw_overlay() -> void:
@@ -1998,11 +2050,12 @@ func draw_overlay() -> void:
 	draw_weather()
 	if not sim.lots.is_empty():
 		draw_city_marks(get_theme_default_font())
-	if mode == "city" or branch.is_empty():
-		return
-	if night > 0.0:
-		overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.07, 0.25, 0.3 * night))
-	draw_street()
+	if mode == "store" and not branch.is_empty():
+		if night > 0.0:
+			overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.07, 0.25, 0.3 * night))
+		draw_street()
+	if not sim.branches.is_empty():
+		draw_clock()
 
 
 ## Everything you read and click on the street: the rival's sign and health, shelves, registers, threats, moods.
@@ -2013,23 +2066,23 @@ func draw_street() -> void:
 	var def: Dictionary = Sim.RIVALS[rv.id]
 	var span := rival_span(rv)
 	var sign_at := screen(Vector3((span.x + span.y) / 2, 4.6, -7.2))
-	text(sign_at, def.name + ("  (closed)" if rv.defeated else ""), 13, Color.WHITE if not rv.defeated else Color("d8d2c4"), 0.0, Color(0.17, 0.18, 0.26, 0.9))
+	pill(sign_at, def.name + ("  (closed)" if rv.defeated else ""), 13, Color("a99f8c") if rv.defeated else Color(def.color).darkened(0.1))
 	if not rv.defeated:
-		bar(Rect2(sign_at + Vector2(-50, 5), Vector2(100, 7)), rv.hp / rv.max_hp, Color(def.color))
+		bar(Rect2(sign_at + Vector2(-50, 9), Vector2(100, 8)), rv.hp / rv.max_hp, Color(def.color))
 		if rv.price_war > 0.0:
-			text(sign_at + Vector2(0, 28), "PRICE WAR %ds" % ceili(rv.price_war), 12, Color("d64545"))
+			pill(sign_at + Vector2(0, 36), "Price war %ds" % ceili(rv.price_war), 12, Color("e05a4e"))
 		elif rv.telegraph != "":
 			var blink := floori(Time.get_ticks_msec() / 250.0) % 2 == 0
-			text(sign_at + Vector2(0, 28), "! %s in %ds" % [Sim.ATTACKS[rv.telegraph].name.to_upper(), ceili(maxf(0.0, rv.attack_timer))], 12, Color("d64545") if blink else Color("8a1c1c"))
+			pill(sign_at + Vector2(0, 36), "! %s in %ds" % [Sim.ATTACKS[rv.telegraph].name, ceili(maxf(0.0, rv.attack_timer))], 12, Color("e05a4e") if blink else Color("b8372d"))
 	# shelves: stock bars, red when low
 	for pid in st.products:
 		var p: Dictionary = st.products[pid]
 		var sp: Vector2 = Sim.SLOTS[Sim.PRODUCTS[pid].slot].pos
 		var at := screen_room(Vector3(sp.x, 0.05, sp.y + 0.5))
 		var frac: float = float(p.stock) / p.capacity
-		bar(Rect2(at + Vector2(-16, 2), Vector2(32, 5)), frac, Color("d64545") if frac < Sim.LOW_STOCK else Color("2f9e5b"))
+		bar(Rect2(at + Vector2(-16, 2), Vector2(32, 5)), frac, Color("e05a4e") if frac < Sim.LOW_STOCK else Color("4fc4ab"))
 		if p.stock == 0:
-			text(at + Vector2(0, 18), "EMPTY", 11, Color("d64545"))
+			pill(at + Vector2(0, 22), "Empty", 11, Color("e05a4e"))
 	# registers: who's at the till, how far the checkout is; a waiting customer with no cashier needs you
 	for reg in st.registers:
 		if not reg.active:
@@ -2040,23 +2093,25 @@ func draw_street() -> void:
 			var head = sim.agent_by_id(b, reg.queue[0])
 			if head != null and head.at_head:
 				var staffed: bool = sim.cashier_of(b, reg.id) != null
-				bar(Rect2(at + Vector2(-18, -14), Vector2(36, 5)), reg.progress, Color("2f7fd6"))
+				bar(Rect2(at + Vector2(-18, -14), Vector2(36, 5)), reg.progress, Color("3a9bd9"))
 				if not staffed or floori(Time.get_ticks_msec() / 400.0) % 2 == 0:
-					text(at + Vector2(0, -20), "RING UP", 11, Color("e07b1a") if staffed else Color("d64545"))
-			text(at + Vector2(0, 14), "%d" % reg.queue.size(), 11, Color("2b2d42"))
+					pill(at + Vector2(0, -24), "Ring up!", 11, Color("e98a1d") if staffed else Color("e05a4e"))
+			text(at + Vector2(0, 14), "%d" % reg.queue.size(), 11, Color("6b5236"))
 	# threats: name and clicks left
 	for t in b.threats:
 		var at := screen(threat_point(t))
 		if t.fleeing:
 			continue
-		var label: String = {"flyer": "FLYERS", "mascot": "MASCOT", "trash": "TRASH", "review": "1★ REVIEW", "shoplifter": "THIEF", "breaker": "BREAKER", "suit": "SUIT", "spill": "SPILL"}[t.type]
+		var label: String = {"flyer": "Flyers", "mascot": "Mascot", "trash": "Trash", "review": "1★ review", "shoplifter": "Thief!", "breaker": "Breaker", "suit": "Suit", "spill": "Spill"}[t.type]
 		var top := at + Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit"] else (-44 if t.type == "mascot" else -12))
-		text(top, label, 11, Color("d64545") if t.type != "spill" else Color("2f6fd6"))
+		pill(top, label, 11, Color("e05a4e") if t.type != "spill" else Color("3a9bd9"))
 		if t.max_clicks > 1:
 			for k in t.max_clicks:
-				overlay.draw_circle(top + Vector2((k - (t.max_clicks - 1) / 2.0) * 8, 6), 3.0, Color("d64545") if k < t.clicks else Color(0.6, 0.6, 0.6, 0.6))
+				var dot := top + Vector2((k - (t.max_clicks - 1) / 2.0) * 9, 9)
+				overlay.draw_circle(dot, 4.0, Color(1.0, 0.98, 0.92))
+				overlay.draw_circle(dot, 2.8, Color("e05a4e") if k < t.clicks else Color("dccca4"))
 		if t.type == "review":
-			bar(Rect2(top + Vector2(-16, 4), Vector2(32, 4)), t.ttl / (7.0 + 3.0 * sim.mods().thick_skin), Color("d64545"))
+			bar(Rect2(top + Vector2(-16, 7), Vector2(32, 4)), t.ttl / (7.0 + 3.0 * sim.mods().thick_skin), Color("e05a4e"))
 		if t.type == "breaker":
 			overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.05, 0.12, 0.15))
 	# pedestrians: angry ones and what they carry
@@ -2075,11 +2130,11 @@ func draw_street() -> void:
 		if a.state == "browse" and a.want != null:
 			var ic: Array = Sim.PRODUCTS[a.want].icon
 			var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
-			overlay.draw_rect(Rect2(head + Vector2(-12, -30), Vector2(24, 24)), Color.WHITE)
+			overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92), 9), Rect2(head + Vector2(-13, -31), Vector2(26, 26)))
 			overlay.draw_texture_rect_region(tex[ic[0]], Rect2(head + Vector2(-11, -29), Vector2(22, 22)), Rect2(ic[1] * cell, 0, cell, cell))
 	for s in b.staff:
 		if s.break_t > 0.0:
-			text(screen(Vector3(s.x, 1.9, s.z)), "BREAK", 10, Color("7d7768"))
+			pill(screen(Vector3(s.x, 1.9, s.z)), "Break", 10, Color(1.0, 0.98, 0.92), Color("a08c69"))
 	# the crossing lights
 	var lt: Array = sim.lights()
 	for pole in [Vector3(Sim.CROSS_X - 1.8, 2.5, -4.0), Vector3(Sim.CROSS_X + 1.8, 2.5, 4.0)]:
@@ -2102,15 +2157,11 @@ func draw_street() -> void:
 					var pr: Dictionary = st.products[hover.product]
 					var each: float = Sim.PRODUCTS[hover.product].cost * sim.mods().restock
 					var n: int = pr.capacity - pr.stock
-					text(at + Vector2(0, -30), "RESTOCK %d  ¥%s" % [n, Sim.money(Sim.rnd(n * each))] if n > 0 else "FULL", 11, Color("2b2d42"))
+					pill(at + Vector2(0, -30), "Restock %d  ¥%s" % [n, Sim.money(Sim.rnd(n * each))] if n > 0 else "Full", 11, Color(1.0, 0.98, 0.92), Color("6b5236"))
 		if at != Vector2.ZERO:
 			overlay.draw_arc(at, 16.0, 0.0, TAU, 24, Color(1, 1, 1, 0.9), 2.0)
 	for f in floaters:
 		text(screen(f.at), f.text, 15, f.color)
-	var band := Sim.band(sim.hour())
-	var clock := "%02d:%02d  %s" % [int(sim.hour()), int(fmod(sim.hour(), 1.0) * 60.0), band.name]
-	overlay.draw_rect(Rect2(8, 8, 190, 24), Color(0.17, 0.18, 0.26, 0.85))
-	overlay.draw_string(get_theme_default_font(), Vector2(16, 26), clock, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("ffd36b") if band.rush else Color.WHITE)
 
 
 func lot_poly(li: int) -> PackedVector2Array:
@@ -2148,7 +2199,7 @@ func draw_city_marks(font: Font) -> void:
 		var w := font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 		if not room_for.call(Rect2(at + Vector2(-w / 2 - 3, -12), Vector2(w + 6, 16))):
 			continue
-		overlay.draw_string_outline(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, 4, Color(0.17, 0.18, 0.26, 0.8))
+		overlay.draw_string_outline(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, 4, Color(0.33, 0.23, 0.1, 0.75))
 		overlay.draw_string(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, Color("f7f3e8"))
 	if zoom < 0.45:
 		for av in C.avenues:
@@ -2190,10 +2241,7 @@ func draw_city_marks(font: Font) -> void:
 		var b: Dictionary = e[1]
 		if not Rect2(Vector2.ZERO, size).grow(20).has_point(at):
 			continue
-		var label: String = b.name.to_upper()
-		var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 10
-		overlay.draw_rect(Rect2(at + Vector2(-w / 2, -9), Vector2(w, 16)), Color("f08a24") if is_same(b, branch) else Color("c46a14"))
-		overlay.draw_string(font, at + Vector2(-w / 2 + 5, 4), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+		pill(at + Vector2(0, 4), b.name, 11, Color("e98a1d") if is_same(b, branch) else Color("c46a14"))
 		if not b.rival.defeated:
 			var o := frame_origin(b.lot)
 			var rat := screen_world(o + Vector3(rival_span(b.rival).x + 4.0, 4.0, -7.2))
