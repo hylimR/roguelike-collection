@@ -108,13 +108,11 @@ const DECOR := [
 ]
 const APPEAL_CAP := 25
 
-# --- city: blocks of two 22-wide shop lots along each block's front (+z) edge, roads between blocks ---
-const ALLEY := 5.0  # narrow north-south lane between blocks
-const GAP_W := {"a": 9.2, "l": 5.0, "p": 16.0, "r": 13.0}
-const STEP := 9.0  # most a block front sets back from its row's line
-const ROAD := 9.2  # sidewalk, two lanes, sidewalk (matches the street the shop view draws)
-const LOT_W := 22.0
-const LOT_D := 10.0
+# --- city: the map lives in city.gd (Tokyo, fixed); shop lots are 22 x 10 facing a side street to the south ---
+const City := preload("res://city.gd")
+const ROAD := City.ROAD
+const LOT_W := City.LOT_W
+const LOT_D := City.LOT_D
 const DIST_SCALE := 22.0  # one unit of utility lost per this many metres walked
 const STAY_HOME := -1.0  # utility of not shopping at all
 const REACH := 90.0
@@ -136,23 +134,8 @@ const DISTRICTS := {
 	"oldtown": {"pop": 130, "rent": 0.85, "hours": [3, 2, 3, 2, 0.5, 0.2], "arch": [0.5, 0.6, 0.5, 5, 0.6, 1, 0.8]},
 	"park": {"pop": 110, "rent": 1.0, "hours": [2, 2, 3, 2, 0.5, 0.2], "arch": [0.6, 0.8, 1.2, 2, 0.6, 2, 2.5]},
 	"market": {"pop": 140, "rent": 0.9, "hours": [5, 3, 1, 0.5, 0.2, 1.5], "arch": [0.5, 0.3, 0.1, 0.5, 4, 2, 0.1]},
-	"palace": {"pop": 80, "rent": 2.0, "hours": [1, 2, 3, 1, 0.1, 0.1], "arch": [0.3, 0.3, 0.3, 1, 0.2, 5, 0.5], "closed": true},
+	"palace": {"pop": 80, "rent": 2.0, "hours": [1, 2, 3, 1, 0.1, 0.1], "arch": [0.3, 0.3, 0.3, 1, 0.2, 5, 0.5]},
 }
-# Tokyo by rows of blocks, north to south. yard = depth behind the shop lots; x = where the row starts.
-# area: [name, profile, landmark sheet, frame, shop lots, what follows it: "a" avenue, "l" alley, "p" a
-# pocket plaza, "r" the Sumida River, "-" end of row]. Each block also sits a little shallower than its row
-# (fixed per Tokyo), so block backs stagger. Blocks differ in width and depth and rows start and end apart, so the
-# cross streets don't line up; the river jogs from row to row under its bridges.
-const TOKYO := [
-	{"yard": 12, "x": 48, "areas": [["Nerima", "homes", "landmarks", 5, 3, "p"], ["Itabashi", "homes", "landmarks", 7, 2, "a"], ["Kita", "homes", "landmarks", 5, 2, "l"], ["Komagome", "oldtown", "landmarks", 3, 1, "a"], ["Yanaka", "oldtown", "landmarks", 3, 2, "p"], ["Ueno Park", "park", "landmarks", 4, 2, "a"], ["Minowa", "homes", "landmarks", 5, 1, "r"], ["Kameido", "homes", "landmarks", 6, 2, "-"]]},
-	{"yard": 15, "x": -14, "areas": [["Nakano", "homes", "landmarks", 6, 2, "l"], ["Koenji", "youth", "landmarks", 6, 2, "a"], ["Ikebukuro", "hub", "landmarks", 0, 3, "a"], ["Sugamo", "oldtown", "landmarks", 6, 2, "l"], ["Nippori", "oldtown", "landmarks", 0, 1, "a"], ["Ueno", "hub", "landmarks", 0, 3, "l"], ["Asakusa", "tourist", "tokyo", 2, 2, "r"], ["Oshiage", "tourist", "tokyo", 1, 2, "-"]]},
-	{"yard": 11, "x": 30, "areas": [["Suginami", "homes", "landmarks", 5, 3, "a"], ["Nishi-Shinjuku", "office", "tokyo", 4, 2, "l"], ["Shinjuku", "hub", "landmarks", 0, 3, "a"], ["Kagurazaka", "luxury", "landmarks", 3, 1, "p"], ["Jimbocho", "university", "landmarks", 2, 2, "a"], ["Akihabara", "otaku", "tokyo", 7, 2, "l"], ["Kuramae", "oldtown", "landmarks", 6, 1, "r"], ["Ryogoku", "homes", "landmarks", 6, 2, "-"]]},
-	{"yard": 16, "x": -36, "areas": [["Shimokitazawa", "youth", "landmarks", 6, 2, "l"], ["Yoyogi", "park", "tokyo", 9, 2, "p"], ["Harajuku", "youth", "landmarks", 6, 1, "l"], ["Akasaka", "office", "landmarks", 1, 2, "a"], ["Imperial Palace", "palace", "tokyo", 8, 3, "a"], ["Tokyo Station", "hub", "tokyo", 3, 3, "l"], ["Nihonbashi", "office", "landmarks", 1, 2, "r"], ["Kiyosumi", "homes", "landmarks", 4, 2, "-"]]},
-	{"yard": 12, "x": 12, "areas": [["Setagaya", "homes", "landmarks", 5, 3, "l"], ["Nakameguro", "youth", "landmarks", 4, 1, "a"], ["Shibuya", "hub", "tokyo", 5, 3, "a"], ["Roppongi", "nightlife", "tokyo", 11, 2, "p"], ["Ginza", "luxury", "tokyo", 6, 3, "a"], ["Shimbashi", "nightlife", "landmarks", 0, 1, "l"], ["Tsukiji", "market", "landmarks", 8, 2, "r"], ["Tsukishima", "oldtown", "landmarks", 5, 1, "-"]]},
-	{"yard": 14, "x": 62, "areas": [["Jiyugaoka", "luxury", "landmarks", 6, 2, "a"], ["Meguro", "homes", "landmarks", 5, 2, "l"], ["Ebisu", "nightlife", "landmarks", 1, 2, "a"], ["Azabu", "luxury", "landmarks", 5, 1, "l"], ["Shiba", "tourist", "tokyo", 0, 2, "a"], ["Shinagawa", "hub", "landmarks", 0, 3, "a"], ["Toyosu", "market", "landmarks", 8, 2, "r"], ["Odaiba", "tourist", "tokyo", 10, 3, "-"]]},
-]
-# Yamanote Line stations in running order; the elevated line cuts straight between them.
-const YAMANOTE := ["Ikebukuro", "Sugamo", "Nippori", "Ueno", "Akihabara", "Tokyo Station", "Shimbashi", "Shinagawa", "Ebisu", "Shibuya", "Harajuku", "Shinjuku"]
 # how much each archetype prefers a supermarket over a konbini
 const SUPER_FIT := [0.0, 0.5, -0.2, 0.8, 0.2, 0.0, 0.0]
 
@@ -199,10 +182,8 @@ var won := false
 var draft: Array = []
 var misses := {}
 var stats := {}
-var lots: Array = []  # {block, x0, front, use: free|landmark|shop|store, rent}
-var districts: Array = []  # one per block: {type, name, lm, rect, row}
-var rows: Array = []  # {z0, depth, x0, x1, gaps: [[x, width, kind]]}
-var roads: Array = []  # street segments for traffic: {axis, line (top or left edge), from, to, w}
+var lots: Array = []  # {block: district index, x0, front, use: free|shop|store, rent}
+var districts: Array = []  # City districts: {type, name, center, origin (where its shoppers set out), lm, lots}
 var rivals: Array = []  # rival stores: {chain, kind, lot, open, war, loss_weeks, week, customers, sales}
 var chains: Array = []  # {cash, alive, sales}
 var news: Array = []
@@ -243,56 +224,11 @@ func start(seed_str: String) -> void:
 # ---------- city ----------
 
 func block_center(d: Dictionary) -> Vector2:
-	return d.rect.get_center()
-
-
-## Lays Tokyo out from the TOKYO table. Every block sets its front back by its own amount (fixed per area),
-## so each block has its own front street: east-west streets step and jog, joined by the cross streets.
-func build_geometry() -> void:
-	districts = []
-	rows = []
-	roads = []
-	var z := 0.0
-	var fronts := []
-	for r in TOKYO.size():
-		var R: Dictionary = TOKYO[r]
-		var depth: float = R.yard + LOT_D
-		var x: float = R.x
-		var bottom := z + depth + STEP + ROAD  # where the next row starts
-		var row := {"z0": z, "z1": bottom, "depth": depth, "x0": x, "gaps": []}
-		var prev_gap := 0.0
-		for k in R.areas.size():
-			var a: Array = R.areas[k]
-			var w: float = a[4] * LOT_W
-			var step := float(hash(a[0] + "step") % int(STEP + 1))
-			var short := float(hash(a[0]) % 7)  # shallower blocks leave a pocket park behind
-			var front := z + depth + step
-			districts.append({"type": a[1], "name": a[0], "lm": [a[2], a[3]], "rect": Rect2(x, front - depth + short, w, depth - short), "lots": a[4], "row": r})
-			var gw: float = GAP_W[a[5]] if a[5] != "-" else 0.0
-			# its street runs from the middle of the gap before to the middle of the gap after (all the way over a river)
-			fronts.append({"axis": "h", "line": front, "from": x - prev_gap / 2 - (ROAD if k == 0 else 0.0), "to": x + w + (gw if a[5] == "r" else gw / 2) + (ROAD if a[5] == "-" else 0.0), "w": ROAD, "bridge": [x + w, gw] if a[5] == "r" else []})
-			x += w
-			if a[5] != "-":
-				row.gaps.append([x, gw, a[5]])
-				if a[5] == "p":  # a footpath through the plaza
-					roads.append({"axis": "v", "line": x + (gw - ALLEY) / 2, "from": z - ROAD, "to": bottom, "w": ALLEY})
-				elif a[5] != "r":
-					roads.append({"axis": "v", "line": x, "from": z - ROAD, "to": bottom, "w": gw})
-				x += gw
-			prev_gap = gw if a[5] != "r" else 0.0
-		row.x1 = x
-		rows.append(row)
-		z = bottom
-	roads.append({"axis": "h", "line": -ROAD, "from": rows[0].x0 - ROAD, "to": rows[0].x1 + ROAD, "w": ROAD, "bridge": []})
-	roads.append_array(fronts)
+	return d.origin
 
 
 func city_bounds() -> Rect2:
-	var b := Rect2(rows[0].x0, -ROAD, 0, 0)
-	for rd in roads:
-		b = b.expand(Vector2(rd.from, rd.line) if rd.axis == "h" else Vector2(rd.line, rd.from))
-		b = b.expand(Vector2(rd.to, rd.line + rd.w) if rd.axis == "h" else Vector2(rd.line + rd.w, rd.to))
-	return b
+	return City.get_city().bounds
 
 
 static func lot_pos(lot: Dictionary) -> Vector2:
@@ -311,15 +247,10 @@ func build_city() -> void:
 	rivals = []
 	chains = []
 	news = []
-	build_geometry()
-	var fixed := RandomNumberGenerator.new()  # Tokyo is Tokyo: which lot holds the landmark never changes
-	fixed.seed = 1964
-	for k in districts.size():
-		var d: Dictionary = districts[k]
-		var lm: int = fixed.randi() % d.lots
-		for i in d.lots:
-			var use := "landmark" if i == lm or DISTRICTS[d.type].get("closed", false) else "free"
-			lots.append({"block": k, "x0": d.rect.position.x + i * LOT_W, "front": d.rect.end.y, "use": use, "rent": DISTRICTS[d.type].rent})
+	var C := City.get_city()
+	districts = C.districts
+	for L in C.lots:
+		lots.append({"block": L.block, "x0": L.x0, "front": L.front, "use": "free", "rent": DISTRICTS[districts[L.block].type].rent})
 	for c in CHAINS.size():
 		chains.append({"cash": RIVAL_CASH, "alive": true, "sales": 0.0})
 	# you start on a middling lot; rivals spread over the rest, a few lots stay ordinary shops

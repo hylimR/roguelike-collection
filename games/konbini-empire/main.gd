@@ -48,7 +48,7 @@ var arranging := false
 
 
 func _ready() -> void:
-	for n in ["products", "people", "perks", "stores", "decor", "outdoor", "buildings", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "train", "bg_konbini", "bg_super"]:
+	for n in ["products", "people", "perks", "stores", "decor", "outdoor", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "train", "bg_konbini", "bg_super"]:
 		tex[n] = load("res://art/%s.png" % n)
 	theme = make_theme()
 	best.load("user://best.cfg")
@@ -437,8 +437,6 @@ func city_panel() -> void:
 			v.add_child(para(body))
 			v.add_child(b)
 			return
-		"landmark":
-			body = "The %s brings its own crowd to this block." % district_of(picked_lot).to_lower()
 		"shop":
 			body = "An ordinary neighbourhood shop. Not a competitor."
 		"store":
