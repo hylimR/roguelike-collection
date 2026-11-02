@@ -23,7 +23,7 @@ const RARITY_COLOR := {"common": Color("a08c69"), "rare": Color("3a9bd9"), "epic
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
 const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
 const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
-const CARD_W := 244  # the store card floats over the street's right edge; the camera shifts the street left of it
+const CARD_W := 232  # the store card in the top-right corner
 
 var sim := Sim.new()
 var tex := {}
@@ -59,8 +59,8 @@ var head: Label
 var sub: Label
 var rival_lbl: Label
 var rival_bar: ProgressBar
-var shelf_box: VBoxContainer
-var crew_lbl: Label
+var shelf_box: GridContainer
+var store_card: PanelContainer
 var staff_btn: Button
 var grow_btn: Button
 var store_btn: Button
@@ -217,32 +217,33 @@ func frame(sheet: String, i: int, cell: int) -> AtlasTexture:
 	return t
 
 
-## A colored app tile with its icon over a white caption and a darker lip.
-func app_button(text: String, cb: Callable, tip: String, c: Color, ic: Texture2D) -> Button:
-	var b := button(text, cb, tip)
-	for k in ["normal", "hover", "pressed"]:
-		var s := box(c.lightened(0.15) if k == "hover" else c, 16, 4, 1 if k == "pressed" else 3, 1 if k == "pressed" else 2)
-		b.add_theme_stylebox_override(k, s)
-	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
-		b.add_theme_color_override(k, Color.WHITE)
-	b.add_theme_font_size_override("font_size", 12)
+## A key with its icon over a short caption: cream for abilities and shelves, colored (white caption) for the app dock.
+func key_button(cb: Callable, tip: String, ic: Texture2D, w: int, h: int, radius: int, c := PAPER) -> Button:
+	var b := button("", cb, tip)
+	b.custom_minimum_size = Vector2(w, h)
+	b.size_flags_vertical = Control.SIZE_SHRINK_END
 	b.icon = ic
-	b.expand_icon = true  # otherwise the 80 px frame sets the tile's height
+	b.expand_icon = true  # otherwise the 80 px frame sets the key's height
 	b.add_theme_constant_override("icon_max_width", 26)
 	b.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
 	b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	b.custom_minimum_size = Vector2(0, 50)
-	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.clip_text = true
+	b.add_theme_font_size_override("font_size", 11)
+	for k in ["normal", "hover", "pressed", "disabled"]:
+		var s: StyleBoxFlat = theme.get_stylebox(k, "Button").duplicate()
+		if c != PAPER and k != "disabled":
+			s = box(c.lightened(0.15) if k == "hover" else c, radius, 4, 1 if k == "pressed" else 3, 1 if k == "pressed" else 2)
+		s.set_corner_radius_all(radius)
+		s.set_content_margin_all(4)
+		b.add_theme_stylebox_override(k, s)
+	if c != PAPER:
+		for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+			b.add_theme_color_override(k, Color.WHITE)
 	return b
 
 
 func picture(sheet: String, i: int, cell: int, min_size: Vector2) -> TextureRect:
 	var r := TextureRect.new()
-	var t := AtlasTexture.new()
-	t.atlas = tex[sheet]
-	t.region = Rect2(i * cell, 0, cell, cell)
-	r.texture = t
+	r.texture = frame(sheet, i, cell)
 	r.custom_minimum_size = min_size
 	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -250,9 +251,15 @@ func picture(sheet: String, i: int, cell: int, min_size: Vector2) -> TextureRect
 	return r
 
 
-func icon(pid: String, px: float) -> TextureRect:
+func product_frame(pid: String) -> AtlasTexture:
 	var ic: Array = Sim.PRODUCTS[pid].icon
-	return picture(ic[0], ic[1], {"products": 64, "perks": 80, "decor": 96}[ic[0]], Vector2(px, px))
+	return frame(ic[0], ic[1], {"products": 64, "perks": 80, "decor": 96}[ic[0]])
+
+
+func icon(pid: String, px: float) -> TextureRect:
+	var r := picture("products", 0, 64, Vector2(px, px))
+	r.texture = product_frame(pid)
+	return r
 
 
 func yen(v: int) -> String:
@@ -265,8 +272,8 @@ func stars(r: float) -> String:
 
 # ---------- layout ----------
 
-## The street fills the screen and the HUD floats over it in bubbles: money and level up top, store tabs,
-## abilities and a speech bubble at the bottom, the store card on the right. The view draws the clock.
+## The street fills the screen and the HUD floats over it in bubbles: money and level up top, a small store card
+## under them, store tabs, abilities, a speech bubble and the app dock at the bottom. The view draws the clock.
 func build() -> void:
 	var bg := ColorRect.new()
 	bg.color = GROUND
@@ -276,7 +283,6 @@ func build() -> void:
 	view = StoreView.new()
 	view.tex = tex
 	view.bold = bold
-	view.shift = (CARD_W + 16) / 2.0
 	view.size = Vector2(960, 540)
 	view.clip_contents = true
 	view.sim = sim
@@ -286,7 +292,7 @@ func build() -> void:
 
 	var top := HBoxContainer.new()
 	top.position = Vector2(214, 8)
-	top.size = Vector2(946 - CARD_W - 214, 30)
+	top.size = Vector2(952 - 214, 30)
 	top.alignment = BoxContainer.ALIGNMENT_END
 	top.add_theme_constant_override("separation", 6)
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -308,7 +314,10 @@ func build() -> void:
 	pause_btn = button("II", toggle_hold, "Pause  [Space]")
 	speed_btn = button("1x", cycle_speed, "Game speed  [F]")
 	sound_btn = button("", cycle_sound, "Sound: on, music off, muted  [V]")
-	for b in [pause_btn, speed_btn, sound_btn]:
+	seed_btn = button("", show_new_run, "Start a new run (you can type a seed)")
+	seed_btn.add_theme_font_size_override("font_size", 11)
+	seed_btn.add_theme_color_override("font_color", MUTED)
+	for b in [pause_btn, speed_btn, sound_btn, seed_btn]:
 		b.custom_minimum_size = Vector2(40, 28)
 		clock_row.add_child(b)
 	cycle_sound(best.get_value("settings", "sound", 0))
@@ -319,7 +328,7 @@ func build() -> void:
 
 	var bottom := VBoxContainer.new()
 	bottom.position = Vector2(10, 400)
-	bottom.size = Vector2(946 - CARD_W - 18, 130)  # contents sit at its bottom, 10 px off the edge
+	bottom.size = Vector2(940, 130)  # contents sit at its bottom, 10 px off the edge
 	bottom.alignment = BoxContainer.ALIGNMENT_END
 	bottom.add_theme_constant_override("separation", 6)
 	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -337,21 +346,7 @@ func build() -> void:
 	ability_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(ability_row)
 	for i in ABILITY_KEYS.size():
-		var a := button("", do_act.bind({"type": "useAbility", "id": ABILITY_KEYS[i]}))
-		a.custom_minimum_size = Vector2(54, 54)
-		a.size_flags_vertical = Control.SIZE_SHRINK_END
-		a.icon = frame("perks", ABILITY_ICON[ABILITY_KEYS[i]], 80)
-		a.expand_icon = true
-		a.add_theme_constant_override("icon_max_width", 28)
-		a.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
-		a.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		a.add_theme_font_size_override("font_size", 11)
-		for k in ["normal", "hover", "pressed", "disabled"]:
-			var s: StyleBoxFlat = theme.get_stylebox(k, "Button").duplicate()
-			s.set_corner_radius_all(27)
-			s.set_content_margin_all(5)
-			a.add_theme_stylebox_override(k, s)
-		ability_row.add_child(a)
+		ability_row.add_child(key_button(do_act.bind({"type": "useAbility", "id": ABILITY_KEYS[i]}), "", frame("perks", ABILITY_ICON[ABILITY_KEYS[i]], 80), 54, 54, 27))
 	pick_btn = button("", open_pick, "Choose your level-up skill or reward  [P]")
 	pick_btn.custom_minimum_size = Vector2(92, 54)
 	pick_btn.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -377,52 +372,43 @@ func build() -> void:
 	info.max_lines_visible = 3
 	info.add_theme_font_size_override("font_size", 11)
 	bh.add_child(info)
+	var dock := HBoxContainer.new()
+	dock.add_theme_constant_override("separation", 6)
+	dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(dock)
+	staff_btn = key_button(show_staff, "", frame("perks", 0, 80), 62, 54, 18, Color("ee9234"))
+	grow_btn = key_button(act_open.bind("openExpansion"), "", frame("perks", 2, 80), 62, 54, 18, Color("5aae55"))
+	store_btn = key_button(act_open.bind("openListings"), "", frame("perks", 10, 80), 62, 54, 18, Color("4a9fdc"))
+	city_btn = key_button(toggle_city, "Tokyo map: your branches and their rivals  [M]", frame("outdoor", 2, 128), 62, 54, 18, Color("e57fa4"))
+	staff_btn.text = "Staff"
+	grow_btn.text = "Expand"
+	store_btn.text = "Store"
+	for b in [staff_btn, grow_btn, store_btn, city_btn]:
+		dock.add_child(b)
 
-	var side := PanelContainer.new()
-	side.position = Vector2(952 - CARD_W, 8)
-	side.size = Vector2(CARD_W, 524)
-	add_child(side)
+	# the store card: only as tall as its content, so the street keeps the rest of the screen
+	store_card = PanelContainer.new()
+	store_card.add_theme_stylebox_override("panel", box(PAPER, 20, 10, 0, 5))
+	store_card.position = Vector2(952 - CARD_W, 46)
+	add_child(store_card)
 	var sv := VBoxContainer.new()
-	sv.add_theme_constant_override("separation", 5)
-	side.add_child(sv)
+	sv.add_theme_constant_override("separation", 4)
+	store_card.add_child(sv)
 	head = label("", Color.WHITE, 16)
 	sv.add_child(tag(head, MINT))
-	sub = para("", MUTED, CARD_W - 24)
+	sub = para("", MUTED, CARD_W - 20)
 	sub.add_theme_font_size_override("font_size", 11)
 	sv.add_child(sub)
 	rival_lbl = label("", INK)
 	rival_lbl.clip_text = true
 	sv.add_child(rival_lbl)
-	rival_bar = progress(RED, 10)
+	rival_bar = progress(RED, 6)
 	sv.add_child(rival_bar)
-	sv.add_child(label("Shelves  ·  click a shelf or +", MUTED))
-	shelf_box = VBoxContainer.new()
-	shelf_box.add_theme_constant_override("separation", 2)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.add_child(shelf_box)
-	shelf_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sv.add_child(scroll)
-	crew_lbl = para("", INK, CARD_W - 24)
-	crew_lbl.add_theme_font_size_override("font_size", 11)
-	sv.add_child(crew_lbl)
-	var g := GridContainer.new()
-	g.columns = 2
-	g.add_theme_constant_override("h_separation", 6)
-	g.add_theme_constant_override("v_separation", 6)
-	sv.add_child(g)
-	staff_btn = app_button("Staff", show_staff, "Hire and fire at this store  [S]", Color("ee9234"), frame("perks", 0, 80))
-	grow_btn = app_button("Expand", act_open.bind("openExpansion"), "Buy an expansion for this store  [G]", Color("5aae55"), frame("perks", 2, 80))
-	store_btn = app_button("New store", act_open.bind("openListings"), "Open another branch  [N]", Color("4a9fdc"), frame("perks", 10, 80))
-	city_btn = app_button("City", toggle_city, "Tokyo map: your branches and their rivals  [M]", Color("e57fa4"), frame("outdoor", 2, 128))
-	for b in [staff_btn, grow_btn, store_btn, city_btn]:
-		g.add_child(b)
-	seed_btn = button("", show_new_run, "Start a new run (you can type a seed)")
-	seed_btn.add_theme_font_size_override("font_size", 11)
-	seed_btn.add_theme_color_override("font_color", MUTED)
-	seed_btn.add_theme_stylebox_override("normal", box(Color("f6eed8"), 12, 3))
-	sv.add_child(seed_btn)
+	shelf_box = GridContainer.new()
+	shelf_box.columns = 4
+	shelf_box.add_theme_constant_override("h_separation", 4)
+	shelf_box.add_theme_constant_override("v_separation", 4)
+	sv.add_child(shelf_box)
 
 
 # ---------- run flow ----------
@@ -682,7 +668,7 @@ func refresh_ui() -> void:
 	banner.text = "Paused  [Space]" if held else ("Click a numbered lot  ·  Esc to go back" if view.pick == "listing" and view.mode == "city" else "")
 	banner.visible = banner.text != ""
 	banner.reset_size()
-	banner.position.x = (952 - CARD_W - banner.size.x) / 2.0
+	banner.position.x = (960 - banner.size.x) / 2.0
 
 	if tabs.get_child_count() != sim.branches.size():
 		for c in tabs.get_children():
@@ -727,7 +713,7 @@ func refresh_ui() -> void:
 	head.text = b.name
 	var d: Dictionary = Sim.DISTRICTS[b.district]
 	var ev: String = "" if b.event == null else "  ·  " + Sim.EVENTS[b.event.id].name
-	sub.text = "%s, %s%s\n%s  ·  rent %s + wages %s  ·  %d served, %d lost" % [d.name, Sim.QUIRKS[b.quirk].name.to_lower(), ev, stars(st.rating), yen(sim.rent(b)), yen(sim.wages(b)), b.day_stats.customers, b.day_stats.lost]
+	sub.text = "%s, %s%s\nRent %s + wages %s\n%d served, %d lost%s" % [d.name, Sim.QUIRKS[b.quirk].name.to_lower(), ev, yen(sim.rent(b)), yen(sim.wages(b)), b.day_stats.customers, b.day_stats.lost, "" if b.regulars == 0 else "  ·  %d regulars due" % b.regulars]
 	var rv: Dictionary = b.rival
 	if rv.defeated:
 		rival_lbl.text = "%s closed  ·  new rival in %d day%s" % [Sim.RIVALS[rv.id].name, 2 - rv.closed_days, "" if 2 - rv.closed_days == 1 else "s"]
@@ -737,12 +723,13 @@ func refresh_ui() -> void:
 		rival_bar.value = rv.hp / rv.max_hp
 		(rival_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = Color(Sim.RIVALS[rv.id].color)
 	refresh_shelves(b)
+	store_card.visible = view.mode == "store"  # the map gets the whole screen
+	store_card.size = Vector2(CARD_W, 0)  # shrinks back to its content when a store has fewer lines
 	var crew: Array = st.crew.map(func(m): return "%s %s" % [ROLE_ICON[m.role], m.name])
-	crew_lbl.text = "Crew: " + ", ".join(crew) + ("" if b.regulars == 0 else "\n%d regulars on the way" % b.regulars)
+	staff_btn.tooltip_text = "Hire and fire at this store  [S]\nCrew: " + (", ".join(crew) if not crew.is_empty() else "just you")
 	var exp_ok := not sim.eligible("expansion", st).is_empty()
-	grow_btn.text = "Expand %s" % yen(Sim.expansion_cost(st)) if exp_ok else "Expanded"
+	grow_btn.tooltip_text = "Expand this store: %s  [G]" % yen(Sim.expansion_cost(st)) if exp_ok else "Every expansion is built here"
 	grow_btn.disabled = not exp_ok or sim.phase != "playing"
-	store_btn.text = "New store"
 	store_btn.disabled = sim.branches.size() >= Sim.MAX_STORES or sim.phase != "playing"
 	store_btn.tooltip_text = "Open another branch: from %s  [N]" % yen(sim.store_cost())
 	staff_btn.disabled = sim.phase != "playing"
@@ -763,41 +750,35 @@ func refresh_shelves(b: Dictionary) -> void:
 	if sig != shelf_sig:
 		shelf_sig = sig
 		for c in shelf_box.get_children():
+			shelf_box.remove_child(c)
 			c.queue_free()
+		# one key per product: its icon, the restock price, and a stock bar along the bottom
 		for pid in st.products:
-			var h := HBoxContainer.new()
-			h.add_theme_constant_override("separation", 4)
-			h.add_child(icon(pid, 26))
-			var v := VBoxContainer.new()
-			v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			v.add_theme_constant_override("separation", 0)
-			var nm := label(Sim.PRODUCTS[pid].name)
-			nm.clip_text = true
-			nm.add_theme_font_size_override("font_size", 11)
-			v.add_child(nm)
-			v.add_child(progress(MINT, 6))
-			h.add_child(v)
-			var r := button("", do_act.bind({"type": "restock", "product": pid}))
-			r.custom_minimum_size = Vector2(84, 26)
-			r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			r.add_theme_font_size_override("font_size", 11)
-			h.add_child(r)
-			shelf_box.add_child(h)
+			var k := key_button(do_act.bind({"type": "restock", "product": pid}), "", product_frame(pid), 50, 52, 14)
+			k.add_theme_font_size_override("font_size", 10)
+			k.add_theme_constant_override("icon_max_width", 24)
+			var bar := progress(MINT, 4)
+			bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+			bar.offset_left = 7
+			bar.offset_right = -7
+			bar.offset_top = -9
+			bar.offset_bottom = -5
+			k.add_child(bar)
+			shelf_box.add_child(k)
 	var i := 0
 	for pid in st.products:
-		if i >= shelf_box.get_child_count():
-			break
 		var p: Dictionary = st.products[pid]
-		var row: HBoxContainer = shelf_box.get_child(i)
-		var bar: ProgressBar = row.get_child(1).get_child(1)
+		var k: Button = shelf_box.get_child(i)
+		var bar: ProgressBar = k.get_child(0)
 		var frac: float = float(p.stock) / p.capacity
 		bar.value = frac
 		(bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = RED if frac < Sim.LOW_STOCK else MINT
 		var missing: int = p.capacity - p.stock
 		var cost := Sim.rnd(missing * Sim.PRODUCTS[pid].cost * sim.mods().restock)
-		var btn: Button = row.get_child(2)
-		btn.text = "%d/%d  +%s" % [p.stock, p.capacity, yen(cost)] if missing > 0 else "%d/%d  FULL" % [p.stock, p.capacity]
-		btn.disabled = missing == 0 or sim.phase != "playing"
+		k.text = "+%s" % yen(cost) if missing > 0 else "Full"
+		k.tooltip_text = "%s  %d/%d  ·  %s" % [Sim.PRODUCTS[pid].name, p.stock, p.capacity, "click to restock for %s" % yen(cost) if missing > 0 else "full"]
+		k.disabled = missing == 0 or sim.phase != "playing"
 		i += 1
 
 

@@ -56,7 +56,14 @@ Every box in the scene is shaded per face (top brightest, the street face next),
 
 The light follows the clock: a pink dawn, plain daylight, a golden hour before the evening rush, a violet dusk, then night. After dark the street goes dark blue while windows and neon signs light up, street lamps and vending machines throw pools of light, the rival's glass front glows, and your shop stays brightly lit with everyone inside it. The camera starts close on your shop with the rival's sign in frame. Press M for the city map, which shows your branches and their rivals and highlights the lots on offer when you look for a new store.
 
-The HUD floats over the street in rounded cream bubbles, island-life style: a big white clock with the day in a pill, money and level tags, round ability buttons, a speech bubble for news, and a store card whose actions are colored app tiles.
+The HUD floats over the street in rounded cream bubbles, island-life style, and leaves the street the whole screen:
+
+- a big white clock with the day in a pill, with pause, speed, sound and seed buttons under it;
+- money, level, rating and bills tags along the top;
+- a small store card in the top-right corner that is only as tall as its content: district, rent and wages, the rival's takings, and one key per product showing its stock bar and restock price (click to restock);
+- store tabs, round ability keys, a speech bubble for news and a dock of colored app keys (Staff, Expand, Store, City) along the bottom.
+
+The store card hides on the city map.
 
 Sound follows the street on screen: the door chime as customers walk in, coins on every sale, a scanner beep that climbs with your ring-up combo, a whoosh and a poof for chased-off threats, an alert before each attack. Level-ups, closed rivals and the nightly report get their own jingles. The music changes with the hour, like a clock radio: a morning, an afternoon, an evening and a night piece, crossfading as the day goes on.
 

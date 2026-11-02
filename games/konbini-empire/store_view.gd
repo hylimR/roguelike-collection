@@ -150,7 +150,6 @@ var paused := false
 var hover := {}  # the action a click would take
 var drag := 0.0
 var bold: Font  # the HUD's heavy weight, for the clock and street tags
-var shift := 0.0  # px the scene sits left of centre, clear of the HUD's store card
 var styles := {}  # rounded boxes for tags and bars, by color and radius
 
 var walkers: Array = []
@@ -444,7 +443,6 @@ func update_camera() -> void:
 	else:
 		target = site.position + Vector3(-1.3, 1.0, -10.2)  # your shop up close, the rival's sign still in frame
 		cam.size = 24.0 * zoom
-	cam.h_offset = shift * cam.size / size.y
 	var pitch := deg_to_rad(PITCH)
 	target += cam_offset
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * 400.0
@@ -2272,8 +2270,8 @@ func draw_clock() -> void:
 func draw_overlay() -> void:
 	if not sim:
 		return
-	# a soft vignette round the street, centred where the scene sits (left of the store card)
-	overlay.draw_texture_rect(vignette, Rect2(-80 - shift, -60, size.x + 160, size.y + 120), false, Color(1, 1, 1, 0.22 + 0.12 * night))
+	# a soft vignette round the street
+	overlay.draw_texture_rect(vignette, Rect2(-80, -60, size.x + 160, size.y + 120), false, Color(1, 1, 1, 0.22 + 0.12 * night))
 	draw_weather()
 	if not sim.lots.is_empty():
 		draw_city_marks(get_theme_default_font())
