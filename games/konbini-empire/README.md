@@ -52,7 +52,7 @@ Each store is played on its own street, carved into the city on its lot:
 - a crossing whose lights the pedestrians wait for;
 - Tokyo carrying on around it.
 
-At night the windows and neon signs light up. Press M for the city map, which shows your branches and their rivals and highlights the lots on offer when you look for a new store.
+The light follows the clock: a pink dawn, plain daylight, a golden hour before the evening rush, a violet dusk, then night. After dark the street goes dark blue while windows and neon signs light up, street lamps and vending machines throw pools of light, the rival's glass front glows, and your shop stays brightly lit with everyone inside it. The camera starts close on your shop with the rival's sign in frame. Press M for the city map, which shows your branches and their rivals and highlights the lots on offer when you look for a new store.
 
 The HUD floats over the street in rounded cream bubbles, island-life style: a big white clock with the day in a pill, money and level tags, round ability buttons, a speech bubble for news, and a store card whose actions are colored app tiles.
 

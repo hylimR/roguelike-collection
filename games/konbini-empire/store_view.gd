@@ -47,8 +47,14 @@ const WEATHER_LOOK := {
 	"cold": [Color(0.8, 0.88, 1.0, 0.2), 240, 0.15, 50.0, 0.0],
 	"typhoon": [Color(0.1, 0.14, 0.24, 0.36), 360, -0.6, 1500.0, 24.0],
 }
+# the hour's light on everything outdoors, [hour, tint]: a pink dawn, plain day, golden hour, dusk, night; lit windows,
+# your shop's interior and the street lamps' pools stay bright
+const DAYLIGHT := [[6.0, Color(0.96, 0.86, 0.86)], [8.0, Color.WHITE], [15.5, Color.WHITE], [17.4, Color(1.0, 0.87, 0.7)],
+	[18.6, Color(0.82, 0.64, 0.7)], [19.8, Color(0.5, 0.5, 0.72)], [21.0, Color(0.36, 0.4, 0.62)], [24.0, Color(0.32, 0.36, 0.58)]]
+const LAMP := Color(1.0, 0.85, 0.58)
+const SEA := Color("3f7fbf")
 const PITCH := 30.0
-const SUN := Vector3(-0.35, 1.0, 0.6)  # towards the sun; the building shader lights its faces from here too
+const SUN :=Vector3(-0.35, 1.0, 0.6)  # towards the sun; the building shader lights its faces from here too
 const SHADOW_RES := 4096
 # Ground shadows: a mask rendered from the sun (buildings white on clear), looked up per ground point.
 const SHADOW_SHADER := """
@@ -78,6 +84,7 @@ uniform sampler2D facades : filter_nearest_mipmap;
 uniform sampler2D accents : filter_nearest_mipmap;
 uniform float styles = 10.0;
 uniform float night = 0.0;
+uniform vec3 light = vec3(1.0);
 varying vec3 lpos;
 varying vec3 lnrm;
 varying vec4 info;
@@ -124,7 +131,7 @@ void fragment() {
 		}
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
 	}
-	ALBEDO = col * shade * (1.0 - 0.62 * night) + glow;
+	ALBEDO = col * shade * light + glow;
 }
 """
 # the back wall's art: a crop of the side-view background, tiled along the wall
@@ -174,6 +181,16 @@ var pillar_mm: MultiMesh
 var pillar_base: Array = []
 var tree_mms: Array = []  # [MultiMesh, base transforms, height]
 var mask_vp: SubViewport  # the city seen from the sun, for ground shadows
+var shadow_mat: ShaderMaterial
+var env: Environment
+var light := Color.WHITE  # the hour's tint (DAYLIGHT)
+var night := 0.0  # 0 by day, 1 from 22:00: lit windows and lamp pools
+var lit_mats: Array = []  # [weakref to an outdoor material, its own colour]
+var lit_sprites: Array = []  # outdoor sprites that stand still, relit when the light changes
+var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the street after dark
+var pool_mat: StandardMaterial3D
+var shop_area := Rect2()  # your shop's floor in the world: full light inside
+var vignette: GradientTexture2D
 var shadow_mesh: CylinderMesh
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
@@ -206,12 +223,19 @@ func _ready() -> void:
 	add_child(screen_rect)
 	get_window().size_changed.connect(fit_viewport)
 	fit_viewport.call_deferred()
-	var env := Environment.new()
+	env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color("3f7fbf")  # open sea round the island
+	env.background_color = SEA  # open sea round the island
 	var we := WorldEnvironment.new()
 	we.environment = env
 	vp.add_child(we)
+	pool_mat = StandardMaterial3D.new()
+	pool_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	pool_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	pool_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	pool_mat.albedo_texture = radial([Color.WHITE, Color(1, 1, 1, 0.4), Color(1, 1, 1, 0)], [0.0, 0.4, 1.0])
+	pool_mat.albedo_color = Color(0, 0, 0, 0)
+	vignette = radial([Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0.2, 0.12, 0.05)], [0.0, 0.55, 1.0])
 	cam = Camera3D.new()
 	cam.fov = 38.0
 	vp.add_child(cam)
@@ -239,25 +263,28 @@ func _ready() -> void:
 
 # ---------- building ----------
 
-func mat(color: Color, texture: Texture2D = null) -> StandardMaterial3D:
+## Outdoor materials take the hour's light; indoor ones (your shop) keep their own colour.
+func mat(color: Color, texture: Texture2D = null, indoor := false) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_color = color
+	m.albedo_color = color if indoor else color * light
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	m.albedo_texture = texture
 	m.texture_repeat = texture != null
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if color.a < 1.0:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	if not indoor:
+		lit_mats.append([weakref(m), color])
 	return m
 
 
-func block(parent: Node3D, size_: Vector3, pos: Vector3, color: Color) -> void:
+func block(parent: Node3D, size_: Vector3, pos: Vector3, color: Color, indoor := false) -> void:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size_
 	mi.mesh = bm
-	mi.material_override = mat(color)
+	mi.material_override = mat(color, null, indoor or parent == room)
 	mi.position = pos
 	parent.add_child(mi)
 
@@ -284,6 +311,71 @@ func sprite(sheet: String, region: Rect2, px: float, billboard := true) -> Sprit
 	if billboard:
 		s.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	return s
+
+
+func radial(colors: Array, offsets: Array) -> GradientTexture2D:
+	var g := GradientTexture2D.new()
+	g.fill = GradientTexture2D.FILL_RADIAL
+	g.fill_from = Vector2(0.5, 0.5)
+	g.fill_to = Vector2(1.0, 0.5)
+	g.gradient = Gradient.new()
+	g.gradient.offsets = PackedFloat32Array(offsets)
+	g.gradient.colors = PackedColorArray(colors)
+	return g
+
+
+# ---------- light ----------
+
+## Follows the clock: tints outdoor materials, buildings, the sea and still sprites when the hour's light changes.
+func update_light() -> void:
+	var h: float = sim.hour()
+	var k := 1
+	while k < DAYLIGHT.size() - 1 and h > DAYLIGHT[k][0]:
+		k += 1
+	var t := clampf(inverse_lerp(DAYLIGHT[k - 1][0], DAYLIGHT[k][0], h), 0.0, 1.0)
+	var c: Color = DAYLIGHT[k - 1][1].lerp(DAYLIGHT[k][1], t)
+	var n := clampf((h - 18.0) / 4.0, 0.0, 1.0)
+	if is_equal_approx(n, night) and Vector3(c.r - light.r, c.g - light.g, c.b - light.b).length() < 0.004:
+		return
+	light = c
+	night = n
+	lit_mats = lit_mats.filter(func(e): return e[0].get_ref() != null)
+	for e in lit_mats:
+		e[0].get_ref().albedo_color = e[1] * light
+	if building_mat:
+		building_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
+		building_mat.set_shader_parameter("night", night)
+	if shadow_mat:
+		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night))
+	env.background_color = SEA * light
+	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
+	lit_sprites = lit_sprites.filter(func(s): return is_instance_valid(s))
+	for s in lit_sprites:
+		shine(s)
+
+
+## What a sprite standing at p sees: the hour's light, lifted under a lamp after dark and full inside your shop.
+func light_at(p: Vector3) -> Color:
+	if mode != "store":
+		return light
+	if shop_area.has_point(Vector2(p.x, p.z)):
+		return Color.WHITE
+	var k := 0.0
+	if night > 0.0:
+		for q in pools:
+			k = maxf(k, 1.0 - Vector2(p.x - q.x, p.z - q.y).length() / q.z)
+	return light.lerp(LAMP, k * night * 0.8)
+
+
+func shine(s: Sprite3D) -> void:
+	s.modulate = s.get_meta("base", Color.WHITE) * light_at(s.global_position)
+
+
+## A pool of lamp light on the ground, faded in after dusk.
+func pool(parent: Node3D, at: Vector3, size_: Vector2) -> void:
+	plane(parent, size_, Vector3(at.x, -0.03, at.z), pool_mat)
+	var w := parent.global_position + at
+	pools.append(Vector3(w.x, w.z, maxf(size_.x, size_.y) * 0.45))
 
 
 func tiles(a: Color, b: Color) -> ImageTexture:
@@ -315,8 +407,8 @@ func update_camera() -> void:
 		target = Vector3(b.get_center().x, 0, b.get_center().y)
 		cam.size = (b.size.x + b.size.y) * 0.4 * zoom
 	else:
-		target = site.position + Vector3(-3.0, 1.0, -7.5)
-		cam.size = 29.5 * zoom
+		target = site.position + Vector3(-1.3, 1.0, -10.2)  # your shop up close, the rival's sign still in frame
+		cam.size = 24.0 * zoom
 	cam.h_offset = shift * cam.size / size.y
 	var pitch := deg_to_rad(PITCH)
 	target += cam_offset
@@ -347,6 +439,7 @@ func city_sprite(parent: Node3D, sheet: String, region: Rect2, px: float, at: Ve
 	s.position = at + Vector3(0, region.size.y / 2.0 * px - 0.1, 0)
 	parent.add_child(s)
 	list.append([s, region.size.x / 2.0 * px])
+	lit_sprites.append(s)
 	return s
 
 
@@ -753,7 +846,8 @@ func build_shadows() -> void:
 	sun.position = mid + SUN.normalized() * 600.0
 	sun.look_at(mid)
 	sun.current = true
-	var sm := ShaderMaterial.new()
+	shadow_mat = ShaderMaterial.new()
+	var sm := shadow_mat
 	sm.shader = Shader.new()
 	sm.shader.code = SHADOW_SHADER
 	sm.set_shader_parameter("mask", mask_vp.get_texture())
@@ -962,6 +1056,7 @@ func build_trees() -> void:
 		m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 		m.billboard_keep_scale = true
 		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		lit_mats.append([weakref(m), Color.WHITE])
 		var list: Array = spots[id]
 		var mm := multimesh(q, list.size())
 		var base := []
@@ -1036,7 +1131,8 @@ func update_fade() -> void:
 		s.visible = not (on and area.has_point(at_))
 		var fade_it: bool = on and r.intersects(scr) and at_.x + at_.y > depth
 		s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED if fade_it else SpriteBase3D.ALPHA_CUT_DISCARD
-		s.modulate = Color(1, 1, 1, 0.25) if fade_it else Color.WHITE
+		s.set_meta("base", Color(1, 1, 1, 0.25) if fade_it else Color.WHITE)
+		shine(s)
 	var away := Transform3D(Basis.from_scale(Vector3.ONE * 0.001), Vector3(0, -50, 0))
 	for rec in brecs:
 		var f: Rect2 = rec.foot
@@ -1124,6 +1220,7 @@ func build_paths() -> void:
 	for k in 2:
 		var node := sprite("train", Rect2(0, 0, TRAIN.x, TRAIN.y), TRAIN_PX)
 		street.add_child(node)
+		lit_sprites.append(node)
 		trains.append({"path": rail_path, "s": rail_path.cum[-1] * k / 2.0, "v": TRAIN_SPEED * (1 if k == 0 else -1), "lat": 0.0, "node": node, "y": TRAIN.y / 2.0 * TRAIN_PX * 0.55 - 0.1})
 
 
@@ -1309,6 +1406,7 @@ func street_life(delta: float) -> void:
 			gone.append(o)
 			continue
 		place(o)
+		shine(o.node)
 		o.node.visible = not area.has_point(Vector2(o.node.position.x, o.node.position.z)) or o.node.position.y > 3.0
 		if o.has("a"):
 			stride(o, absf(o.v), delta)
@@ -1366,6 +1464,7 @@ func refresh_city(reframe := false) -> void:
 		zoom = 1.0
 	update_camera()
 	update_fade()
+	night = -1.0  # relight: built or rebuilt, or switched between store and city
 
 
 ## The set's look: rebuilt when the shop grows, gets a line or a facility, or the rival changes hands.
@@ -1380,9 +1479,12 @@ func build_set() -> void:
 	for c in room.get_children():
 		c.free()
 	slot_icons.clear()
+	pools.clear()
 	var b := branch
 	var st: Dictionary = b.store
 	var type: String = sim.districts[sim.lots[b.lot].block].type
+	var zl: float = Sim.ZONE_LEFT[st.size]
+	shop_area = Rect2(site.position.x + Sim.ORIGIN.x + zl, site.position.z + Sim.ORIGIN.y - 4.7, 6.6 - zl, 9.4)
 	# ground: blocks behind both sidewalks, the sidewalks, the road with its centre line and crossing
 	var gnd := surface(mat(Color("cdc6b6")))
 	rect_quad(gnd, Rect2(SET.position.x, SET.position.y, SET.size.x, -7.2 - SET.position.y), -0.05)
@@ -1457,6 +1559,10 @@ func build_set() -> void:
 		var s := sprite("outdoor", Rect2(p[0] * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55)
 		s.position = Vector3(p[1].x, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55 - 0.05, p[1].y)
 		set_node.add_child(s)
+		lit_sprites.append(s)
+		if p[0] == 6:
+			pool(set_node, Vector3(p[1].x, 0, p[1].y), Vector2(7.0, 7.0))
+	pool(set_node, Vector3(Sim.ORIGIN.x + (zl + 6.6) / 2, 0, Sim.ORIGIN.y + 4.7), Vector2(10.6 - zl, 6.0))  # your shop's glass front
 	for pole in [Vector3(Sim.CROSS_X - 1.8, 0, -4.0), Vector3(Sim.CROSS_X + 1.8, 0, 4.0)]:
 		block(set_node, Vector3(0.12, 2.6, 0.12), pole + Vector3(0, 1.3, 0), Color("4a4d57"))
 		block(set_node, Vector3(0.36, 0.7, 0.3), pole + Vector3(0, 2.5, 0), Color("2b2d42"))
@@ -1471,9 +1577,13 @@ func build_set() -> void:
 			var s := sprite(e[0], Rect2(e[1] * cell, 0, cell, cell), px)
 			s.position = e[2] + Vector3(0, cell / 2.0 * px, 0)
 			set_node.add_child(s)
+			lit_sprites.append(s)
+			if f in ["vending", "gacha"]:
+				pool(set_node, e[2] + Vector3(0, 0, 0.6), Vector2(3.5, 3.5))
 	if st.facilities.has("neon"):
-		block(set_node, Vector3(6.0, 0.7, 0.2), Vector3(-6.5, 3.75, -7.1), Color("ff4fa0"))
+		block(set_node, Vector3(6.0, 0.7, 0.2), Vector3(-6.5, 3.75, -7.1), Color("ff4fa0"), true)
 	set_sig = scene_signature()
+	night = -1.0  # relight the new set
 
 
 ## A row of district buildings fronting z = zf (northwards into the block), shoulder to shoulder from x0 to x1.
@@ -1510,9 +1620,10 @@ func build_rival(span: Vector2) -> void:
 	if rv.defeated:
 		block(set_node, Vector3(w - 0.8, 2.9, 0.08), Vector3(cx, 1.45, -7.12), Color("a9a59c"))
 		return
-	block(set_node, Vector3(w - 0.8, 2.6, 0.08), Vector3(cx, 1.3, -7.12), Color("7fb2dd"))
+	block(set_node, Vector3(w - 0.8, 2.6, 0.08), Vector3(cx, 1.3, -7.12), Color("7fb2dd"), true)
 	block(set_node, Vector3(1.4, 2.6, 0.1), Vector3(rv.x, 1.3, -7.08), Color("dbeaf5"))
 	block(set_node, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
+	pool(set_node, Vector3(cx, 0, -7.2), Vector2(w + 2.0, 5.0))
 
 
 ## Your shop as a cutaway (shop-local frame, 1:1): floor, back and side walls, counter and registers, a fixture per
@@ -1524,7 +1635,7 @@ func build_room() -> void:
 	var cx := (zl + 6.5) / 2
 	var L: Dictionary = LAYOUT
 	block(room, Vector3(w + 0.3, 0.2, 9.3), Vector3(cx, -0.1, 0.0), Color("8a6e4b"))
-	var fm := mat(Color.WHITE, tiles(L.floor[0], L.floor[1]))
+	var fm := mat(Color.WHITE, tiles(L.floor[0], L.floor[1]), true)
 	fm.uv1_scale = Vector3(w, 9.0, 1)
 	fm.texture_repeat = true
 	plane(room, Vector2(w, 9.0), Vector3(cx, 0.002, 0.0), fm)
@@ -1536,7 +1647,7 @@ func build_room() -> void:
 	var q := QuadMesh.new()
 	q.size = Vector2(w, wall_h)
 	art.mesh = q
-	var am := mat(Color.WHITE, ImageTexture.create_from_image(crop))
+	var am := mat(Color.WHITE, ImageTexture.create_from_image(crop), true)
 	am.uv1_scale = Vector3(w / (wall_h * crop.get_width() / crop.get_height()), 1, 1)
 	am.texture_repeat = true
 	art.material_override = am
@@ -1635,7 +1746,7 @@ func sync_actors(delta: float) -> void:
 			var node := sprite("walk", Rect2(0, (a.look % 7) * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
 			node.add_child(shadow())
 			if a.kind == "fan":
-				node.modulate = Color(1.0, 0.86, 0.93)
+				node.set_meta("base", Color(1.0, 0.86, 0.93))
 			actors.add_child(node)
 			e = {"node": node, "a": a.look % 7, "step": randf() * 4.0}
 			agent_nodes[a.id] = e
@@ -1666,7 +1777,7 @@ func sync_actors(delta: float) -> void:
 				e = {"node": node, "y": 0.28}
 			else:
 				node = sprite("walk", Rect2(0, 7 * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
-				node.modulate = ROLE_TINT.get(s.role, Color.WHITE)
+				node.set_meta("base", ROLE_TINT.get(s.role, Color.WHITE))
 				node.add_child(shadow())
 				e = {"node": node, "a": 7, "step": 0.0}
 			actors.add_child(node)
@@ -1678,6 +1789,10 @@ func sync_actors(delta: float) -> void:
 		else:
 			e.node.position = Vector3(s.x, e.y, s.z)
 	drop_missing(staff_nodes, seen)
+	for d in [agent_nodes, threat_nodes, staff_nodes]:
+		for id in d:
+			if d[id].node is Sprite3D:
+				shine(d[id].node)
 
 
 func drop_missing(d: Dictionary, seen: Dictionary) -> void:
@@ -1706,7 +1821,7 @@ func make_threat(t: Dictionary, col: Color) -> Dictionary:
 	var row := {"flyer": 1, "mascot": 6, "shoplifter": 2, "suit": 0}
 	if row.has(t.type):
 		var node := sprite("walk", Rect2(0, row[t.type] * PERSON.y, PERSON.x, PERSON.y), PERSON_PX * (2.1 if t.type == "mascot" else 1.0))
-		node.modulate = {"flyer": Color.WHITE.lerp(col, 0.45), "mascot": Color.WHITE.lerp(col, 0.6), "shoplifter": Color(0.32, 0.32, 0.4), "suit": Color(0.5, 0.5, 0.56)}[t.type]
+		node.set_meta("base", {"flyer": Color.WHITE.lerp(col, 0.45), "mascot": Color.WHITE.lerp(col, 0.6), "shoplifter": Color(0.32, 0.32, 0.4), "suit": Color(0.5, 0.5, 0.56)}[t.type])
 		node.add_child(shadow())
 		e = {"node": node, "a": row[t.type], "step": 0.0, "scale": 2.1 if t.type == "mascot" else 1.0}
 	else:
@@ -1927,6 +2042,8 @@ func _gui_input(e: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if city_sig != "":
+		update_light()
 	if paused or city_sig == "":
 		return
 	street_life(delta)
@@ -2043,16 +2160,12 @@ func draw_clock() -> void:
 func draw_overlay() -> void:
 	if not sim:
 		return
-	var h: float = sim.hour()
-	var night := clampf((h - 18.0) / 4.0, 0.0, 1.0)
-	if building_mat and building_mat.get_shader_parameter("night") != night:
-		building_mat.set_shader_parameter("night", night)
+	# a soft vignette round the street, centred where the scene sits (left of the store card)
+	overlay.draw_texture_rect(vignette, Rect2(-80 - shift, -60, size.x + 160, size.y + 120), false, Color(1, 1, 1, 0.22 + 0.12 * night))
 	draw_weather()
 	if not sim.lots.is_empty():
 		draw_city_marks(get_theme_default_font())
 	if mode == "store" and not branch.is_empty():
-		if night > 0.0:
-			overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.07, 0.25, 0.3 * night))
 		draw_street()
 	if not sim.branches.is_empty():
 		draw_clock()
