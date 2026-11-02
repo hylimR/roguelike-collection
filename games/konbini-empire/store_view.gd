@@ -41,6 +41,14 @@ const LANDMARK_PX := 0.085
 const WALK_NEAR := 1.2  # customers' sidewalk line in front of the shop
 const MAX_WALKERS := 70
 const MAX_CARS := 70
+const FIELDS := ["9cb862", "b2c46e", "86a85a", "cdbb72", "a98f62", "79a05a", "bfc77e"]  # paddies, crops, tilled soil
+# the day's weather over the view: [tint, then for falling rain or snow: drops, slant, speed px/s, streak length]
+const WEATHER_LOOK := {
+	"hot": [Color(1.0, 0.7, 0.3, 0.12)],
+	"rain": [Color(0.2, 0.25, 0.38, 0.24), 170, -0.18, 950.0, 15.0],
+	"cold": [Color(0.8, 0.88, 1.0, 0.2), 240, 0.15, 50.0, 0.0],
+	"typhoon": [Color(0.1, 0.14, 0.24, 0.36), 360, -0.6, 1500.0, 24.0],
+}
 const PITCH := 30.0
 const SUN := Vector3(-0.35, 1.0, 0.6)  # towards the sun; the building shader lights its faces from here too
 const SHADOW_RES := 4096
@@ -150,6 +158,7 @@ var ghost_cells: Array = []
 var ghost_ok := true
 
 var lot := Vector2(14, 8)  # shop width and depth incl. walkway row
+var room_h := 3.0  # the cutaway walls' height
 var walkers: Array = []
 var cars: Array = []
 var next_walker := 0.0
@@ -315,6 +324,7 @@ func build_room() -> void:
 	# cutaway walls: the back one carries the Codex back-wall art, the left one is plain with the shop stripes
 	var crop: Image = tex[L.bg].get_image().get_region(L.wall)
 	var h: float = w * crop.get_height() / crop.get_width()
+	room_h = h
 	block(room, Vector3(w + 0.5, h, 0.25), Vector3(w / 2, h / 2, -0.125), Color("e6dcc6"))
 	var art := MeshInstance3D.new()
 	var q := QuadMesh.new()
@@ -491,6 +501,32 @@ func build_static() -> void:
 	var mid := b.get_center()
 	var grass := tiled(speckle([Color("7fa35a"), Color("8cb064"), Color("739a52"), Color("98b86c")]), Vector2(500, 500))
 	plane(city, Vector2(2000, 2000), Vector3(mid.x, -0.16, mid.y), grass)
+	# farmland round the city: a patchwork of furrowed fields with grass between, kept off the roads and the shore
+	var furrows := Image.create(4, 4, false, Image.FORMAT_RGB8)
+	furrows.fill(Color.WHITE)
+	furrows.fill_rect(Rect2i(0, 0, 1, 4), Color(0.84, 0.86, 0.78))
+	furrows.generate_mipmaps()
+	var fm := mat(Color.WHITE, ImageTexture.create_from_image(furrows))
+	fm.vertex_color_use_as_albedo = true
+	fm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	var fs := surface(fm)
+	var fr := RandomNumberGenerator.new()
+	fr.seed = 5
+	var fb := b.grow(400.0)
+	var fy := fb.position.y
+	while fy < fb.end.y:
+		var fh := fr.randf_range(14.0, 26.0)
+		var fx := fb.position.x - fr.randf_range(0.0, 20.0)
+		while fx < fb.end.x:
+			var fw := fr.randf_range(16.0, 36.0)
+			var r := Rect2(fx, fy, fw, fh).grow(-0.9)
+			if Sim.City.nearest(C, r.get_center())[1] > Sim.City.URBAN + 16.0 and not Sim.City.blocked(C, r.grow(12.0)):
+				var along := fr.randf() < 0.5
+				fs.set_color(Color(FIELDS[fr.randi() % FIELDS.size()]))
+				rect_quad(fs, r, -0.155, (r.size.y if along else r.size.x) / 3.0, along)
+			fx += fw
+		fy += fh
+	commit([fs], city)
 	# built-up ground, coloured by what the district is
 	var ground := mat(Color.WHITE)
 	ground.vertex_color_use_as_albedo = true
@@ -948,11 +984,14 @@ func build_trees() -> void:
 				if not Sim.City.is_water(C, p) and not C.streets.any(func(st): return srect(st, st.from - 2.0, st.to + 2.0, -1.0, st.w + 1.0).has_point(p)):
 					add.call(1 if r.randf() < 0.75 else 0, p, 0.55)
 			s += 10.0
-	var b: Rect2 = C.bounds.grow(150.0)
-	for k in 1400:
-		var p := Vector2(r.randf_range(b.position.x, b.end.x), r.randf_range(b.position.y, b.end.y))
-		if Sim.City.nearest(C, p)[1] > Sim.City.URBAN + 8.0 and not Sim.City.is_water(C, p):
-			add.call([1, 1, 3, 1, 4][r.randi() % 5], p, r.randf_range(0.7, 1.1))
+	var b: Rect2 = C.bounds.grow(320.0)
+	for k in 160:  # woods out in the country, clear of the roads
+		var g := Vector2(r.randf_range(b.position.x, b.end.x), r.randf_range(b.position.y, b.end.y))
+		var rad := r.randf_range(4.0, 14.0)
+		for j in int(rad * rad * 0.12) + 3:
+			var p := g + Vector2.from_angle(r.randf() * TAU) * rad * sqrt(r.randf())
+			if Sim.City.nearest(C, p)[1] > Sim.City.URBAN + 8.0 and not Sim.City.blocked(C, Rect2(p - Vector2.ONE, Vector2(2, 2))):
+				add.call([1, 1, 3, 1, 4][r.randi() % 5], p, r.randf_range(0.7, 1.1))
 	tree_mms.clear()
 	for id in spots:
 		var qs: Vector2 = Vector2(OUTDOOR, OUTDOOR) * OUTDOOR_PX * OUTDOOR_SCALE[id]
@@ -1292,9 +1331,9 @@ func shadow() -> MeshInstance3D:
 
 ## Walkers and traffic round the view (walkers only when close enough to see); busier at rush hours.
 func street_life(delta: float) -> void:
-	var busy := 1.0
+	var busy: float = sim.weather.get("traffic", 1.0)  # fewer out in the rain
 	if playing:
-		busy = 0.35 + Sim.BLOCK_W[mini(5, int(progress() * 6.0))] / 3.0
+		busy *= 0.35 + Sim.BLOCK_W[mini(5, int(progress() * 6.0))] / 3.0
 	var close := cam.size < 90.0
 	next_walker -= delta * busy
 	if next_walker <= 0.0 and close and walkers.size() < MAX_WALKERS:
@@ -1686,6 +1725,8 @@ func _process(delta: float) -> void:
 		return
 	street_life(delta)
 	if not playing:
+		if WEATHER_LOOK.get(sim.weather.get("id", ""), []).size() > 1:
+			overlay.queue_redraw()  # the rain keeps falling
 		return
 	t += delta
 	while queue.size() and queue[0].t * DUR * PACE <= t:
@@ -1744,8 +1785,43 @@ func shown_qty(i: int) -> int:
 
 # ---------- 2D overlay ----------
 
+## The day's weather: a tint, then rain, a typhoon's driving rain or a cold snap's snow, which stays out of the shop.
+func draw_weather() -> void:
+	var look: Array = WEATHER_LOOK.get(sim.weather.get("id", ""), [])
+	if look.is_empty():
+		return
+	overlay.draw_rect(Rect2(Vector2.ZERO, size), look[0])
+	if look.size() == 1:
+		return
+	var inside := PackedVector2Array()
+	if mode == "store":
+		for y in [0.0, room_h]:
+			for c in [Vector2(-0.3, -0.3), Vector2(lot.x + 0.3, -0.3), Vector2(lot.x + 0.3, lot.y + 0.3), Vector2(-0.3, lot.y + 0.3)]:
+				inside.append(screen(Vector3(c.x, y, c.y)))
+		inside = Geometry2D.convex_hull(inside)
+	var r := RandomNumberGenerator.new()
+	r.seed = 11
+	var now := Time.get_ticks_msec() / 1000.0
+	var span := size.y + 40.0
+	var lines := PackedVector2Array()
+	for i in look[1]:
+		var y := fposmod(r.randf() * span + now * look[3] * r.randf_range(0.8, 1.2), span) - 20.0
+		var x := fposmod(r.randf() * size.x + y * look[2], size.x)
+		var p := Vector2(x + (sin(now * 1.4 + i) * 6.0 if look[4] == 0.0 else 0.0), y)
+		if inside.size() > 2 and Geometry2D.is_point_in_polygon(p, inside):
+			continue
+		if look[4] == 0.0:
+			overlay.draw_rect(Rect2(p, Vector2(3, 3)), Color(1, 1, 1, 0.9))
+		else:
+			lines.append_array([p, p + Vector2(look[2], 1.0).normalized() * look[4]])
+	if not lines.is_empty():
+		overlay.draw_multiline(lines, Color(0.86, 0.9, 1.0, 0.5))
+
+
 func draw_overlay() -> void:
 	var font := get_theme_default_font()
+	if sim:
+		draw_weather()
 	if sim and not sim.lots.is_empty():
 		draw_city_marks(font)
 	if mode == "city":
@@ -1799,25 +1875,44 @@ func lot_poly(li: int) -> PackedVector2Array:
 ## Chain-coloured pins over stores, district names, and in city mode the lots you can pick.
 func draw_city_marks(font: Font) -> void:
 	var city_view := mode == "city"
+	var taken: Array = []  # rects of labels already placed: one that would overlap them is left out
+	var room_for := func(r: Rect2) -> bool:
+		if taken.any(func(q): return q.intersects(r)):
+			return false
+		taken.append(r)
+		return true
+	if city_view:
+		for e in sim.open_stores():  # your own shops' tags stay clear
+			if e[1] == 0:
+				var p2: Vector2 = Sim.lot_pos(sim.lots[e[0].lot])
+				taken.append(Rect2(screen_world(Vector3(p2.x + 2.0, 4.0, p2.y + 3.0)) + Vector2(-20, -10), Vector2(40, 18)))
+		var order := []  # stations first, then districts with a landmark, then the rest
+		for rank in 3:
+			order += sim.districts.filter(func(d): return (0 if d.type == "hub" else (1 if d.lm[1] >= 0 else 2)) == rank)
+		for d in order:
+			var at := screen_world(Vector3(d.center.x, 0, d.center.y - 4.0))
+			var nm: String = d.name.to_upper()
+			var w := font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+			if not room_for.call(Rect2(at + Vector2(-w / 2 - 3, -12), Vector2(w + 6, 16))):
+				continue
+			overlay.draw_string_outline(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, 4, Color(0.17, 0.18, 0.26, 0.8))
+			overlay.draw_string(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, Color("f7f3e8"))
 	if city_view and zoom < 0.45:
 		for av in C.avenues:
 			var pts: PackedVector2Array = av.pts
 			var third: Vector2 = pts[int(pts.size() / 3.0)]
 			var at := screen_world(Vector3(third.x, 0, third.y))
-			overlay.draw_string_outline(font, at + Vector2(-50, 0), av.name, HORIZONTAL_ALIGNMENT_CENTER, 100, 10, 3, Color(1, 1, 1, 0.7))
-			overlay.draw_string(font, at + Vector2(-50, 0), av.name, HORIZONTAL_ALIGNMENT_CENTER, 100, 10, Color("5d5f66"))
+			var w := font.get_string_size(av.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
+			if room_for.call(Rect2(at + Vector2(-w / 2 - 2, -10), Vector2(w + 4, 13))):
+				overlay.draw_string_outline(font, at + Vector2(-50, 0), av.name, HORIZONTAL_ALIGNMENT_CENTER, 100, 10, 3, Color(1, 1, 1, 0.7))
+				overlay.draw_string(font, at + Vector2(-50, 0), av.name, HORIZONTAL_ALIGNMENT_CENTER, 100, 10, Color("5d5f66"))
 		for sh in C.shuto:
 			var pts: PackedVector3Array = sh.pts
 			var at := screen_world(pts[int(pts.size() / 2.0)] + Vector3(0, 1.5, 0))
-			overlay.draw_rect(Rect2(at + Vector2(-13, -9), Vector2(26, 16)), Color("1f6f43"))
-			overlay.draw_rect(Rect2(at + Vector2(-13, -9), Vector2(26, 16)), Color.WHITE, false, 1.5)
-			overlay.draw_string(font, at + Vector2(-13, 4), sh.name, HORIZONTAL_ALIGNMENT_CENTER, 26, 11, Color.WHITE)
-	if city_view:
-		for d in sim.districts:
-			var at := screen_world(Vector3(d.center.x, 0, d.center.y - 4.0))
-			var nm: String = d.name.to_upper()
-			overlay.draw_string_outline(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, 4, Color(0.17, 0.18, 0.26, 0.8))
-			overlay.draw_string(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, Color("f7f3e8"))
+			if room_for.call(Rect2(at + Vector2(-13, -9), Vector2(26, 16))):
+				overlay.draw_rect(Rect2(at + Vector2(-13, -9), Vector2(26, 16)), Color("1f6f43"))
+				overlay.draw_rect(Rect2(at + Vector2(-13, -9), Vector2(26, 16)), Color.WHITE, false, 1.5)
+				overlay.draw_string(font, at + Vector2(-13, 4), sh.name, HORIZONTAL_ALIGNMENT_CENTER, 26, 11, Color.WHITE)
 		for li in sim.lots.size():
 			var L: Dictionary = sim.lots[li]
 			var mark := Color(0, 0, 0, 0)

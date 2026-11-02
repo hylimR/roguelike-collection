@@ -74,7 +74,7 @@ const DISTRICTS := [
 ]
 # Yamanote Line stations in running order: the elevated loop runs through them.
 const YAMANOTE := ["Ikebukuro", "Sugamo", "Nippori", "Ueno", "Akihabara", "Tokyo Station", "Shimbashi", "Shinagawa", "Ebisu", "Shibuya", "Harajuku", "Shinjuku"]
-const BAY := [Vector2(-140, 480), Vector2(-70, 330), Vector2(2, 268), Vector2(26, 205), Vector2(42, 152), Vector2(56, 114), Vector2(76, 100), Vector2(100, 100), Vector2(112, 92), Vector2(122, 52), Vector2(175, 44), Vector2(260, 38), Vector2(460, 30), Vector2(460, 480)]
+const BAY := [Vector2(-380, 1000), Vector2(-140, 480),Vector2(-70, 330), Vector2(2, 268), Vector2(26, 205), Vector2(42, 152), Vector2(56, 114), Vector2(76, 100), Vector2(100, 100), Vector2(112, 92), Vector2(122, 52), Vector2(175, 44), Vector2(260, 38), Vector2(460, 30), Vector2(520, 480), Vector2(640, 1000)]  # open to the south
 const ISLANDS := [
 	[Vector2(126, 60), Vector2(160, 56), Vector2(166, 100), Vector2(148, 112), Vector2(128, 108)],
 	[Vector2(178, 96), Vector2(224, 92), Vector2(230, 150), Vector2(184, 156), Vector2(174, 128)],
@@ -549,7 +549,11 @@ static func _line_avenues(C: Dictionary, rng: RandomNumberGenerator, out: Array)
 			while s < cum[-1] - 16.0:
 				var n := nearest(C, at(pts, cum, s)[0])
 				var d: Dictionary = C.districts[n[0]]
-				var mix: Array = MIX["office" if d.type == "palace" else d.type]
+				var far: float = (n[1] - URBAN) / 80.0  # past the built-up edge homes still line the road, thinning out
+				if far > 0.0 and rng.randf() < far:
+					s += 14.0
+					continue
+				var mix: Array = MIX["homes" if far > 0.0 else ("office" if d.type == "palace" else d.type)]
 				var m: Array = mix[rng.rand_weighted(PackedFloat32Array(mix.map(func(x): return float(x[0]))))]
 				var full := Vector2(rng.randf_range(m[4], minf(m[5], 14.0)), rng.randf_range(m[6], minf(m[7], 13.0)))
 				var step := 2.0  # side streets cut the frontage into wedges: slide on and squeeze in smaller ones
@@ -559,7 +563,7 @@ static func _line_avenues(C: Dictionary, rng: RandomNumberGenerator, out: Array)
 					var c: Vector2 = mid[0] + Vector2(dir.y, -dir.x) * side * (av.w / 2 + 1.0 + size.y / 2)
 					var ang := atan2(-dir.y, dir.x)
 					var poly := _corners(c, size, ang)
-					if n[1] < URBAN and not _obb_blocked(C, placed, poly, c, ang, size):
+					if not _obb_blocked(C, placed, poly, c, ang, size):
 						var near: float = c.distance_to(d.center)
 						var floors := maxi(1, roundi(rng.randf_range(m[2], m[3] + 0.99) * lerpf(1.0, 0.55, clampf(near / 90.0, 0.0, 1.0))))
 						var bd := _building(rng, m[1], _bounds(poly), floors)
