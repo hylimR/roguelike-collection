@@ -132,11 +132,11 @@ void fragment() {
 			vec4 t = textureGrad(facades, uv, gx, gy);
 			vec4 m = textureGrad(accents, uv, gx, gy);
 			col = mix(mix(t.rgb, t.rgb * tint.rgb, t.a), ACCENT[pick] * t.r, m.r);
-			// after dark about half the windows light up, each its own, and signs keep shining
+			// after dark about half the windows light up, each its own; shop windows and signs keep shining
 			vec2 cell = floor(cont) + vec2(lnrm.x * 7.0 + lnrm.z * 3.0, seed * 91.0);
 			float r = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
 			vec3 lamp = r > 0.85 ? vec3(0.78, 0.86, 1.0) : vec3(1.0, 0.8, 0.48);
-			glow = (m.g * step(0.6, r) * lamp + m.r * ACCENT[pick] * 0.9) * night;
+			glow = (m.g * max(step(0.6, r), m.b) * lamp + m.r * ACCENT[pick] * 0.9) * night;
 		}
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
 	}
@@ -949,7 +949,8 @@ func facade_atlas() -> Array:
 				var box := Rect2i(s * 32 + x, row * 32 + y, w, h)
 				img.fill_rect(box, Color(c.r, c.g, c.b, 0.0) if c.a == 0.5 else c)
 				var lit := c.a == 0.0 and c.to_html(false) in WINDOWS
-				mask.fill_rect(box, Color(1, 0, 0) if c.a == 0.5 else (Color(0, 1, 0) if lit else Color.BLACK))
+				var open := c.a == 0.0 and c.to_html(false) == SHOP_GLASS
+				mask.fill_rect(box, Color(1, 0, 0) if c.a == 0.5 else (Color(0, 1, 1) if open else (Color(0, 1, 0) if lit else Color.BLACK)))
 			var up := row == 1
 			match s:
 				0:  # glass curtain wall
@@ -988,14 +989,30 @@ func facade_atlas() -> Array:
 						r.call(18, 7, 11, 13, glass2)
 						r.call(0, 20, 32, 2, wall_px(0.8))
 						r.call(0, 30, 32, 2, wall_px(0.88))
-					else:
+					else:  # a shopfront: striped awning, shelves behind mullioned glass, a glazed door, lit after dark
+						r.call(0, 0, 32, 2, wall_px(0.82))
 						for x in range(0, 32, 4):
-							r.call(x, 2, 2, 8, accent(1.0))
-							r.call(x + 2, 2, 2, 8, accent(0.78))
-						r.call(1, 11, 30, 21, fixed("8fb3c0"))
-						r.call(4, 22, 6, 7, fixed("e0a040"))
-						r.call(12, 22, 6, 7, fixed("d05050"))
-						r.call(20, 22, 6, 7, fixed("60a060"))
+							r.call(x, 2, 2, 7, accent(1.0))
+							r.call(x + 2, 2, 2, 7, accent(0.78))
+							r.call(x + 1, 9, 2, 1, accent(0.78))
+						r.call(0, 10, 32, 1, wall_px(0.55))
+						r.call(1, 11, 21, 18, fixed("4a525a"))
+						r.call(2, 12, 19, 16, fixed(SHOP_GLASS))
+						r.call(11, 12, 1, 16, fixed("4a525a"))
+						for y in [19, 24]:
+							r.call(2, y, 19, 1, fixed("b9bdb8"))
+						var goods := ["e0a040", "d05050", "60a060", "5a8fd0", "e8e0c8"]
+						for i in 8:
+							var gx: int = [3, 6, 8, 13, 15, 18, 3, 14][i]
+							var gy := 21 if i < 6 else 15
+							r.call(gx, gy, 2, 3, fixed(goods[i % goods.size()]))
+						r.call(13, 22, 6, 2, fixed("f2efe4"))
+						r.call(1, 29, 21, 3, wall_px(0.68))
+						r.call(23, 11, 8, 21, fixed("4a525a"))
+						r.call(24, 12, 6, 19, fixed(SHOP_GLASS))
+						r.call(24, 12, 6, 3, accent(0.9))
+						r.call(25, 21, 1, 3, fixed("d8d8d0"))
+						r.call(23, 31, 8, 1, fixed("8a8a84"))
 				4:  # neon-sign buildings
 					if up:
 						r.call(2, 8, 15, 13, fixed("2c3644"))
@@ -1056,6 +1073,7 @@ func facade_atlas() -> Array:
 	return [ImageTexture.create_from_image(img), ImageTexture.create_from_image(mask)]
 
 
+const SHOP_GLASS := "a9cdd6"  # shop windows: every one lit after dark
 const WINDOWS := ["3d5a78", "4f6f8c", "26313e", "5d7f9c", "2c3644", "e8d9a0", "8fb3c0", "ece6d2", "e8e0c8", "c9b98a", "39475a", "e8dcb0"]
 
 
