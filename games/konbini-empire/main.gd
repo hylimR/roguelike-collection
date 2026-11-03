@@ -66,6 +66,7 @@ var grow_btn: Button
 var store_btn: Button
 var city_btn: Button
 var banner: Label
+var dev_js: JavaScriptObject  # keeps the web build's dev hook alive
 
 
 func _ready() -> void:
@@ -77,6 +78,20 @@ func _ready() -> void:
 	add_child(audio)
 	build()
 	new_run("")
+	if OS.has_feature("web") and "dev" in str(JavaScriptBridge.eval("location.search")):
+		dev_js = JavaScriptBridge.create_callback(dev_eval)
+		JavaScriptBridge.get_interface("window").konbiniEval = dev_js
+
+
+## Web build opened with ?dev: window.konbiniEval(code) runs GDScript as the body of
+## func run(main) and leaves its return value, as a string, in window.konbiniResult.
+func dev_eval(args: Array) -> void:
+	var s := GDScript.new()
+	s.source_code = "extends RefCounted\nfunc run(main):\n\t" + str(args[0]).replace("\n", "\n\t")
+	var out = "compile error"
+	if s.reload() == OK:
+		out = s.new().run(self)
+	JavaScriptBridge.get_interface("window").konbiniResult = str(out)
 
 
 # ---------- theme & widget helpers ----------
@@ -105,7 +120,7 @@ func pill_box(bg: Color, lip := 3, shadow := 2) -> StyleBoxFlat:
 func make_theme() -> Theme:
 	var th := Theme.new()
 	var f: FontFile = load("res://fonts/Nunito.ttf")
-	f.fallbacks = [load("res://fonts/NotoSans-Regular.ttf")]  # ★ and friends
+	f.fallbacks = [load("res://fonts/NotoSans-Regular.ttf"), load("res://fonts/NotoSansMath-Symbols.ttf")]  # ō ū ∞, then ★ ♪ ▾ (no system fonts on the web)
 	var wght := TextServerManager.get_primary_interface().name_to_tag("wght")  # a "wght" string key is ignored
 	var regular := FontVariation.new()
 	regular.base_font = f
