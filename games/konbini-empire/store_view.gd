@@ -1960,16 +1960,45 @@ func build_rival(span: Vector2) -> void:
 	if rv.defeated:
 		block(set_node, Vector3(w - 0.8, 2.9, 0.08), Vector3(cx, 1.45, -7.12), Color("a9a59c"))
 		return
-	# fascia in the chain's stripes, a grey roof inside a white rim with its air-conditioning units
+	# fascia in the chain's stripes; a grey roof inside a parapet, with a stair hatch, a walkway, skylights over the
+	# shop floor (lit from below at night) and the air-conditioning units on their plinths, piped into one trunk
 	var band := Image.create(1, 10, false, Image.FORMAT_RGB8)
 	band.fill(c)
 	band.set_pixel(0, 6, Color.WHITE)
 	for y in [7, 8, 9]:
 		band.set_pixel(0, y, c.darkened(0.25))
 	art_panel(set_node, band, Vector2(w + 0.1, 0.8), Vector3(cx, 3.65, -7.095))
-	block(set_node, Vector3(w - 0.6, 0.05, 8.4), Vector3(cx, 4.22, -11.7), Color("a3a29e"))
+	block(set_node, Vector3(w - 0.4, 0.05, 8.6), Vector3(cx, 4.22, -11.7), Color("a3a29e"))
+	for e in [[Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -7.3)], [Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -16.1)],
+			[Vector3(0.2, 0.34, 9.0), Vector3(span.x + 0.1, 4.37, -11.7)], [Vector3(0.2, 0.34, 9.0), Vector3(span.y - 0.1, 4.37, -11.7)]]:
+		block(set_node, e[0], e[1], Color("e6e2d8"))
+	var hatch := Vector3(span.x + 1.4, 4.2, -14.9)
+	block(set_node, Vector3(1.8, 1.3, 1.6), hatch + Vector3(0, 0.65, 0), Color("dedad0"))
+	block(set_node, Vector3(1.95, 0.1, 1.75), hatch + Vector3(0, 1.35, 0), Color("aca89f"))
+	block(set_node, Vector3(0.7, 1.0, 0.04), hatch + Vector3(0.3, 0.5, 0.81), Color("7d8590"))
+	block(set_node, Vector3(w - 2.2, 0.03, 0.8), Vector3(cx + 0.5, 4.25, -13.4), Color("c9c6bd"))
+	for k in 2:
+		var sx := span.x + 3.2 + k * 2.6
+		block(set_node, Vector3(1.9, 0.2, 1.3), Vector3(sx, 4.3, -10.0), Color("d6d3ca"))
+		block(set_node, Vector3(1.6, 0.04, 1.0), Vector3(sx, 4.41, -10.0), Color("dceaf0"), true)
 	for k in 3:
-		block(set_node, Vector3(1.0, 0.55, 0.9), Vector3(cx - w * 0.3 + k * 1.4, 4.5, -13.5 + k % 2 * 1.6), Color("cfd0cc"))
+		var ac := Vector3(span.x + 4.2 + k * 1.6, 4.25, -14.4)
+		block(set_node, Vector3(1.25, 0.1, 1.05), ac + Vector3(0, 0.05, 0), Color("8e8d88"))
+		block(set_node, Vector3(1.05, 0.6, 0.85), ac + Vector3(0, 0.4, 0), Color("dcddd8"))
+		block(set_node, Vector3(0.85, 0.36, 0.03), ac + Vector3(0, 0.38, 0.43), Color("7a8088"))
+		block(set_node, Vector3(0.1, 0.1, 0.75), ac + Vector3(0.3, 0.1, -0.8), Color("c9c6bd"))
+		for ring in [[0.32, Color("41464c")], [0.09, Color("a7adb3")]]:
+			var fan := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = ring[0]
+			cm.bottom_radius = ring[0]
+			cm.height = 0.02
+			cm.radial_segments = 16
+			fan.mesh = cm
+			fan.material_override = mat(ring[1])
+			fan.position = ac + Vector3(0, 0.71 + (0.01 if ring[0] < 0.2 else 0.0), 0)
+			set_node.add_child(fan)
+	block(set_node, Vector3(span.y - span.x - 5.0, 0.12, 0.12), Vector3((span.x + 4.5 + span.y - 0.5) / 2, 4.35, -15.25), Color("c9c6bd"))
 	# the shop floor behind the glass (the chain's shelves, lit at night), mullions, the sliding door
 	var shelves: Image = load("res://art/bg_super.png").get_image().get_region(Rect2i(80, 126, 560, 119))
 	art_panel(set_node, shelves, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
