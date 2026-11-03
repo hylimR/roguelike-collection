@@ -39,6 +39,16 @@ const MAX_WALKERS := 70
 const MAX_CARS := 70
 const SET := Rect2(-52, -32, 104, 52)  # the street set round your shop, in the street frame
 const ROLE_TINT := {"stocker": Color(0.78, 0.86, 1.0), "cleaner": Color(1.0, 0.95, 0.72), "guard": Color(0.62, 0.66, 0.92), "promoter": Color(1.0, 0.78, 0.88)}
+const GOODS := {  # pack colors per product line, faced up on its fixture
+	"drink": [Color("4fae5a"), Color("e8873a"), Color("3f86c9"), Color("e9e2c8")],
+	"beer": [Color("d9a22c"), Color("c8d3dc"), Color("3d6fb4"), Color("e2574c")],
+	"bento": [Color("e9e1cf"), Color("d4553f"), Color("6f9a4a")],
+	"onigiri": [Color("d4553f"), Color("2f3a3c"), Color("4fae5a"), Color("2f3a3c"), Color("f2c53d")],
+	"noodle": [Color("e2574c"), Color("f3efe2"), Color("e9b33a"), Color("3f86c9")],
+	"daily": [Color("7fc4d8"), Color("f0f0ea"), Color("c58ad1"), Color("8cc56a")],
+	"snack": [Color("e2574c"), Color("f2c53d"), Color("e8873a"), Color("5a9bd6")],
+	"icecream": [Color("f4c9d6"), Color("8b5a3c"), Color("fff3d4"), Color("9bd3e8")],
+}
 const FIELDS := ["9cb862", "b2c46e", "86a85a", "cdbb72", "a98f62", "79a05a", "bfc77e"]  # paddies, crops, tilled soil
 # the day's weather over the view: [tint, then for falling rain or snow: drops, slant, speed px/s, streak length]
 const WEATHER_LOOK := {
@@ -153,6 +163,7 @@ var sim
 var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
 var set_sig := ""
 var slot_icons := {}  # product -> [Sprite3D]: its stock on the shelf
+var slot_goods := {}  # product -> MultiMesh: packs faced up on its fixture, as many showing as are in stock
 var agent_nodes := {}  # sim id -> {node, a (walk row), step}
 var threat_nodes := {}
 var staff_nodes := {}
@@ -1634,6 +1645,7 @@ func build_set() -> void:
 	for c in room.get_children():
 		c.free()
 	slot_icons.clear()
+	slot_goods.clear()
 	pools.clear()
 	var b := branch
 	var st: Dictionary = b.store
@@ -2136,6 +2148,7 @@ func build_room() -> void:
 				else:
 					block(room, Vector3(0.5, 0.45, 0.6), Vector3(p.x, 1.22, p.y), {"chicken": Color("c9ccd1"), "oden": Color("8a5a3c")}.get(pid, Color.GRAY))
 				h = 1.45
+		goods(pid, slot, h)
 		var icons := []
 		var ic: Array = Sim.PRODUCTS[pid].icon
 		var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
@@ -2158,7 +2171,63 @@ func build_room() -> void:
 			room.add_child(s)
 
 
+## Packs faced up on a fixture's street side, rows from the floor up, in the product's own colors.
+func goods(pid: String, slot: Dictionary, h: float) -> void:
+	var cols: Array = GOODS.get(pid, [])
+	if cols.is_empty():
+		return
+	var p: Vector2 = slot.pos
+	var rows: Array  # [y of the board, pack height, z of the pack's centre]
+	var pack := Vector3(0.22, 0.0, 0.1)
+	match slot_kind(Sim.PRODUCTS[pid].slot):
+		"fridge":  # bottles stood on the shelves just behind the glass, tinted by it
+			rows = [[0.2, 0.3, p.y + 0.47], [0.57, 0.3, p.y + 0.47], [0.97, 0.3, p.y + 0.47], [1.37, 0.24, p.y + 0.47]]
+			pack.x = 0.13
+		"shelf":
+			rows = [[0.06, 0.32, p.y + 0.4], [h / 3 + 0.03, 0.3, p.y + 0.43], [h * 2 / 3 + 0.03, 0.3, p.y + 0.43]]
+		"low":
+			rows = [[0.06, 0.32, p.y + 0.4], [0.47, 0.32, p.y + 0.4]]
+		_:
+			return
+	var xs := []
+	if pack.x < 0.2:  # three bottles to each door, clear of the mullions
+		for bay in [-0.735, 0.0, 0.735]:
+			xs.append_array([bay - 0.19, bay, bay + 0.19])
+	else:
+		for i in 8:
+			xs.append((i - 3.5) * 0.27)
+	var mm := multimesh(shaded_box(), rows.size() * xs.size(), true)
+	var k := 0
+	for j in rows.size():
+		var row: Array = rows[j]
+		for i in xs.size():
+			var c: Color = cols[(i + j) % cols.size()]
+			var sz := Vector3(pack.x, row[1] * (0.85 + 0.075 * ((i * 7 + k) % 3)), pack.z)
+			if pack.x < 0.2:
+				c = c.lerp(Color("bfe3f2"), 0.3)
+			mm.set_instance_transform(k, Transform3D(Basis.from_scale(sz), Vector3(p.x + xs[i], row[0] + sz.y / 2, row[2])))
+			mm.set_instance_color(k, c)
+			k += 1
+	var m := mat(Color.WHITE, null, true)
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	mm_node(mm, m, room)
+	slot_goods[pid] = mm
+
+
+static func slot_kind(slot: String) -> String:
+	if slot.begins_with("fridge"):
+		return "fridge"
+	if slot.begins_with("shelf"):
+		return "shelf"
+	return "low" if slot in ["frontA", "island"] else ""
+
+
 func refresh_stock() -> void:
+	for pid in slot_goods:
+		var mm: MultiMesh = slot_goods[pid]
+		var p: Dictionary = branch.store.products[pid]
+		mm.visible_instance_count = ceili(mm.instance_count * float(p.stock) / p.capacity)
 	for pid in slot_icons:
 		var p: Dictionary = branch.store.products[pid]
 		var icons: Array = slot_icons[pid]

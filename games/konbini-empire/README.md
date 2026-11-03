@@ -46,7 +46,7 @@ It's drawn like a city builder:
 
 Each store is played on its own street, carved into the city on its lot:
 
-- your shop as a cutaway, with a till on the counter, shelf boards, glass-door fridges, and potted plants and a sandwich board at the door; the part of the unit you haven't knocked through yet stands vacant beside it, shutter down under a bare fascia with a to-let notice on it; a parked car with wheel stops in its car park and a pole sign in your stripes that stays lit after dark;
+- your shop as a cutaway, with a till on the counter, shelf boards and glass-door fridges faced up with packs and bottles in each product's colors that thin out as its stock runs down, and potted plants and a sandwich board at the door; the part of the unit you haven't knocked through yet stands vacant beside it, shutter down under a bare fascia with a to-let notice on it; a parked car with wheel stops in its car park and a pole sign in your stripes that stays lit after dark;
 - the rival's shop along the street: its shelves behind mullioned glass, a fascia in the chain's stripes, and a roof inside a parapet with a stair hatch, a walkway, air-conditioning units on plinths piped into one trunk, and skylights that glow after dark;
 - neighbours in that district's own building style, the shotengai ones with a shopfront under a scalloped awning: stocked shelves behind mullioned glass and a glazed door, every one lit after dark;
 - a crossing whose lights the pedestrians wait for (where a side road meets it, its light stands on that road's corner), speckled asphalt with manhole covers and white edge lines, zebra crossings over each side road, yellow tactile paving down both sidewalks, and utility poles with sagging wires along the far side;
