@@ -76,6 +76,8 @@ Sound follows the street on screen: the door chime as customers walk in, coins o
 node tools/shot.mjs "key:Space" "eval:main.sim.time = 125.0" "wait:3" "shot:/tmp/night.png" "eval:main.toggle_city()" "wait:4" "shot:/tmp/map.png"
 ```
 
+**Artifact:** `python tools/web.py [path to godot] --artifact` makes a release build in `build/artifact/` to publish as a Claude Artifact, with `tools/artifact.html` as the page. Artifacts serve only web file types, at up to 15 MB each, so the engine ships gzipped as `index.wasm` (the page unpacks it as it loads) and the game pack as `index.pck.wasm`. Publish `index.html` with `index.js`, the two `index.audio*.worklet.js` files, `index.wasm` and `index.pck.wasm`.
+
 **Controls:** mouse and keyboard (on a touch screen, taps act as clicks).
 
 - **Click:** threats, the till and shelves. Drag to pan, scroll to zoom.

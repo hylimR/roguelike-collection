@@ -1,13 +1,17 @@
-"""Export the Web build to build/web/: python tools/web.py [path to godot]
+"""Export the Web build to build/web/: python tools/web.py [path to godot] [--artifact]
 
 Fetches only the web export template out of Godot's 1.2 GB template archive (HTTP range
-reads) when it isn't installed yet.
+reads) when it isn't installed yet. --artifact makes a release build in build/artifact/ to
+publish as a Claude Artifact, with tools/artifact.html as the page.
 """
-import io, os, pathlib, re, subprocess, sys, urllib.request, zipfile
+import gzip, io, json, os, pathlib, re, subprocess, sys, urllib.request, zipfile
 
-GODOT = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("GODOT", "godot")
+ARTIFACT = "--artifact" in sys.argv
+args = [a for a in sys.argv[1:] if a != "--artifact"]
+GODOT = args[0] if args else os.environ.get("GODOT", "godot")
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-TEMPLATE = "web_nothreads_debug.zip"
+MODE = "release" if ARTIFACT else "debug"
+TEMPLATE = f"web_nothreads_{MODE}.zip"
 
 
 class Remote(io.RawIOBase):
@@ -47,10 +51,19 @@ if not dest.exists():
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(z.read("templates/" + TEMPLATE))
 
-out = ROOT / "build" / "web"
+out = ROOT / "build" / ("artifact" if ARTIFACT else "web")
 out.mkdir(parents=True, exist_ok=True)
 (ROOT / "build" / ".gdignore").touch()
 if not (ROOT / ".godot").exists():
     subprocess.run([GODOT, "--headless", "--path", str(ROOT), "--import"], check=True)
-subprocess.run([GODOT, "--headless", "--path", str(ROOT), "--export-debug", "Web", str(out / "index.html")], check=True)
+subprocess.run([GODOT, "--headless", "--path", str(ROOT), f"--export-{MODE}", "Web", str(out / "index.html")], check=True)
+if ARTIFACT:
+    # artifacts serve only web file types, at most 15 MB each: the engine goes gzipped, the pack as .wasm
+    wasm = out / "index.wasm"
+    wasm.write_bytes(gzip.compress(wasm.read_bytes(), 9))
+    (out / "index.pck").replace(out / "index.pck.wasm")
+    config = json.loads(re.search(r"const GODOT_CONFIG = (.*);", (out / "index.html").read_text(encoding="utf-8")).group(1))
+    config["mainPack"] = "index.pck.wasm"
+    config["fileSizes"]["index.pck.wasm"] = config["fileSizes"].pop("index.pck")
+    (out / "index.html").write_text((ROOT / "tools" / "artifact.html").read_text(encoding="utf-8").replace("$GODOT_CONFIG", json.dumps(config)), encoding="utf-8")
 print("exported", out / "index.html")
