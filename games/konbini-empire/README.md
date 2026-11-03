@@ -55,7 +55,7 @@ Each store is played on its own street, carved into the city on its lot:
 
 Every box in the scene is shaded per face (top brightest, the street face next), so counters, shelves and buildings read as solid.
 
-The light follows the clock: a pink dawn, plain daylight, a golden hour before the evening rush (walls facing the low sun glow amber while the shaded sides go cool), a violet dusk, then night. After dark the street goes dark blue while windows and neon signs light up, street lamps and vending machines throw pools of light, the rival's glass front glows, and your shop stays brightly lit with everyone inside it. The camera starts close on your shop with the rival's sign in frame. Press M for the city map, which shows your branches and their rivals and highlights the lots on offer when you look for a new store.
+The light follows the clock: a pink dawn, plain daylight, a golden hour before the evening rush (walls facing the low sun glow amber while the shaded sides go cool), a violet dusk, then night. After dark the street goes dark blue while windows and neon signs light up, street lamps and vending machines throw pools of light, the rival's glass front glows, and your shop stays brightly lit with everyone inside it. The camera starts close on your shop with the rival's sign in frame. Press M for the city map, which shows your branches and their rivals and highlights the lots on offer when you look for a new store; district names sit on dark rounded plates, the Yamanote hubs a size larger, so they read over day roofs and night windows alike.
 
 The HUD floats over the street in rounded cream bubbles, island-life style, and leaves the street the whole screen:
 
