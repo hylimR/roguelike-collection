@@ -1824,6 +1824,40 @@ func build_set() -> void:
 		block(set_node, Vector3(vw, 3.6, 9.0), Vector3(vx, 1.8, -11.7), Color("d9d3c4"))
 		block(set_node, Vector3(vw + 0.2, 0.14, 0.35), Vector3(vx, 3.67, -7.3), Color("5b4632"))
 		block(set_node, Vector3(0.35, 0.14, 9.3), Vector3(vx - vw / 2, 3.67, -11.7), Color("5b4632"))
+		block(set_node, Vector3(vw + 0.2, 0.14, 0.35), Vector3(vx, 3.67, -16.1), Color("5b4632"))
+		# its roof: a weathered membrane laid in strips with a drain, an old water tank on a frame, two tired AC units
+		# and a vent stack, all kept low so nothing rises over your shop
+		var xl := vx - vw / 2
+		block(set_node, Vector3(vw - 0.4, 0.04, 8.4), Vector3(vx, 3.61, -11.75), Color("a39f8d"))
+		var sz := -8.6
+		while sz > -15.6:
+			block(set_node, Vector3(vw - 0.4, 0.05, 0.14), Vector3(vx, 3.62, sz), Color("8a8573"))
+			sz -= 1.4
+		block(set_node, Vector3(0.3, 0.05, 0.3), Vector3(xl + 0.45, 3.63, -7.95), Color("4d4a44"))
+		var tank := Vector3(xl + 1.0, 3.6, -14.9)
+		for lg in [Vector2(-0.45, -0.45), Vector2(0.45, -0.45), Vector2(-0.45, 0.45), Vector2(0.45, 0.45)]:
+			block(set_node, Vector3(0.08, 0.5, 0.08), tank + Vector3(lg.x, 0.25, lg.y), Color("6e737d"))
+		block(set_node, Vector3(1.05, 0.08, 1.05), tank + Vector3(0, 0.52, 0), Color("6e737d"))
+		for part in [[0.5, 0.85, 0.98, Color("8fb3c2")], [0.53, 0.06, 1.0, Color("6f95a6")], [0.53, 0.06, 0.62, Color("6f95a6")], [0.18, 0.12, 1.47, Color("b9cdd5")]]:
+			var cyl := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = part[0]
+			cm.bottom_radius = part[0]
+			cm.height = part[1]
+			cm.radial_segments = 16
+			cyl.mesh = cm
+			cyl.material_override = mat(part[3])
+			cyl.position = tank + Vector3(0, part[2], 0)
+			set_node.add_child(cyl)
+		for k in 2:
+			var ac := Vector3(xl + 0.9 + k * 1.4, 3.6, -11.6)
+			block(set_node, Vector3(1.1, 0.1, 0.8), ac + Vector3(0, 0.05, 0), Color("8e8d88"))
+			block(set_node, Vector3(0.95, 0.55, 0.65), ac + Vector3(0, 0.37, 0), Color("d2cfc4"))
+			block(set_node, Vector3(0.7, 0.36, 0.03), ac + Vector3(0, 0.37, 0.33), Color("7a8088"))
+		block(set_node, Vector3(0.1, 0.1, 3.1), Vector3(xl + 2.3, 3.68, -13.3), Color("bdb8ad"))  # their pipe to the back
+		var vent := Vector3(vx + vw / 2 - 0.7, 3.6, -9.2)
+		block(set_node, Vector3(0.18, 0.7, 0.18), vent + Vector3(0, 0.35, 0), Color("9aa0a6"))
+		block(set_node, Vector3(0.34, 0.08, 0.34), vent + Vector3(0, 0.74, 0), Color("6e737d"))
 		block(set_node, Vector3(vw - 0.3, 0.55, 0.12), Vector3(vx, 3.1, -7.16), Color("cfc7b6"))
 		block(set_node, Vector3(vw - 1.1, 0.4, 0.06), Vector3(vx, 3.1, -7.08), Color("e9e4d8"))  # where the old sign hung
 		block(set_node, Vector3(vw - 0.5, 0.3, 0.32), Vector3(vx, 2.62, -7.05), Color("9aa0a6"))
