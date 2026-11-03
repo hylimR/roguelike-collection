@@ -56,6 +56,9 @@ const SEA := Color("3f7fbf")
 const PITCH := 30.0
 const SUN :=Vector3(-0.35, 1.0, 0.6)  # towards the sun; the building shader lights its faces from here too
 const SHADOW_RES := 4096
+const LOW := 0.9  # a city building in front of the street, cut down to its ground floor
+const STANDING := INF  # building states in update_fade: standing, gone, or cut down from this z on
+const GONE := -INF
 # Ground shadows: a mask rendered from the sun (buildings white on clear), looked up per ground point.
 const SHADOW_SHADER := """
 shader_type spatial;
@@ -110,7 +113,10 @@ void fragment() {
 		int pick = int(tint.a * 8.0) % 8;
 		if (lnrm.y > 0.5) {
 			vec2 e = min(lpos.xz, info.xz - lpos.xz);
-			col = mix(ROOF[pick], tint.rgb, 0.15) * (min(e.x, e.y) < 0.35 ? 1.12 : 0.92);
+			if (info.y < 1.0)  // cut down in front of the street: the walls' section round a dim floor
+				col = min(e.x, e.y) < 0.3 ? tint.rgb * 1.08 : mix(vec3(0.44, 0.4, 0.38), tint.rgb, 0.2);
+			else
+				col = mix(ROOF[pick], tint.rgb, 0.15) * (min(e.x, e.y) < 0.35 ? 1.12 : 0.92);
 		} else {
 			bool front = abs(lnrm.z) > 0.5;
 			float width = front ? info.x : info.z;
@@ -193,7 +199,8 @@ var pool_mat: StandardMaterial3D
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
 var box_mesh: ArrayMesh
-var shadow_mesh: CylinderMesh
+var soft_mat: StandardMaterial3D  # soft contact shadows under people, cars and street things
+var ao_mat: StandardMaterial3D  # the dark seam where a building meets the sidewalk
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
 var cam_base := 12.0
@@ -239,6 +246,19 @@ func _ready() -> void:
 	pool_mat.albedo_texture = radial([Color.WHITE, Color(1, 1, 1, 0.4), Color(1, 1, 1, 0)], [0.0, 0.4, 1.0])
 	pool_mat.albedo_color = Color(0, 0, 0, 0)
 	vignette = radial([Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0.2, 0.12, 0.05)], [0.0, 0.55, 1.0])
+	soft_mat = StandardMaterial3D.new()
+	soft_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	soft_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	soft_mat.albedo_texture = radial([Color(0.1, 0.08, 0.14), Color(0.1, 0.08, 0.14, 0.55), Color(0.1, 0.08, 0.14, 0)], [0.0, 0.5, 1.0])
+	soft_mat.albedo_color = Color(1, 1, 1, 0.34)
+	ao_mat = soft_mat.duplicate()
+	var seam := GradientTexture2D.new()
+	seam.fill_from = Vector2(0, 0)
+	seam.fill_to = Vector2(0, 1)
+	seam.gradient = Gradient.new()
+	seam.gradient.colors = PackedColorArray([Color(0.1, 0.08, 0.14), Color(0.1, 0.08, 0.14, 0)])
+	ao_mat.albedo_texture = seam
+	ao_mat.albedo_color = Color(1, 1, 1, 0.3)
 	cam = Camera3D.new()
 	cam.fov = 38.0
 	vp.add_child(cam)
@@ -386,6 +406,8 @@ func update_light() -> void:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night))
 	env.background_color = SEA * light
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
+	soft_mat.albedo_color.a = 0.34 - 0.14 * night
+	ao_mat.albedo_color.a = 0.3 - 0.1 * night
 	lit_sprites = lit_sprites.filter(func(s): return is_instance_valid(s))
 	for s in lit_sprites:
 		shine(s)
@@ -804,7 +826,7 @@ func build_buildings() -> void:
 		var c: Vector2 = bd.center
 		var sz: Vector2 = bd.size
 		var h: float = bd.floors * Sim.City.FLOOR
-		var rec := {"foot": r, "h": h, "box": [boxes.size()], "roof": -1, "hidden": false}
+		var rec := {"foot": r, "h": h, "box": [boxes.size()], "roof": -1, "hidden": STANDING}
 		var tint: Color = bd.tint
 		tint.a = (bd.accent + 0.5) / 8.0
 		boxes.append([Vector3(sz.x, h, sz.y), Vector3(c.x, h / 2, c.y), tint, bd.style + bd.kit * 0.49, bd.angle])
@@ -1178,15 +1200,40 @@ func update_fade() -> void:
 		s.set_meta("base", Color(1, 1, 1, 0.25) if fade_it else Color.WHITE)
 		shine(s)
 	var away := Transform3D(Basis.from_scale(Vector3.ONE * 0.001), Vector3(0, -50, 0))
+	# city buildings in front of the street are cut down to their ground floor (cut back to the far edge of the
+	# near sidewalk when they reach over it), so the street shows over a block that still reads as city
+	var edge := front.position.y + 14.8
 	for rec in brecs:
 		var f: Rect2 = rec.foot
-		var cut: bool = taken.call(f) or (on and f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr))
-		if cut != rec.hidden:
-			rec.hidden = cut
-			for k in rec.box:
-				box_mm.set_instance_transform(k, away if cut else box_base[k])
-			if rec.roof >= 0:
-				roof_mm.set_instance_transform(rec.roof, away if cut else roof_base[rec.roof])
+		var state := STANDING
+		if on:
+			if set_feet.any(func(q): return f.intersects(q)) or (f.intersects(front) and f.get_center().y < front.position.y + 7.2):
+				state = GONE
+			elif f.intersects(front) or (f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr)):
+				state = maxf(f.position.y, edge)
+				var t0: Transform3D = box_base[rec.box[0]]
+				if f.end.y - state < 2.0 or (state > f.position.y and t0.basis.x.z != 0.0):  # too thin, or turned
+					state = GONE
+		if state == rec.hidden:
+			continue
+		rec.hidden = state
+		for i in rec.box.size():
+			var k: int = rec.box[i]
+			var t: Transform3D = box_base[k]
+			var sz := t.basis.get_scale()
+			var cd := box_mm.get_instance_custom_data(k)
+			if state == STANDING:
+				box_mm.set_instance_transform(k, t)
+				box_mm.set_instance_custom_data(k, Color(cd.r, sz.y, sz.z, cd.a))
+			elif state == GONE or i > 0:
+				box_mm.set_instance_transform(k, away)
+			else:
+				var z0 := maxf(state, t.origin.z - sz.z / 2)
+				var z1 := t.origin.z + sz.z / 2
+				box_mm.set_instance_transform(k, Transform3D(t.basis.orthonormalized() * Basis.from_scale(Vector3(sz.x, LOW, z1 - z0)), Vector3(t.origin.x, LOW / 2, (z0 + z1) / 2)))
+				box_mm.set_instance_custom_data(k, Color(cd.r, LOW, z1 - z0, cd.a))
+		if rec.roof >= 0:
+			roof_mm.set_instance_transform(rec.roof, roof_base[rec.roof] if state == STANDING else away)
 	for tm in tree_mms:
 		for k in tm[1].size():
 			var p: Vector3 = tm[1][k].origin
@@ -1361,6 +1408,7 @@ func spawn_mover(is_car: bool, mid := false) -> void:
 		node = sprite("vehicles", Rect2(m.kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
 		m.v = dir * randf_range(5.0, 8.0) * (0.6 if m.kv == 3 else 1.0) * (1.6 if p.kind == "shuto" else 1.0)
 		m.y = VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
+		node.add_child(shadow(m.y, 1.5))
 		cars.append(m)
 	else:
 		m.a = randi() % 7
@@ -1415,17 +1463,20 @@ func stride(p: Dictionary, speed: float, delta: float) -> void:
 	p.node.region_rect = Rect2(col * PERSON.x, p.a * PERSON.y, PERSON.x, PERSON.y)
 
 
-func shadow() -> MeshInstance3D:
-	if shadow_mesh == null:
-		shadow_mesh = CylinderMesh.new()
-		shadow_mesh.top_radius = 0.34
-		shadow_mesh.bottom_radius = 0.34
-		shadow_mesh.height = 0.01
-		shadow_mesh.material = mat(Color(0, 0, 0, 0.22))
+## A soft round shadow at a sprite's feet, `drop` below its centre, r across.
+func shadow(drop := 0.8, r := 0.5) -> MeshInstance3D:
 	var sh := MeshInstance3D.new()
-	sh.mesh = shadow_mesh
-	sh.position = Vector3(0, -0.8, 0)
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(r, r) * 2.0
+	sh.mesh = pm
+	sh.material_override = soft_mat
+	sh.position = Vector3(0, 0.02 - drop, 0)
 	return sh
+
+
+## The same soft shadow on the set's ground, for street furniture.
+func blob(parent: Node3D, at: Vector2, r: float) -> void:
+	plane(parent, Vector2(r, r) * 2.0, Vector3(at.x, -0.035, at.y), soft_mat)
 
 
 ## City walkers and traffic round the view (walkers only when close enough to see), kept out of the street set.
@@ -1570,12 +1621,39 @@ func build_set() -> void:
 	while z < 3.4:
 		rect_quad(paint, Rect2(Sim.CROSS_X - 1.5, z, 3.0, 0.42), -0.04)
 		z += 0.84
+	# edge lines inside the kerbs, broken at the crossing and at side roads; a zebra across each side road's mouth
+	for sd in [[far_gaps, -3.42, -6.95], [near_gaps, 3.3, 4.05]]:
+		for o in open_spans(sd[0]):
+			for seg in [Vector2(o.x, minf(o.y, Sim.CROSS_X - 1.7)), Vector2(maxf(o.x, Sim.CROSS_X + 1.7), o.y)]:
+				if seg.y - seg.x > 0.5:
+					rect_quad(paint, Rect2(seg.x, sd[1], seg.y - seg.x, 0.12), -0.04)
+		for g in sd[0]:
+			var zx: float = g.x + 0.5
+			while zx + 0.45 < g.y - 0.4:
+				rect_quad(paint, Rect2(zx, sd[2], 0.45, 2.9), -0.04)
+				zx += 0.9
 	# your parking: bays and bicycles between your shop and the alley, nothing tall to hide the till
 	var bay := surface(mat(Color("74767c")))
 	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042)
 	for bx in [-2.2, 0.2, 2.6]:
 		rect_quad(paint, Rect2(bx, -15.6, 0.12, 4.6), -0.038)
 	commit([made, walk, tar, paint, kerb, bay, tactile], set_node)
+	for cx in [-1.0, 1.4]:  # wheel stops
+		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("bdb8ad"))
+	var kv: int = b.lot % 3
+	var car := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
+	car.position = Vector3(1.4, VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1, -13.0)
+	set_node.add_child(car)
+	facing(car, Vector3(0, 0, -1), kv * 2, VEHICLE_CELL)  # nosed in towards the shop
+	car.add_child(shadow(car.position.y, 1.5))
+	lit_sprites.append(car)
+	# your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark
+	var ps := Vector3(3.0, 0, -16.5)
+	block(set_node, Vector3(0.22, 6.2, 0.22), ps + Vector3(0, 3.1, 0), Color("9aa0a6"))
+	block(set_node, Vector3(1.7, 1.5, 0.34), ps + Vector3(0, 6.4, 0), Color("fbfaf5"), true)
+	block(set_node, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 6.15, 0), LAYOUT.stripe[0], true)
+	block(set_node, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 5.92, 0), LAYOUT.stripe[1], true)
+	blob(set_node, Vector2(ps.x, ps.z), 0.3)
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
 		for ring in [[0.46, Color("74767c"), -0.039], [0.36, Color("4d4f55"), -0.037]]:
 			var disc := MeshInstance3D.new()
@@ -1599,6 +1677,7 @@ func build_set() -> void:
 			block(set_node, Vector3(0.12, 0.12, 1.4), Vector3(px, 6.6, 6.85), Color("6f6c66"))
 			if k % 2 == 0:
 				block(set_node, Vector3(0.5, 0.75, 0.5), Vector3(px, 5.5, 7.2), Color("8a979c"))
+			blob(set_node, Vector2(px, 6.85), 0.3)
 		if k == 0:
 			continue
 		var x0: float = poles[k - 1]
@@ -1644,11 +1723,22 @@ func build_set() -> void:
 		block(set_node, Vector3(mine + 16.2, 2.6, 0.06), Vector3((mine - 16.8) / 2, 1.3, -7.18), Color("a7a399"))
 	build_rival(span)
 	build_room()
+	# a soft dark seam where each building meets the sidewalk
+	var seam := surface(ao_mat)
+	var fronts := [Vector2(span.x, span.y)]
+	if mine > -16.5:
+		fronts.append(Vector2(-16.5, mine - 0.3))
+	for e in boxes:
+		if absf(e[1].z + e[0].z / 2 + 7.2) < 0.3:
+			fronts.append(Vector2(e[1].x - e[0].x / 2, e[1].x + e[0].x / 2))
+	for f in fronts:
+		rect_quad(seam, Rect2(f.x, -7.2, f.y - f.x, 0.9), -0.036)
+	commit([seam], set_node)
 	# street furniture
 	var props_at := [[6, Vector2(-22.0, -4.3)], [6, Vector2(-38.0, -4.3)], [6, Vector2(9.0, -4.3)], [6, Vector2(34.0, -4.3)],
 		[1, Vector2(-30.0, 5.6)], [2, Vector2(-14.0, 5.6)], [1, Vector2(12.0, 5.6)], [0, Vector2(26.0, 5.6)], [1, Vector2(42.0, 5.6)],
 		[6, Vector2(-6.0, 4.3)], [6, Vector2(20.0, 4.3)], [7, Vector2(-1.6, -4.6)], [10, Vector2(-22.6, -6.6)],
-		[8, Vector2(-1.0, -12.5)], [8, Vector2(1.4, -12.8)], [4, Vector2(3.3, -15.2)]]
+		[8, Vector2(-1.5, -12.4)], [8, Vector2(-0.4, -12.8)], [4, Vector2(3.3, -15.2)]]
 	if b.quirk == "busStop":
 		props_at.append([11, Vector2(-24.5, -4.4)])
 	for p in props_at:
@@ -1658,6 +1748,7 @@ func build_set() -> void:
 		s.position = Vector3(p[1].x, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55 - 0.05, p[1].y)
 		set_node.add_child(s)
 		lit_sprites.append(s)
+		blob(set_node, p[1], OUTDOOR_SCALE[p[0]] * (0.45 if p[0] == 6 else 1.5))
 		if p[0] == 6:
 			pool(set_node, Vector3(p[1].x, 0, p[1].y), Vector2(7.0, 7.0))
 	pool(set_node, Vector3(Sim.ORIGIN.x + (zl + 6.6) / 2, 0, Sim.ORIGIN.y + 4.7), Vector2(10.6 - zl, 6.0))  # your shop's glass front
@@ -1666,6 +1757,7 @@ func build_set() -> void:
 		s.position = Vector3(d[1].x, DECOR / 2.0 * DECOR_PX * d[2], d[1].y)
 		set_node.add_child(s)
 		lit_sprites.append(s)
+		blob(set_node, d[1], 0.45)
 	for pole in [Vector3(Sim.CROSS_X - 1.8, 0, -4.0), Vector3(Sim.CROSS_X + 1.8, 0, 4.0)].filter(func(q): return not in_gaps(q.x, far_gaps if q.z < 0.0 else near_gaps)):
 		block(set_node, Vector3(0.12, 2.6, 0.12), pole + Vector3(0, 1.3, 0), Color("4a4d57"))
 		block(set_node, Vector3(0.36, 0.7, 0.3), pole + Vector3(0, 2.5, 0), Color("2b2d42"))
@@ -1681,6 +1773,7 @@ func build_set() -> void:
 			s.position = e[2] + Vector3(0, cell / 2.0 * px, 0)
 			set_node.add_child(s)
 			lit_sprites.append(s)
+			blob(set_node, Vector2(e[2].x, e[2].z), 0.6 if f == "delivery" else 0.8)
 			if f in ["vending", "gacha"]:
 				pool(set_node, e[2] + Vector3(0, 0, 0.6), Vector2(3.5, 3.5))
 	if st.facilities.has("neon"):

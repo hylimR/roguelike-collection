@@ -46,11 +46,12 @@ It's drawn like a city builder:
 
 Each store is played on its own street, carved into the city on its lot:
 
-- your shop as a cutaway, with a till on the counter, shelf boards, glass-door fridges, and potted plants and a sandwich board at the door;
+- your shop as a cutaway, with a till on the counter, shelf boards, glass-door fridges, and potted plants and a sandwich board at the door; a parked car with wheel stops in its car park and a pole sign in your stripes that stays lit after dark;
 - the rival's shop along the street: its shelves behind mullioned glass, a fascia in the chain's stripes, air-conditioning units on the roof;
 - neighbours in that district's own building style;
-- a crossing whose lights the pedestrians wait for, speckled asphalt with manhole covers, yellow tactile paving down both sidewalks, and utility poles with sagging wires along the far side;
-- Tokyo carrying on around it: the side streets and avenues that cross the set run on through it, opening a gap in its sidewalks and its rows of buildings, and the city's own buildings stay wherever the set doesn't build. Only city buildings on the street, in the open ground in front of it, or covering your shop are cleared, along with expressway decks (and their pillars) that would hide the street. Where the set reaches over water (the bay, a canal, the Sumida) it stands on made ground, its street with a strip either side and the plots of your shop and the rival, so a waterfront store gets a quay and a river runs up to the street and on past it; the neighbours keep out of the water.
+- a crossing whose lights the pedestrians wait for, speckled asphalt with manhole covers and white edge lines, zebra crossings over each side road, yellow tactile paving down both sidewalks, and utility poles with sagging wires along the far side;
+- soft shadows under people, cars, trees and street furniture, and a dark seam where each building meets the sidewalk;
+- Tokyo carrying on around it: the side streets and avenues that cross the set run on through it, opening a gap in its sidewalks and its rows of buildings, and the city's own buildings stay wherever the set doesn't build. City buildings in front of the street are cut down to knee height, like a diorama's cut-away, showing their walls' section round a dim floor, so the street stays in view over a block that still reads as city. Only city buildings on the street itself or where the set builds its own are cleared, along with expressway decks (and their pillars) that would hide the street. Where the set reaches over water (the bay, a canal, the Sumida) it stands on made ground, its street with a strip either side and the plots of your shop and the rival, so a waterfront store gets a quay and a river runs up to the street and on past it; the neighbours keep out of the water.
 
 Every box in the scene is shaded per face (top brightest, the street face next), so counters, shelves and buildings read as solid.
 
