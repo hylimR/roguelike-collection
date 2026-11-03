@@ -1752,11 +1752,31 @@ func build_set() -> void:
 			rm.set_instance_color(k, e[2])
 			rm.set_instance_custom_data(k, Color(0, 0, 0, -1))
 		mm_node(rm, building_mat, set_node)
-	# the part of your unit you haven't knocked through yet
+	# the part of your unit you haven't knocked through yet: a vacant shopfront, shutter down, its sign taken off
 	if mine > -16.5:
-		# stops short of your left wall, so the two faces don't fight
-		block(set_node, Vector3(mine + 16.2, 3.6, 9.0), Vector3((mine - 16.8) / 2, 1.8, -11.7), Color("d9d3c4"))
-		block(set_node, Vector3(mine + 16.2, 2.6, 0.06), Vector3((mine - 16.8) / 2, 1.3, -7.18), Color("a7a399"))
+		var vw := mine + 16.2  # stops short of your left wall, so the two faces don't fight
+		var vx := (mine - 16.8) / 2
+		block(set_node, Vector3(vw, 3.6, 9.0), Vector3(vx, 1.8, -11.7), Color("d9d3c4"))
+		block(set_node, Vector3(vw + 0.2, 0.14, 0.35), Vector3(vx, 3.67, -7.3), Color("5b4632"))
+		block(set_node, Vector3(0.35, 0.14, 9.3), Vector3(vx - vw / 2, 3.67, -11.7), Color("5b4632"))
+		block(set_node, Vector3(vw - 0.3, 0.55, 0.12), Vector3(vx, 3.1, -7.16), Color("cfc7b6"))
+		block(set_node, Vector3(vw - 1.1, 0.4, 0.06), Vector3(vx, 3.1, -7.08), Color("e9e4d8"))  # where the old sign hung
+		block(set_node, Vector3(vw - 0.5, 0.3, 0.32), Vector3(vx, 2.62, -7.05), Color("9aa0a6"))
+		var slats := Image.create(1, 4, false, Image.FORMAT_RGB8)
+		slats.fill(Color("c4c8cb"))
+		slats.set_pixel(0, 3, Color("8f959b"))
+		var shutter := MeshInstance3D.new()
+		var q := QuadMesh.new()
+		q.size = Vector2(vw - 0.8, 2.45)
+		shutter.mesh = q
+		shutter.material_override = tiled(ImageTexture.create_from_image(slats), Vector2(1, 14))
+		shutter.position = Vector3(vx, 1.235, -7.17)
+		set_node.add_child(shutter)
+		block(set_node, Vector3(vw - 0.7, 0.1, 0.1), Vector3(vx, 0.05, -7.13), Color("7d8389"))
+		block(set_node, Vector3(1.04, 0.76, 0.03), Vector3(vx + 0.4, 1.55, -7.15), Color("d8493a"))  # to-let notice
+		block(set_node, Vector3(0.9, 0.5, 0.04), Vector3(vx + 0.4, 1.5, -7.14), Color("fbfaf5"))
+		block(set_node, Vector3(0.6, 0.06, 0.05), Vector3(vx + 0.4, 1.56, -7.13), Color("3d3a36"))
+		block(set_node, Vector3(0.42, 0.06, 0.05), Vector3(vx + 0.4, 1.42, -7.13), Color("3d3a36"))
 	build_rival(span)
 	build_room()
 	# a soft dark seam where each building meets the sidewalk
