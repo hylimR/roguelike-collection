@@ -229,6 +229,7 @@ var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
 var box_mesh: ArrayMesh
+var sign_tex: ImageTexture
 var soft_mat: StandardMaterial3D  # soft contact shadows under people, cars and street things
 var ao_mat: StandardMaterial3D  # the dark seam where a building meets the sidewalk
 var cam_target := Vector3.ZERO
@@ -552,6 +553,26 @@ func stripes(a: Color, b: Color, w: int, h: int, on: int) -> ImageTexture:
 		for y in h:
 			img.set_pixel(x, y, b)
 	return ImageTexture.create_from_image(img)
+
+
+## Your chain's pole-sign face in pixels: a roundel in the stripes' colors and "24" for open all hours.
+func sign_face() -> ImageTexture:
+	if sign_tex:
+		return sign_tex
+	var img := Image.create(48, 24, false, Image.FORMAT_RGB8)
+	img.fill(Color("fbfaf5"))
+	for x in 24:
+		for y in 24:
+			var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(12, 12))
+			if d < 10.5:
+				img.set_pixel(x, y, LAYOUT.stripe[0] if d > 7.0 else (Color("fbfaf5") if d > 4.5 else LAYOUT.stripe[1]))
+	var glyphs := ["111001111100111", "101101111001001"]  # 2 and 4, 3x5 columns top to bottom
+	for g in glyphs.size():
+		for i in 15:
+			if glyphs[g][i] == "1":
+				img.fill_rect(Rect2i(25 + g * 12 + (i % 3) * 3, 5 + floori(i / 3.0) * 3, 3, 3), LAYOUT.stripe[1])
+	sign_tex = ImageTexture.create_from_image(img)
+	return sign_tex
 
 
 func tiled(tex_: Texture2D, reps: Vector2) -> StandardMaterial3D:
@@ -1781,6 +1802,16 @@ func build_set() -> void:
 	block(set_node, Vector3(1.7, 1.5, 0.34), ps + Vector3(0, 6.4, 0), Color("fbfaf5"), true)
 	block(set_node, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 6.15, 0), LAYOUT.stripe[0], true)
 	block(set_node, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 5.92, 0), LAYOUT.stripe[1], true)
+	var face := PlaneMesh.new()
+	face.orientation = PlaneMesh.FACE_Z
+	face.size = Vector2(1.5, 0.75)
+	for side in [1.0, -1.0]:  # the logo on both faces of the lightbox
+		var lf := MeshInstance3D.new()
+		lf.mesh = face
+		lf.material_override = mat(Color.WHITE, sign_face(), true)
+		lf.position = ps + Vector3(0, 6.7, 0.175 * side)
+		lf.rotation.y = 0.0 if side > 0 else PI
+		set_node.add_child(lf)
 	blob(set_node, Vector2(ps.x, ps.z), 0.3)
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
 		for ring in [[0.46, Color("74767c"), -0.039], [0.36, Color("4d4f55"), -0.037]]:
