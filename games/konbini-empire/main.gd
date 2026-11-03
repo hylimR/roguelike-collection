@@ -23,6 +23,17 @@ const RARITY_COLOR := {"common": Color("a08c69"), "rare": Color("3a9bd9"), "epic
 const DISTRICT_COLOR := {"sakura": Color("d9708f"), "campus": Color("3a9bd9"), "onsen": Color("e0903a"), "ekimae": Color("1f9e8e"), "neon": Color("8a5cc8")}
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
 const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
+const CARD_ICON := {  # [sheet, frame] for each card's picture; product lines use their product, abilities their key
+	"charm": ["perks", 0], "premium": ["perks", 8], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["perks", 1],
+	"bulk": ["perks", 7], "bow": ["perks", 0], "impulse": ["perks", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
+	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["perks", 6],
+	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["perks", 0], "teamSpirit": ["perks", 0], "spotless": ["decor", 0],
+	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["perks", 0], "cat": ["perks", 9],
+	"floor": ["decor", 7], "neon": ["perks", 8], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
+	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["decor", 1], "camera": ["perks", 6], "delivery": ["perks", 7],
+	"r_franchise": ["perks", 8], "r_warchest": ["perks", 11], "r_killer": ["decor", 5], "r_express": ["perks", 10], "r_scholar": ["decor", 8],
+	"r_hq": ["perks", 0], "r_logistics": ["perks", 7], "r_brand": ["perks", 1], "r_academy": ["perks", 0],
+}
 const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
 const ROLE_COLOR := {"cashier": Color("e98a1d"), "stocker": Color("3f9e4a"), "cleaner": Color("3a9bd9"), "guard": Color("7a68c8"), "promoter": Color("e0609a")}
 const CARD_W := 232  # the store card in the top-right corner
@@ -891,8 +902,7 @@ func show_choice() -> void:
 			var r := chip([label(u.rarity.capitalize(), Color.WHITE, 11)], RARITY_COLOR[u.rarity])
 			r.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 			col.add_child(r)
-			if u.has("product"):
-				col.add_child(icon(u.product, 56))
+			col.add_child(card_picture(c.options[i], u))
 			col.add_child(label(u.name, INK, 16))
 			var n: int = (sim.branches[sim.active].store.taken if c.source == "expansion" else sim.player.taken).get(c.options[i], 0)
 			col.add_child(para(u.desc + ("" if n == 0 else "  (have %d)" % n), MUTED, 190))
@@ -969,6 +979,25 @@ func listing_card(v: VBoxContainer, L: Dictionary) -> void:
 	rival.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	v.add_child(label("Rival next door", MUTED))
 	v.add_child(rival)
+
+
+## The card's picture on a plate tinted by its rarity.
+func card_picture(id: String, u: Dictionary) -> PanelContainer:
+	var pic: TextureRect
+	if u.has("product"):
+		pic = icon(u.product, 60)
+	elif u.has("ability"):
+		pic = picture("perks", ABILITY_ICON[u.ability], 80, Vector2(60, 60))
+	else:
+		var ic: Array = CARD_ICON.get(id, ["perks", 11])
+		pic = picture(ic[0], ic[1], {"perks": 80, "decor": 96}[ic[0]], Vector2(60, 60))
+	var plate := PanelContainer.new()
+	var s := box(Color(RARITY_COLOR[u.rarity]).lerp(PAPER, 0.8), 14, 8)
+	s.border_width_bottom = 2
+	s.border_color = Color(RARITY_COLOR[u.rarity]).lerp(PAPER, 0.55)
+	plate.add_theme_stylebox_override("panel", s)
+	plate.add_child(pic)
+	return plate
 
 
 func pick(id) -> void:
