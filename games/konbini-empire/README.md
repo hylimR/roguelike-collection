@@ -42,6 +42,7 @@ It's drawn like a city builder:
 - The elevated Shuto expressway rings the palace and runs out along the radial avenues, with ramps down to the street.
 - The Rainbow Bridge crosses to Odaiba, and Yamanote trains circle on their viaduct.
 - Every block is packed with 3D buildings drawn by a pixel facade shader: glass towers at the hubs, neon in the nightlife districts, wooden machiya in the old town, gable-roofed houses in the suburbs.
+- Open ground between buildings is paved in slabs, or fine gravel in the leafy districts, so a station plaza reads as a square rather than bare ground.
 - Beyond the built-up edge, homes thin out into fields and woods, and the bay opens to the south.
 
 Each store is played on its own street, carved into the city on its lot:

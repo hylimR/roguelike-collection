@@ -471,6 +471,30 @@ func pool(parent: Node3D, at: Vector3, size_: Vector2) -> void:
 	pools.append(Vector3(w.x, w.z, maxf(size_.x, size_.y) * 0.45))
 
 
+func ground_mat(tex_: ImageTexture) -> StandardMaterial3D:
+	var img := tex_.get_image()
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.vertex_color_use_as_albedo = true
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	return m
+
+
+## A 4 m square of 2 m paving slabs, white so the district's colour tints it: each slab a shade off, joints darker.
+func paving() -> ImageTexture:
+	var r := RandomNumberGenerator.new()
+	r.seed = 11
+	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
+	for sy in 2:
+		for sx in 2:
+			var base := r.randf_range(0.94, 1.0)
+			for y in 8:
+				for x in 8:
+					var v := base * r.randf_range(0.97, 1.0) * (0.9 if x == 7 or y == 7 else 1.0)
+					img.set_pixel(sx * 8 + x, sy * 8 + y, Color(v, v, v))
+	return ImageTexture.create_from_image(img)
+
+
 func tiles(a: Color, b: Color) -> ImageTexture:
 	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
 	img.fill(a)
@@ -667,15 +691,15 @@ func build_static() -> void:
 			fx += fw
 		fy += fh
 	commit([fs], city)
-	# built-up ground, coloured by what the district is
-	var ground := mat(Color.WHITE)
-	ground.vertex_color_use_as_albedo = true
-	var gs := surface(ground)
+	# built-up ground, coloured by what the district is: paving slabs in town, fine gravel where it's leafy
+	var paved := surface(ground_mat(paving()))
+	var gravel := surface(ground_mat(speckle([Color(1, 1, 1), Color(0.95, 0.96, 0.93), Color(0.98, 0.97, 0.94), Color(0.9, 0.92, 0.88)])))
 	for bl in C.blocks:
 		var dt: String = C.districts[bl.d].type
-		gs.set_color(Color("bfc4a6") if dt in ["homes", "oldtown", "park"] else (Color("b8b2a6") if dt == "market" else Color("cdc6b6")))
-		rect_quad(gs, bl.rect.grow(0.2), -0.15)
-	commit([gs], city)
+		var gs: SurfaceTool = gravel if dt in ["homes", "oldtown", "park"] else paved
+		gs.set_color(Color("bfc4a6") if gs == gravel else (Color("b8b2a6") if dt == "market" else Color("cdc6b6")))
+		rect_quad(gs, bl.rect.grow(0.2), -0.15, 0.0, false, 0.25)
+	commit([paved, gravel], city)
 	var sea_tex := speckle([Color("3f7fbf"), Color("4a8ccb"), Color("3a74b0"), Color("5596d3")])
 	var sea := mat(Color.WHITE, sea_tex)
 	sea.texture_repeat = true
