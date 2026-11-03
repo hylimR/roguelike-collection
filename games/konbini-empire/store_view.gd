@@ -212,6 +212,8 @@ var lit_mats: Array = []  # [weakref to an outdoor material, its own colour]
 var lit_sprites: Array = []  # outdoor sprites that stand still, relit when the light changes
 var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the street after dark
 var pool_mat: StandardMaterial3D
+var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after dark
+var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
@@ -262,6 +264,12 @@ func _ready() -> void:
 	pool_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	pool_mat.albedo_texture = radial([Color.WHITE, Color(1, 1, 1, 0.4), Color(1, 1, 1, 0)], [0.0, 0.4, 1.0])
 	pool_mat.albedo_color = Color(0, 0, 0, 0)
+	halo_mat = pool_mat.duplicate()
+	halo_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	lamp_mat = StandardMaterial3D.new()
+	lamp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	lamp_mat.vertex_color_use_as_albedo = true
+	lamp_mat.vertex_color_is_srgb = true
 	vignette = radial([Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0.2, 0.12, 0.05)], [0.0, 0.55, 1.0])
 	soft_mat = StandardMaterial3D.new()
 	soft_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -424,6 +432,8 @@ func update_light() -> void:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night))
 	env.background_color = SEA * light
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
+	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
+	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
 	soft_mat.albedo_color.a = 0.34 - 0.14 * night
 	ao_mat.albedo_color.a = 0.3 - 0.1 * night
 	lit_sprites = lit_sprites.filter(func(s): return is_instance_valid(s))
@@ -1831,13 +1841,14 @@ func build_set() -> void:
 	for p in props_at:
 		if in_gaps(p[1].x, far_gaps if p[1].y < 0.0 else near_gaps):
 			continue
+		if p[0] == 6:
+			street_lamp(Vector3(p[1].x, 0, p[1].y))
+			continue
 		var s := sprite("outdoor", Rect2(p[0] * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55)
 		s.position = Vector3(p[1].x, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55 - 0.05, p[1].y)
 		set_node.add_child(s)
 		lit_sprites.append(s)
-		blob(set_node, p[1], OUTDOOR_SCALE[p[0]] * (0.45 if p[0] == 6 else 1.5))
-		if p[0] == 6:
-			pool(set_node, Vector3(p[1].x, 0, p[1].y), Vector2(7.0, 7.0))
+		blob(set_node, p[1], OUTDOOR_SCALE[p[0]] * 1.5)
 	pool(set_node, Vector3(Sim.ORIGIN.x + (zl + 6.6) / 2, 0, Sim.ORIGIN.y + 4.7), Vector2(10.6 - zl, 6.0))  # your shop's glass front
 	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6], [5, Vector2(-8.3, -6.2), 0.7]]:
 		var s := sprite("decor", Rect2(d[0] * DECOR, 0, DECOR, DECOR), DECOR_PX * d[2])
@@ -1886,6 +1897,31 @@ func build_set() -> void:
 
 ## A row of district buildings fronting z = zf (northwards into the block), shoulder to shoulder from x0 to x1.
 ## Gaps are left wherever a city road crosses the row, so the road runs on between the buildings.
+## A street lamp at the kerb: a tapered pole on a base, an arm reaching out over the road and a head that lights after
+## dark, with a halo round it and a pool on the ground below.
+func street_lamp(at: Vector3) -> void:
+	var out := 1.0 if at.z < 0.0 else -1.0
+	block(set_node, Vector3(0.26, 0.4, 0.26), at + Vector3(0, 0.2, 0), Color("5c616b"))
+	block(set_node, Vector3(0.14, 4.2, 0.14), at + Vector3(0, 2.1, 0), Color("6e737d"))
+	block(set_node, Vector3(0.1, 0.1, 1.1), at + Vector3(0, 4.15, 0.5 * out), Color("6e737d"))
+	var head := MeshInstance3D.new()
+	head.mesh = shaded_box()
+	head.scale = Vector3(0.34, 0.12, 0.56)
+	head.position = at + Vector3(0, 4.06, 1.0 * out)
+	head.material_override = lamp_mat
+	set_node.add_child(head)
+	block(set_node, Vector3(0.38, 0.06, 0.6), at + Vector3(0, 4.15, 1.0 * out), Color("4f535c"))
+	var halo := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(1.6, 1.6)
+	halo.mesh = q
+	halo.material_override = halo_mat
+	halo.position = at + Vector3(0, 4.0, 1.0 * out)
+	set_node.add_child(halo)
+	blob(set_node, Vector2(at.x, at.z), 0.25)
+	pool(set_node, at + Vector3(0, 0, 0.9 * out), Vector2(7.0, 7.0))
+
+
 func set_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: RandomNumberGenerator, boxes: Array, roofs: Array, tall: float, roads: Array) -> void:
 	for run in free_runs(x0, x1, zf - max_depth, zf, roads):
 		fill_row(run.x, run.y, zf, max_depth, mix, r, boxes, roofs, tall)
