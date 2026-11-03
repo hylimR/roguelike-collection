@@ -95,7 +95,7 @@ node tools/shot.mjs "key:Space" "eval:main.sim.time = 125.0" "wait:3" "shot:/tmp
 - **Tab:** next store.
 - **Esc:** close.
 
-Cards, the staff panel and the nightly report pause the game. The seed button starts a new run, optionally with a seed.
+Cards, the staff panel and the nightly report pause the game. The nightly report reads like a receipt: each store's row on a sunken card with its rival's takings as a bar in the chain's color, then a till roll from midnight cash through interest and bills to the cash left, with the day's change on a green or red tag and whether you can cover tomorrow's bills. The seed button starts a new run, optionally with a seed.
 
 **Check:** `godot --headless --path games/konbini-empire --script res://tests/balance.gd`. It checks:
 

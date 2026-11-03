@@ -1102,39 +1102,130 @@ func close_staff() -> void:
 	ui_t = 0.0
 
 
+## The day's receipt: a table per store on a sunken card, then the till roll from midnight cash to what's left.
 func show_report(r: Dictionary) -> void:
 	audio.play("closing")
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 4)
+	v.add_theme_constant_override("separation", 10)
 	var g := GridContainer.new()
 	g.columns = 8
-	g.add_theme_constant_override("h_separation", 14)
-	for h in ["Store", "Sales", "Served", "Lost", "Stock", "Rent+wages", "Net", "Rival"]:
-		g.add_child(label(h, MUTED))
+	g.add_theme_constant_override("h_separation", 18)
+	g.add_theme_constant_override("v_separation", 6)
+	for k in 8:
+		var hl := report_cell(["Store", "Sales", "Served", "Lost", "Stock", "Rent+wages", "Net", "Rival"][k].to_upper(), MUTED, 10, k in [0, 7])
+		hl.add_theme_font_override("font", bold)
+		g.add_child(hl)
 	for row in r.rows:
 		var s: Dictionary = row.stats
-		var cells := [row.name, yen(s.revenue), str(s.customers), str(s.lost), "-" + yen(s.restock + s.fines), "-" + yen(row.rent + row.wages), yen(row.net), "closed" if row.defeated else "%d%%" % roundi(100.0 * row.rival_hp / row.rival_max)]
-		for k in cells.size():
-			g.add_child(label(cells[k], (GREEN if row.net >= 0 else RED) if k == 6 else INK))
-	v.add_child(g)
+		var stock: int = s.restock + s.fines
+		var n := report_cell(row.name, INK, 13, true)
+		n.add_theme_font_override("font", bold)
+		g.add_child(n)
+		g.add_child(report_cell(yen(s.revenue), INK if s.revenue > 0 else MUTED))
+		g.add_child(report_cell(str(s.customers), INK if s.customers > 0 else MUTED))
+		g.add_child(report_cell(str(s.lost), RED if s.lost > 0 else MUTED))
+		g.add_child(report_cell(yen(-stock) if stock > 0 else "–", INK if stock > 0 else MUTED))
+		g.add_child(report_cell(yen(-row.rent - row.wages) if row.rent + row.wages > 0 else "–", INK if row.rent + row.wages > 0 else MUTED))
+		var net := report_cell(("+" if row.net > 0 else "") + yen(row.net), GREEN if row.net > 0 else (RED if row.net < 0 else MUTED))
+		net.add_theme_font_override("font", bold)
+		g.add_child(net)
+		g.add_child(rival_cell(row))
+	v.add_child(sunken(g))
+	var roll := VBoxContainer.new()
+	roll.add_theme_constant_override("separation", 3)
+	roll.add_child(roll_line("Cash at midnight", yen(r.cash_before), INK))
 	if r.interest > 0:
-		v.add_child(label("Interest +%s" % yen(r.interest), GREEN))
-	v.add_child(label("Bills paid %s" % yen(r.bills), INK))
-	var h := HBoxContainer.new()
-	var a := label("Cash", INK, 24)
-	a.custom_minimum_size.x = 120
-	h.add_child(a)
-	h.add_child(label("%s  >  %s" % [yen(r.cash_before), yen(r.cash_after)], GREEN if r.cash_after >= r.cash_before else RED, 24))
-	v.add_child(h)
+		roll.add_child(roll_line("Interest", "+" + yen(r.interest), GREEN))
+	roll.add_child(roll_line("Rent and wages paid", yen(-r.bills), RED))
 	if r.foreclosed != null:
-		v.add_child(label("You ran short: the bank took %s and paid back %s." % [r.foreclosed.name, yen(r.foreclosed.value)], RED))
-	v.add_child(label("Tomorrow's bills: about %s." % yen(sim.bills_due()), MUTED))
+		roll.add_child(roll_line("Bank paid for %s" % r.foreclosed.name, "+" + yen(r.foreclosed.value), GREEN))
+	var rule := ColorRect.new()
+	rule.color = LINE.darkened(0.08)
+	rule.custom_minimum_size.y = 2
+	roll.add_child(rule)
+	var left := roll_line("Cash now", yen(r.cash_after), INK if r.cash_after >= 0 else RED, 22)
+	var delta: int = r.cash_after - r.cash_before
+	var dl := label(("+" if delta > 0 else "") + yen(delta), Color.WHITE, 12)
+	dl.add_theme_font_override("font", bold)
+	var dc := chip([dl], GREEN if delta >= 0 else RED)
+	dc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	left.add_child(dc)
+	left.move_child(dc, 1)
+	roll.add_child(left)
+	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", 16)
+	var till := sunken(roll)
+	till.custom_minimum_size.x = 340
+	foot.add_child(till)
+	var side := VBoxContainer.new()
+	side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	side.alignment = BoxContainer.ALIGNMENT_CENTER
+	if r.foreclosed != null:
+		side.add_child(para("You ran short: the bank took %s." % r.foreclosed.name, RED, 200))
+	side.add_child(label("Tomorrow's bills", MUTED, 11))
+	var due := sim.bills_due()
+	side.add_child(label("about %s" % yen(due), RED if due > sim.player.cash else INK, 16))
+	side.add_child(label("You can pay them." if due <= sim.player.cash else "Earn %s more by midnight." % yen(due - sim.player.cash), GREEN if due <= sim.player.cash else RED, 11))
+	foot.add_child(side)
+	v.add_child(foot)
 	var go := func():
 		close_modal()
 		view.show_branch(sim.active)
 		ui_t = 0.0
 	v.add_child(button("Next day  [Space]", go))
 	open_modal("Day %d closed" % r.day, v, {KEY_SPACE: go, KEY_ENTER: go}, "report", ORANGE)
+
+
+func report_cell(text: String, color: Color, px := 12, left := false) -> Label:
+	var l := label(text, color, px)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if left else HORIZONTAL_ALIGNMENT_RIGHT
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return l
+
+
+## How much of its takings the rival kept: a short bar in its color, or a green tag once it has closed.
+func rival_cell(row: Dictionary) -> Control:
+	if row.defeated:
+		var c := label("CLOSED", Color.WHITE, 10)
+		c.add_theme_font_override("font", bold)
+		var p := chip([c], GREEN)
+		p.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		return p
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	var b := progress(Color(Sim.RIVALS[row.rival].color), 8)
+	b.custom_minimum_size.x = 56
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.value = row.rival_hp / row.rival_max
+	h.add_child(b)
+	h.add_child(report_cell("%d%%" % roundi(100.0 * row.rival_hp / row.rival_max), MUTED, 11))
+	return h
+
+
+## A line of the till roll: what on the left, the amount on the right.
+func roll_line(what: String, amount: String, color: Color, px := 12) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 8)
+	var w := label(what, INK if px > 12 else MUTED, px)
+	w.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	w.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(w)
+	var a := label(amount, color, px)
+	a.add_theme_font_override("font", bold)
+	h.add_child(a)
+	return h
+
+
+## A panel set into the card, a shade darker, for tables and totals.
+func sunken(c: Control) -> PanelContainer:
+	var p := PanelContainer.new()
+	var s := box(GROUND, 16, 12)
+	s.content_margin_left = 16
+	s.content_margin_right = 16
+	p.add_theme_stylebox_override("panel", s)
+	p.add_child(c)
+	return p
 
 
 func show_over() -> void:
