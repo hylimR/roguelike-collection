@@ -20,6 +20,7 @@ const MINT := Color("4fc4ab")
 const YELLOW := Color("fbe27c")
 const SHADOW := Color(0.42, 0.3, 0.15, 0.25)
 const RARITY_COLOR := {"common": Color("a08c69"), "rare": Color("3a9bd9"), "epic": Color("a36fd6"), "legendary": Color("e8a317")}
+const DISTRICT_COLOR := {"sakura": Color("d9708f"), "campus": Color("3a9bd9"), "onsen": Color("e0903a"), "ekimae": Color("1f9e8e"), "neon": Color("8a5cc8")}
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
 const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
 const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
@@ -880,7 +881,7 @@ func show_choice() -> void:
 		var card := PanelContainer.new()
 		card.add_theme_stylebox_override("panel", box(Color("fffdf5"), 18, 12, 4, 2))
 		var col := VBoxContainer.new()
-		col.custom_minimum_size = Vector2(190, 0)
+		col.custom_minimum_size = Vector2(250 if c.source == "listing" else 190, 0)  # room for the longest pair of listing tags
 		col.add_theme_constant_override("separation", 6)
 		card.add_child(col)
 		if c.source == "listing":
@@ -944,12 +945,30 @@ func listing_card(v: VBoxContainer, L: Dictionary) -> void:
 	var q: Dictionary = Sim.QUIRKS[L.quirk]
 	var rv: Dictionary = Sim.RIVALS[L.rival]
 	v.add_child(label(tokyo, INK, 16))
-	v.add_child(label(d.name, MUTED))
-	var quirk: String = q.name
-	v.add_child(para("%s. Foot traffic x%.2f, rent about %s a night." % [quirk, d.traffic * q.get("traffic", 1.0), yen(Sim.rnd(d.rent * q.get("rent", 1.0)))], INK, 190))
+	var kinds := HBoxContainer.new()
+	kinds.add_theme_constant_override("separation", 6)
+	kinds.add_child(chip([label(d.name, Color.WHITE, 11)], DISTRICT_COLOR[L.district]))
+	kinds.add_child(chip([label(q.name, INK, 11)], GROUND))
+	v.add_child(kinds)
+	var traffic: float = d.traffic * q.get("traffic", 1.0)
+	var stats := VBoxContainer.new()
+	stats.add_theme_constant_override("separation", 0)
+	stats.add_child(roll_line("Foot traffic", "x%.2f" % traffic, GREEN if traffic > 1.0 else INK))
+	stats.add_child(roll_line("Rent a night", "about " + yen(Sim.rnd(d.rent * q.get("rent", 1.0))), INK))
+	v.add_child(sunken(stats))
 	if not d.demand.is_empty():
-		v.add_child(para("Locals buy: " + ", ".join(d.demand.keys().map(func(k): return Sim.PRODUCTS[k].name.to_lower())), MUTED, 190))
-	v.add_child(label("Rival: %s (tier %d)" % [rv.name, L.tier], Color(rv.color).darkened(0.2)))
+		var buys := HBoxContainer.new()
+		buys.add_theme_constant_override("separation", 2)
+		buys.add_child(label("Locals buy", MUTED))
+		for k in d.demand:
+			var ic := icon(k, 30)
+			ic.tooltip_text = Sim.PRODUCTS[k].name
+			buys.add_child(ic)
+		v.add_child(buys)
+	var rival := chip([label(rv.name, Color.WHITE, 12), label("Tier %d" % L.tier, Color(1, 1, 1, 0.8), 11)], Color(rv.color).darkened(0.1))
+	rival.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	v.add_child(label("Rival next door", MUTED))
+	v.add_child(rival)
 
 
 func pick(id) -> void:
