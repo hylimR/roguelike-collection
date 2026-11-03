@@ -1203,6 +1203,7 @@ func update_fade() -> void:
 	# city buildings in front of the street are cut down to their ground floor (cut back to the far edge of the
 	# near sidewalk when they reach over it), so the street shows over a block that still reads as city
 	var edge := front.position.y + 14.8
+	var dirty := {}
 	for rec in brecs:
 		var f: Rect2 = rec.foot
 		var state := STANDING
@@ -1217,6 +1218,7 @@ func update_fade() -> void:
 		if state == rec.hidden:
 			continue
 		rec.hidden = state
+		dirty[box_mm] = true
 		for i in rec.box.size():
 			var k: int = rec.box[i]
 			var t: Transform3D = box_base[k]
@@ -1234,11 +1236,14 @@ func update_fade() -> void:
 				box_mm.set_instance_custom_data(k, Color(cd.r, LOW, z1 - z0, cd.a))
 		if rec.roof >= 0:
 			roof_mm.set_instance_transform(rec.roof, roof_base[rec.roof] if state == STANDING else away)
+			dirty[roof_mm] = true
 	for tm in tree_mms:
 		for k in tm[1].size():
 			var p: Vector3 = tm[1][k].origin
 			var cut: bool = taken.call(Rect2(p.x - 1.5, p.z - 1.5, 3, 3)) or (on and p.x + p.z > depth and foot_rect(Rect2(p.x - 1.5, p.z - 1.5, 3, 3), tm[2]).intersects(scr))
-			tm[0].set_instance_transform(k, away if cut else tm[1][k])
+			if tm[0].get_instance_transform(k) != (away if cut else tm[1][k]):
+				tm[0].set_instance_transform(k, away if cut else tm[1][k])
+				dirty[tm[0]] = true
 	# a deck 6 m up hides the ground about 10 m behind it, so decks go only over the street and in front of it
 	var over := Rect2(front.position.x - 4.0, front.position.y - 1.3, front.size.x + 8.0, 28.0)
 	for part in elevated:
@@ -1249,7 +1254,26 @@ func update_fade() -> void:
 		var p: Vector3 = pillar_base[k].origin
 		var deck: MeshInstance3D = pillar_deck[k]
 		var cut: bool = taken.call(Rect2(p.x - 1.0, p.z - 1.0, 2, 2)) or (deck != null and not deck.visible)
-		pillar_mm.set_instance_transform(k, away if cut else pillar_base[k])
+		if pillar_mm.get_instance_transform(k) != (away if cut else pillar_base[k]):
+			pillar_mm.set_instance_transform(k, away if cut else pillar_base[k])
+			dirty[pillar_mm] = true
+	# the Compatibility renderer can keep drawing a MultiMesh's old instances after it has been drawn and then edited
+	# in place, so an edited one is swapped for a fresh copy, which uploads whole
+	for mm in dirty:
+		var fresh: MultiMesh = mm.duplicate()
+		for n in city.get_children() + (mask_vp.get_children() if mask_vp else []):
+			if n is MultiMeshInstance3D and n.multimesh == mm:
+				n.multimesh = fresh
+		if mm == box_mm:
+			box_mm = fresh
+		elif mm == roof_mm:
+			roof_mm = fresh
+		elif mm == pillar_mm:
+			pillar_mm = fresh
+		else:
+			for tm in tree_mms:
+				if tm[0] == mm:
+					tm[0] = fresh
 	if mask_vp:
 		mask_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
