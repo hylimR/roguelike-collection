@@ -809,6 +809,14 @@ func refresh_shelves(b: Dictionary) -> void:
 		k.text = "+%s" % yen(cost) if missing > 0 else "Full"
 		k.tooltip_text = "%s  %d/%d  ·  %s" % [Sim.PRODUCTS[pid].name, p.stock, p.capacity, "click to restock for %s" % yen(cost) if missing > 0 else "full"]
 		k.disabled = missing == 0 or sim.phase != "playing"
+		if not k.has_meta("full") or k.get_meta("full") != (missing == 0):
+			k.set_meta("full", missing == 0)
+			# a full shelf reads as stocked (pale mint tile, icon in color, green caption), not as a dead key
+			var off: StyleBoxFlat = theme.get_stylebox("disabled", "Button").duplicate() if missing > 0 else box(MINT.lerp(PAPER, 0.8), 14, 4)
+			off.set_content_margin_all(4)
+			k.add_theme_stylebox_override("disabled", off)
+			k.add_theme_color_override("font_disabled_color", GREEN if missing == 0 else Color("cdbd9a"))
+			k.add_theme_color_override("icon_disabled_color", Color.WHITE if missing == 0 else Color(1, 1, 1, 0.35))
 		i += 1
 
 

@@ -61,7 +61,7 @@ The HUD floats over the street in rounded cream bubbles, island-life style, and 
 
 - a big white clock with the day in a pill, with pause, speed, sound and seed buttons under it;
 - money, level, rating and bills tags along the top;
-- a small store card in the top-right corner that is only as tall as its content: district, rent and wages, the rival's takings, and one key per product showing its stock bar and restock price (click to restock);
+- a small store card in the top-right corner that is only as tall as its content: district, rent and wages, the rival's takings, and one key per product showing its stock bar and restock price (click to restock), a full shelf a pale mint tile marked Full in green;
 - store tabs, round ability keys, a speech bubble for news and a dock of colored app keys (Staff, Expand, Store, City) along the bottom; a key that can't be used fades to a flat, paler shade of its own color.
 
 The store card hides on the city map. The game fills any window shape: a wider (ultrawide) or taller window shows more of the street instead of black bars, and the 3D scene renders at the screen's own resolution.
