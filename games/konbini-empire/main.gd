@@ -23,6 +23,7 @@ const RARITY_COLOR := {"common": Color("a08c69"), "rare": Color("3a9bd9"), "epic
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
 const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
 const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
+const ROLE_COLOR := {"cashier": Color("e98a1d"), "stocker": Color("3f9e4a"), "cleaner": Color("3a9bd9"), "guard": Color("7a68c8"), "promoter": Color("e0609a")}
 const CARD_W := 232  # the store card in the top-right corner
 
 var sim := Sim.new()
@@ -981,39 +982,65 @@ func show_staff() -> void:
 	v.add_theme_constant_override("separation", 6)
 	v.add_child(label("Cash %s. Hiring costs a day's wage now; wages are paid every midnight." % yen(sim.player.cash), MUTED))
 	var cols := HBoxContainer.new()
-	cols.add_theme_constant_override("separation", 18)
+	cols.add_theme_constant_override("separation", 22)
 	v.add_child(cols)
 	var crew := VBoxContainer.new()
 	crew.custom_minimum_size.x = 250
-	crew.add_theme_constant_override("separation", 2)
+	crew.add_theme_constant_override("separation", 4)
 	crew.add_child(label("Crew", INK, 15))
+	var rows := staff_grid()
 	for m in st.crew:
-		var h := HBoxContainer.new()
-		h.add_child(member_label(m, 190))
-		h.add_child(small_button("Fire", staff_act.bind("fire", m.id)))
-		crew.add_child(h)
-	crew.add_child(para("Cashiers run a till each. Stock clerks refill low shelves but keep tonight's bills in the till. Cleaners mop spills and bag trash. A guard sees off flyers, mascots, thieves, suits and blackouts. A promoter pulls in walkers.", MUTED, 240))
+		rows.add_child(role_tag(m.role))
+		member_cells(rows, m, 100)
+		rows.add_child(small_button("Fire", staff_act.bind("fire", m.id)))
+	crew.add_child(rows)
+	crew.add_child(para("Cashiers run a till each. Stock clerks refill low shelves but keep tonight's bills in the till. Cleaners mop spills and bag trash. A guard sees off flyers, mascots, thieves, suits and blackouts. A promoter pulls in walkers.", MUTED, 250))
 	cols.add_child(crew)
-	var apps := GridContainer.new()
-	apps.columns = 3
-	apps.add_theme_constant_override("h_separation", 8)
-	apps.add_theme_constant_override("v_separation", 2)
+	var apps := staff_grid()
 	for role in Sim.ROLES:
 		var have: int = st.crew.filter(func(m): return m.role == role).size()
 		var cap := sim.role_cap(st, role)
+		var first := true
 		for a in st.applicants.filter(func(x): return x.role == role):
-			apps.add_child(label("%s %d/%d" % [ROLE_ICON[role], have, cap], MUTED))
-			apps.add_child(member_label(a, 280, false))
+			var lead := HBoxContainer.new()
+			lead.add_theme_constant_override("separation", 6)
+			if first:
+				lead.add_child(role_tag(role))
+				lead.add_child(label("%d/%d" % [have, cap], GREEN if have < cap else MUTED, 11))
+			first = false
+			apps.add_child(lead)
+			member_cells(apps, a, 200)
 			var fee := Sim.rnd(a.wage * sim.mods().wage)
-			var hb := small_button("Hire %s" % yen(fee), staff_act.bind("hire", a.id))
+			var hb := small_button("Full" if have >= cap else "Hire %s" % yen(fee), staff_act.bind("hire", a.id))
 			hb.disabled = have >= cap or sim.player.cash < fee
 			apps.add_child(hb)
 	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 4)
 	right.add_child(label("Applicants today", INK, 15))
 	right.add_child(apps)
 	cols.add_child(right)
 	v.add_child(button("Close  [Esc]", close_staff))
 	open_modal("Staff  ·  %s" % b.name, v, {KEY_ESCAPE: close_staff, KEY_S: close_staff}, "staff")
+
+
+func staff_grid() -> GridContainer:
+	var g := GridContainer.new()
+	g.columns = 4
+	g.add_theme_constant_override("h_separation", 10)
+	g.add_theme_constant_override("v_separation", 3)
+	return g
+
+
+## A role's short name on a pill in its color.
+func role_tag(role: String) -> PanelContainer:
+	var l := label(ROLE_ICON[role], Color.WHITE, 10)
+	l.add_theme_font_override("font", bold)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.custom_minimum_size.x = 38
+	var p := chip([l], ROLE_COLOR[role])
+	p.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return p
 
 
 func small_button(text: String, cb: Callable) -> Button:
@@ -1028,15 +1055,27 @@ func small_button(text: String, cb: Callable) -> Button:
 	return b
 
 
-func member_label(m: Dictionary, w: int, role := true) -> Label:
-	var trait_def: Dictionary = Sim.TRAITS[m.trait_id]
-	var l := label("%s%s, %s%s  %s/day" % [(ROLE_ICON[m.role] + "  ") if role else "", m.name, trait_def.name, (" (%s)" % trait_def.desc) if trait_def.has("desc") else "", yen(Sim.rnd(m.wage * sim.mods().wage))])
-	l.custom_minimum_size.x = w
-	l.clip_text = true
-	l.tooltip_text = l.text
-	l.mouse_filter = Control.MOUSE_FILTER_PASS
-	l.add_theme_font_size_override("font_size", 11)
-	return l
+## A staffer's name and trait (teal for a special, else green if quicker than steady, red if slower), then the wage.
+func member_cells(g: GridContainer, m: Dictionary, w: int) -> void:
+	var t: Dictionary = Sim.TRAITS[m.trait_id]
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	h.custom_minimum_size.x = w
+	h.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var n := label(m.name, INK, 12)
+	n.add_theme_font_override("font", bold)
+	h.add_child(n)
+	var tl := label(t.name + ((" · " + t.desc) if t.has("desc") else ""), BLUE if t.has("desc") else (GREEN if t.speed > 1.0 else (RED if t.speed < 1.0 else MUTED)), 11)
+	tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tl.tooltip_text = tl.text
+	tl.mouse_filter = Control.MOUSE_FILTER_PASS
+	h.add_child(tl)
+	g.add_child(h)
+	var wl := label("%s/day" % yen(Sim.rnd(m.wage * sim.mods().wage)), MUTED, 11)
+	wl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	wl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	g.add_child(wl)
 
 
 func staff_act(type: String, id: int) -> void:
