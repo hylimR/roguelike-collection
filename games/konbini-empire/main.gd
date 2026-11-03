@@ -1257,17 +1257,31 @@ func show_over() -> void:
 		best.set_value("best", "score", score)
 		best.save("user://best.cfg")
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 4)
-	v.add_child(label("Midnight bills of %s bounced. The landlord changed the locks." % yen(sim.summary.bills), RED))
-	for l in [
-		"Days survived: %d" % rs.days,
-		"Revenue: %s from %s customers" % [yen(rs.revenue), Sim.money(rs.customers)],
-		"Rivals closed: %d    Threats repelled: %d" % [rs.rivals_defeated, rs.threats_repelled],
-		"Stores opened: %d (peak %d at once)%s" % [rs.stores_opened, rs.peak_stores, "" if rs.foreclosed == 0 else ", %d foreclosed" % rs.foreclosed],
-		"Level %d    Seed %s" % [sim.player.level, sim.seed_text],
+	v.add_theme_constant_override("separation", 10)
+	v.add_child(para("Midnight bills of %s bounced. The landlord changed the locks." % yen(sim.summary.bills), RED, 470))
+	var g := GridContainer.new()
+	g.columns = 3
+	g.add_theme_constant_override("h_separation", 8)
+	g.add_theme_constant_override("v_separation", 8)
+	for t in [
+		["Days survived", str(rs.days), ""],
+		["Revenue", yen(rs.revenue), ""],
+		["Customers", Sim.money(rs.customers), ""],
+		["Rivals closed", str(rs.rivals_defeated), ""],
+		["Threats repelled", str(rs.threats_repelled), ""],
+		["Stores opened", str(rs.stores_opened), "peak %d at once%s" % [rs.peak_stores, "" if rs.foreclosed == 0 else ", %d foreclosed" % rs.foreclosed]],
 	]:
-		v.add_child(label(l))
-	v.add_child(label("Score %s%s" % [Sim.money(score), "  New best!" if score > prev else "  (best %s)" % Sim.money(prev)], GREEN if score > prev else MUTED, 16))
+		g.add_child(stat_tile(t[0], t[1], t[2]))
+	v.add_child(g)
+	var total := roll_line("Score", Sim.money(score), INK, 22)
+	var bl := label("New best!" if score > prev else "best %s" % Sim.money(prev), Color.WHITE if score > prev else MUTED, 12)
+	bl.add_theme_font_override("font", bold)
+	var bc: Control = chip([bl], GREEN) if score > prev else bl
+	bc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	total.add_child(bc)
+	total.move_child(bc, 1)
+	v.add_child(sunken(total))
+	v.add_child(label("Level %d  ·  Seed %s" % [sim.player.level, sim.seed_text], MUTED, 11))
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
 	var again := func(): new_run(sim.seed_text)
@@ -1276,6 +1290,24 @@ func show_over() -> void:
 	h.add_child(button("New run  [Space]", fresh))
 	v.add_child(h)
 	open_modal("Bankrupt", v, {KEY_SPACE: fresh, KEY_ENTER: fresh}, "over", RED)
+
+
+## One number of the run summary on its own sunken tile, its caption above it.
+func stat_tile(what: String, value: String, note: String) -> PanelContainer:
+	var c := VBoxContainer.new()
+	c.add_theme_constant_override("separation", 0)
+	c.custom_minimum_size.x = 136
+	var w := label(what.to_upper(), MUTED, 10)
+	w.add_theme_font_override("font", bold)
+	c.add_child(w)
+	c.add_child(label(value, INK, 22))
+	if note != "":
+		c.add_child(label(note, MUTED, 11))
+	var p := sunken(c)
+	var st: StyleBoxFlat = p.get_theme_stylebox("panel")
+	st.content_margin_top = 8
+	st.content_margin_bottom = 8
+	return p
 
 
 func show_new_run() -> void:
