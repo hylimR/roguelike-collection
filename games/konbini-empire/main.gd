@@ -246,14 +246,19 @@ func key_button(cb: Callable, tip: String, ic: Texture2D, w: int, h: int, radius
 	b.add_theme_font_size_override("font_size", 11)
 	for k in ["normal", "hover", "pressed", "disabled"]:
 		var s: StyleBoxFlat = theme.get_stylebox(k, "Button").duplicate()
-		if c != PAPER and k != "disabled":
-			s = box(c.lightened(0.15) if k == "hover" else c, radius, 4, 1 if k == "pressed" else 3, 1 if k == "pressed" else 2)
+		if c != PAPER:
+			if k == "disabled":  # a faded, flat key in its own color, so the dock keeps its colors
+				s = box(c.lerp(Color("f1e8d2"), 0.55), radius, 4, 2, 0)
+			else:
+				s = box(c.lightened(0.15) if k == "hover" else c, radius, 4, 1 if k == "pressed" else 3, 1 if k == "pressed" else 2)
 		s.set_corner_radius_all(radius)
 		s.set_content_margin_all(4)
 		b.add_theme_stylebox_override(k, s)
 	if c != PAPER:
 		for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
 			b.add_theme_color_override(k, Color.WHITE)
+		b.add_theme_color_override("font_disabled_color", Color(1, 1, 1, 0.85))
+		b.add_theme_color_override("icon_disabled_color", Color(1, 1, 1, 0.6))
 	return b
 
 
