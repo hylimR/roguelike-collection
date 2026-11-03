@@ -106,7 +106,8 @@ varying vec3 lnrm;
 varying vec4 info;
 varying vec4 tint;
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
-const vec3 ROOF[8] = vec3[8](vec3(0.62, 0.62, 0.6), vec3(0.72, 0.72, 0.7), vec3(0.62, 0.4, 0.32), vec3(0.47, 0.6, 0.38), vec3(0.46, 0.53, 0.6), vec3(0.6, 0.56, 0.5), vec3(0.44, 0.45, 0.48), vec3(0.7, 0.65, 0.53));
+const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.68, 0.64, 0.42), vec3(0.52, 0.52, 0.5), vec3(0.68, 0.66, 0.61));  // boards, tatami, concrete, tile
+const vec3 ROOF[8] =vec3[8](vec3(0.62, 0.62, 0.6), vec3(0.72, 0.72, 0.7), vec3(0.62, 0.4, 0.32), vec3(0.47, 0.6, 0.38), vec3(0.46, 0.53, 0.6), vec3(0.6, 0.56, 0.5), vec3(0.44, 0.45, 0.48), vec3(0.7, 0.65, 0.53));
 
 void vertex() {
 	info = INSTANCE_CUSTOM;
@@ -126,9 +127,19 @@ void fragment() {
 		int pick = int(tint.a * 8.0) % 8;
 		if (lnrm.y > 0.5) {
 			vec2 e = min(lpos.xz, info.xz - lpos.xz);
-			if (info.y < 1.0)  // cut down in front of the street: the walls' section round a dim floor
-				col = min(e.x, e.y) < 0.3 ? tint.rgb * 1.08 : mix(vec3(0.44, 0.4, 0.38), tint.rgb, 0.2);
-			else
+			if (info.y < 1.0) {  // cut down in front of the street: the walls' section round a floor plan of rooms
+				vec2 bay = info.xz / max(vec2(1.0), floor(info.xz / vec2(3.0, 4.0) + 0.5));
+				vec2 rc = lpos.xz / bay;
+				vec2 wd = min(fract(rc), 1.0 - fract(rc)) * bay;
+				float wall = min(min(e.x, e.y) - 0.3, min(wd.x, wd.y) - 0.06);
+				float r = fract(sin(dot(floor(rc) + seed * 37.0, vec2(12.9898, 78.233))) * 43758.5453);
+				int k = int(r * 4.0);
+				vec2 g = fract(lpos.xz * (k == 0 ? vec2(0.0, 4.0) : (k == 1 ? vec2(1.1, 0.55) : vec2(1.0))));
+				float seam = min(k == 0 ? 1.0 : min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)) < 0.05 ? 0.86 : 1.0;
+				vec3 fl = FLOOR[k] * seam * mix(0.72, 1.0, smoothstep(0.0, 0.5, wall));
+				col = wall < 0.0 ? tint.rgb * 1.08 : fl;
+				glow = wall < 0.0 ? vec3(0.0) : fl * vec3(1.0, 0.86, 0.62) * step(0.5, fract(r * 13.0)) * 0.45 * night;
+			} else
 				col = mix(ROOF[pick], tint.rgb, 0.15) * (min(e.x, e.y) < 0.35 ? 1.12 : 0.92);
 		} else {
 			bool front = abs(lnrm.z) > 0.5;
