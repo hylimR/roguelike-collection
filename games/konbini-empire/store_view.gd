@@ -49,8 +49,10 @@ const WEATHER_LOOK := {
 }
 # the hour's light on everything outdoors, [hour, tint]: a pink dawn, plain day, golden hour, dusk, night; lit windows,
 # your shop's interior and the street lamps' pools stay bright
-const DAYLIGHT := [[6.0, Color(0.96, 0.86, 0.86)], [8.0, Color.WHITE], [15.5, Color.WHITE], [17.4, Color(1.0, 0.87, 0.7)],
-	[18.6, Color(0.82, 0.64, 0.7)], [19.8, Color(0.5, 0.5, 0.72)], [21.0, Color(0.36, 0.4, 0.62)], [24.0, Color(0.32, 0.36, 0.58)]]
+const DAYLIGHT := [[6.0, Color(0.96, 0.86, 0.86)], [8.0, Color.WHITE], [15.5, Color.WHITE], [17.0, Color(1.0, 0.93, 0.8)],
+	[18.3, Color(0.98, 0.84, 0.7)], [19.1, Color(0.8, 0.62, 0.7)], [19.8, Color(0.5, 0.5, 0.72)], [21.0, Color(0.36, 0.4, 0.62)],
+	[24.0, Color(0.32, 0.36, 0.58)]]
+const GOLDEN := [16.0, 17.8, 19.2]  # golden hour's rise, peak and end: walls facing the low sun glow, the rest go cool
 const LAMP := Color(1.0, 0.85, 0.58)
 const SEA := Color("3f7fbf")
 const PITCH := 30.0
@@ -88,6 +90,7 @@ uniform sampler2D accents : filter_nearest_mipmap;
 uniform float styles = 10.0;
 uniform float night = 0.0;
 uniform vec3 light = vec3(1.0);
+uniform float golden = 0.0;
 varying vec3 lpos;
 varying vec3 lnrm;
 varying vec4 info;
@@ -137,7 +140,9 @@ void fragment() {
 		}
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
 	}
-	ALBEDO = col * shade * light + glow;
+	float low_sun = max(dot(n, normalize(vec3(-0.5, 0.3, 0.8))), 0.0);
+	vec3 grade = mix(vec3(0.8, 0.84, 1.04), vec3(1.2, 1.02, 0.78), low_sun);
+	ALBEDO = col * shade * light * mix(vec3(1.0), grade, golden) + glow;
 }
 """
 # the back wall's art: a crop of the side-view background, tiled along the wall
@@ -402,6 +407,7 @@ func update_light() -> void:
 	if building_mat:
 		building_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
 		building_mat.set_shader_parameter("night", night)
+		building_mat.set_shader_parameter("golden", golden_at(h))
 	if shadow_mat:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night))
 	env.background_color = SEA * light
@@ -411,6 +417,12 @@ func update_light() -> void:
 	lit_sprites = lit_sprites.filter(func(s): return is_instance_valid(s))
 	for s in lit_sprites:
 		shine(s)
+
+
+func golden_at(h: float) -> float:
+	if h < GOLDEN[1]:
+		return clampf(inverse_lerp(GOLDEN[0], GOLDEN[1], h), 0.0, 1.0)
+	return clampf(inverse_lerp(GOLDEN[2], GOLDEN[1], h), 0.0, 1.0)
 
 
 ## What a sprite standing at p sees: the hour's light, lifted under a lamp after dark and full inside your shop.
