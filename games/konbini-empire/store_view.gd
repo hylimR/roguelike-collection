@@ -1734,13 +1734,29 @@ func build_set() -> void:
 				rect_quad(paint, Rect2(zx, sd[2], 0.45, 2.9), -0.04)
 				zx += 0.9
 	# your parking: bays and bicycles between your shop and the alley, nothing tall to hide the till
-	var bay := surface(mat(Color("74767c")))
-	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042)
+	var bay := surface(tiled(speckle([Color("6e7076"), Color("686a70"), Color("75777d"), Color("63655b")]), Vector2.ONE))
+	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042, 0.0, false, 0.5)
+	for kb in [Rect2(-3.4, -16.25, 7.1, 0.25), Rect2(3.45, -16.25, 0.25, 9.05)]:  # kerb round the back and side
+		rect_quad(kerb, kb, -0.036)
 	for bx in [-2.2, 0.2, 2.6]:
 		rect_quad(paint, Rect2(bx, -15.6, 0.12, 4.6), -0.038)
-	commit([made, walk, tar, paint, kerb, bay, tactile], set_node)
+	rect_quad(paint, Rect2(-2.2, -15.6, 4.92, 0.12), -0.038)  # the bays' back line
+	var hatch := surface(mat(Color("e2c048")))
+	var hz := -15.4
+	while hz < -11.2:  # yellow hatching keeps the strip along your wall clear for bicycles
+		add_quad(hatch, [Vector3(-3.25, -0.038, hz), Vector3(-3.25, -0.038, hz + 0.16), Vector3(-2.35, -0.038, hz + 0.66), Vector3(-2.35, -0.038, hz + 0.5)], [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
+		hz += 0.7
+	for hr in [Rect2(-3.3, -15.6, 1.04, 0.1), Rect2(-3.3, -11.1, 1.04, 0.1), Rect2(-3.3, -15.6, 0.1, 4.6)]:
+		rect_quad(hatch, hr, -0.038)
+	# a painted arrow in the aisle leads drivers in off the street
+	rect_quad(paint, Rect2(0.95, -9.6, 0.24, 1.5), -0.038)
+	poly_fill(paint, PackedVector2Array([Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55)]), -0.038)
+	commit([made, walk, tar, kerb, bay, paint, hatch, tactile], set_node)
 	for cx in [-1.0, 1.4]:  # wheel stops
-		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("bdb8ad"))
+		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("d8d2c4"))
+	# a low planter along the back of the car park, below the till's sight line
+	block(set_node, Vector3(5.2, 0.32, 0.5), Vector3(-0.6, 0.12, -16.55), Color("b9b3a6"))
+	block(set_node, Vector3(5.0, 0.26, 0.38), Vector3(-0.6, 0.36, -16.55), Color("5f8f4a"))
 	var kv: int = b.lot % 3
 	var car := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
 	car.position = Vector3(1.4, VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1, -13.0)
@@ -1798,7 +1814,7 @@ func build_set() -> void:
 	var mine: float = -10.0 + Sim.ZONE_LEFT[st.size]
 	for seg in [[SET.position.x, -27.75], [-26.25, -16.5], [span.y, 29.75], [31.25, SET.end.x]]:
 		set_row(seg[0], seg[1], -7.2, 13.0, mix, r, boxes, roofs, 0.7, roads)
-	set_row(5.35, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 1.4, roads)  # low, so it doesn't hide your till
+	set_row(5.35, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 0.9, roads)  # one floor, so it hides neither your till nor the car park
 	set_row(SET.position.x, SET.end.x, -20.5, 11.0, mix, r, boxes, roofs, 1.0, roads)
 	var bm := multimesh(BoxMesh.new(), boxes.size(), true, true)
 	for k in boxes.size():
@@ -1893,7 +1909,7 @@ func build_set() -> void:
 	var props_at := [[6, Vector2(-22.0, -4.3)], [6, Vector2(-38.0, -4.3)], [6, Vector2(9.0, -4.3)], [6, Vector2(34.0, -4.3)],
 		[1, Vector2(-30.0, 5.6)], [2, Vector2(-14.0, 5.6)], [1, Vector2(12.0, 5.6)], [0, Vector2(26.0, 5.6)], [1, Vector2(42.0, 5.6)],
 		[6, Vector2(-6.0, 4.3)], [6, Vector2(20.0, 4.3)], [7, Vector2(-1.6, -4.6)], [10, Vector2(-22.6, -6.6)],
-		[8, Vector2(-1.5, -12.4)], [8, Vector2(-0.4, -12.8)], [4, Vector2(3.3, -15.2)]]
+		[8, Vector2(-2.75, -12.3)], [8, Vector2(-2.75, -13.5)], [4, Vector2(3.3, -15.2)]]
 	if b.quirk == "busStop":
 		props_at.append([11, Vector2(-24.5, -4.4)])
 	for p in props_at:
