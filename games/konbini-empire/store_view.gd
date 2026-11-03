@@ -201,6 +201,7 @@ var lit_mats: Array = []  # [weakref to an outdoor material, its own colour]
 var lit_sprites: Array = []  # outdoor sprites that stand still, relit when the light changes
 var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the street after dark
 var pool_mat: StandardMaterial3D
+var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
 var box_mesh: ArrayMesh
@@ -1832,7 +1833,16 @@ func build_set() -> void:
 		set_node.add_child(s)
 		lit_sprites.append(s)
 		blob(set_node, d[1], 0.45)
-	for pole in [Vector3(Sim.CROSS_X - 1.8, 0, -4.0), Vector3(Sim.CROSS_X + 1.8, 0, 4.0)].filter(func(q): return not in_gaps(q.x, far_gaps if q.z < 0.0 else near_gaps)):
+	# the crossing lights stand at its corners; where a side road opens there, at that road's corner instead
+	light_poles = []
+	for pole in [Vector3(Sim.CROSS_X - 1.8, 0, -4.0), Vector3(Sim.CROSS_X + 1.8, 0, 4.0)]:
+		var gaps: Array = far_gaps if pole.z < 0.0 else near_gaps
+		for g in gaps:
+			if in_gaps(pole.x, [g]):
+				pole.x = g.x - 0.7 if absf(g.x - 0.7 - Sim.CROSS_X) < absf(g.y + 0.7 - Sim.CROSS_X) else g.y + 0.7
+		if in_gaps(pole.x, gaps):
+			continue
+		light_poles.append(pole + Vector3(0, 2.5, 0))
 		block(set_node, Vector3(0.12, 2.6, 0.12), pole + Vector3(0, 1.3, 0), Color("4a4d57"))
 		block(set_node, Vector3(0.36, 0.7, 0.3), pole + Vector3(0, 2.5, 0), Color("2b2d42"))
 	# outside facilities
@@ -2693,7 +2703,7 @@ func draw_street() -> void:
 			pill(screen(Vector3(s.x, 1.9, s.z)), "Break", 10, Color(1.0, 0.98, 0.92), Color("a08c69"))
 	# the crossing lights
 	var lt: Array = sim.lights()
-	for pole in [Vector3(Sim.CROSS_X - 1.8, 2.5, -4.0), Vector3(Sim.CROSS_X + 1.8, 2.5, 4.0)]:
+	for pole in light_poles:
 		var at := screen(pole)
 		overlay.draw_circle(at, 4.0, Color("35d06a") if lt[0] and (not lt[1] or floori(Time.get_ticks_msec() / 250.0) % 2 == 0) else Color("e04a3a"))
 	if not hover.is_empty():
