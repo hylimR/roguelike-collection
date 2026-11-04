@@ -35,18 +35,20 @@ const PROPS := {"till": [0, 0.0075, Vector2(0.34, 0.44)], "coffee": [1, 0.0075, 
 	"vending": [3, 0.014, Vector2(1.0, 0.75)], "gacha": [4, 0.014, Vector2(1.5, 0.5)], "bench": [5, 0.014, Vector2(1.5, 0.4)],
 	"cat": [6, 0.009, Vector2.ZERO], "karaage": [7, 0.0075, Vector2(0.47, 0.52)], "oden": [8, 0.0075, Vector2(0.4, 0.55)]}
 const COUNTER_H := 0.75  # the counter top, at the staff's elbows
-const STOREFRONT_PX := 0.13
 const LANDMARK := 256
 const LANDMARK_H := {"landmarks": 256, "tokyo": 384}  # the Tokyo sheet has tall cells for the towers
 const TRAIN := Vector2i(320, 192)
 const TRAIN_PX := 0.05
 const TRAIN_SPEED := 14.0
-const LANDMARK_PX := 0.085
+const LANDMARK_SPAN := 29.5  # screen width of a landmark: most of the 22 m square the city reserves for it
 const WALK_NEAR := 1.2  # customers' sidewalk line in front of the shop
 const MAX_WALKERS := 70
 const MAX_CARS := 70
 const SET := Rect2(-52, -32, 104, 52)  # the street set round your shop, in the street frame
-const ROLE_TINT := {"stocker": Color(0.78, 0.86, 1.0), "cleaner": Color(1.0, 0.95, 0.72), "guard": Color(0.62, 0.66, 0.92), "promoter": Color(1.0, 0.78, 0.88)}
+# art/walk.png rows past the seven customers: staff and threats, then a flyer girl and a mascot per rival chain in
+# Sim.RIVALS order
+const WALK_ROW := {"cashier": 7, "guard": 8, "cleaner": 9, "promoter": 10, "stocker": 11, "shoplifter": 12, "suit": 13, "review": 14, "flyer": 15, "mascot": 21}
+const MASCOT_SCALE := 1.35  # a 2 m costume over the 1.5 m adults
 const GOODS := {  # pack colors per product line, faced up on its fixture
 	"drink": [Color("4fae5a"), Color("e8873a"), Color("3f86c9"), Color("e9e2c8")],
 	"beer": [Color("d9a22c"), Color("c8d3dc"), Color("3d6fb4"), Color("e2574c")],
@@ -200,6 +202,7 @@ void fragment() {
 const LAYOUT := {"bg": "bg_konbini", "wall": Rect2i(208, 44, 316, 201), "floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]}
 
 var tex := {}
+var sheet_imgs := {}  # sheet images read back for their cells' used rects
 var sim
 var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
 var set_sig := ""
@@ -268,6 +271,7 @@ var cam_offset := Vector3.ZERO
 var cam_base := 12.0
 var zoom := 1.0
 var yaw := PI / 4
+var yaw_drag := 0.0  # right-drag turned so far; yaw follows it in quarter turns
 
 var vp: SubViewport
 var vp_scale := 1.0  # real pixels per UI unit
@@ -616,6 +620,9 @@ func set_mode(m: String) -> void:
 	cam_offset = Vector3.ZERO
 	zoom = 1.0
 	yaw = PI / 4  # the shop cutaway is drawn for this angle
+	yaw_drag = 0.0
+	for e in lm_sprites + lot_sprites:
+		anchor(e)
 	pick = "" if m == "store" else pick
 	hover = {}
 	refresh_city()
@@ -675,13 +682,35 @@ func tiled(tex_: Texture2D, reps: Vector2) -> StandardMaterial3D:
 	return m
 
 
-func city_sprite(parent: Node3D, sheet: String, region: Rect2, px: float, at: Vector3, list: Array) -> Sprite3D:
-	var s := sprite(sheet, region, px)
-	s.position = at + Vector3(0, region.size.y / 2.0 * px - 0.1, 0)
+## A city sprite drawn in 2:1 (a landmark, a storefront), its footprint centred on `center` and its drawing `span`
+## wide on screen: the cell's empty top trimmed off and the billboard's foreshortening undone (the art already is the
+## tilted view). The footprint centre is midway across the drawing, a quarter of its width above its lowest point.
+func city_sprite(parent: Node3D, sheet: String, cell: Rect2, span: float, center: Vector3, list: Array) -> Sprite3D:
+	if not sheet_imgs.has(sheet):
+		sheet_imgs[sheet] = tex[sheet].get_image()
+	var u: Rect2i = sheet_imgs[sheet].get_region(Rect2i(cell)).get_used_rect()
+	var r := Rect2(cell.position.x, cell.position.y + u.position.y, cell.size.x, u.size.y)
+	var px := span / u.size.x
+	var s := sprite(sheet, r, px)
+	s.scale.y = 1.0 / cos(deg_to_rad(PITCH))
+	var ox := r.size.x / 2.0 - u.get_center().x
+	s.offset = Vector2(ox, u.size.y / 2.0 - u.size.x / 4.0)
 	parent.add_child(s)
-	list.append([s, region.size.x / 2.0 * px])
+	var e := [s, span / 2.0, center, u.size.y * px, u.size.x / 4.0 * px, ox]  # sprite, half width, footprint, height, drop, offset x
+	list.append(e)
+	anchor(e)
 	lit_sprites.append(s)
 	return s
+
+
+## Mirrors a city sprite on the odd quarter turns and slides it along the view line, so its near half stands clear of
+## the ground (the ortho view keeps it in place on screen).
+func anchor(e: Array) -> void:
+	var s: Sprite3D = e[0]
+	s.flip_h = posmod(roundi((yaw - PI / 4) / (PI / 2)), 2) == 1
+	s.offset.x = -e[5] if s.flip_h else e[5]
+	var p := deg_to_rad(PITCH)
+	s.position = e[2] + Vector3(sin(yaw) * cos(p), sin(p), cos(yaw) * cos(p)) * ((e[4] * s.scale.y - 0.1) / sin(p))
 
 
 func surface(m: Material) -> SurfaceTool:
@@ -850,7 +879,7 @@ func build_static() -> void:
 	build_shadows()
 	for L in C.landmarks:
 		var lm: Array = C.districts[L.d].lm
-		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_PX, Vector3(L.pos.x + 3.0, 0, L.pos.y + 3.0), lm_sprites)
+		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_SPAN, Vector3(L.pos.x, 0, L.pos.y), lm_sprites)
 	build_paths()
 
 
@@ -1345,12 +1374,14 @@ func build_lots() -> void:
 	for b in sim.branches:
 		if mode == "store" and is_same(b, branch):
 			continue
-		var L: Dictionary = sim.lots[b.lot]
-		city_sprite(lots_node, "storefronts", Rect2(0, 0, STOREFRONT.x, STOREFRONT.y), STOREFRONT_PX, Vector3(L.x0 + Sim.City.LOT_W * 0.62, 0, L.front - 0.4), lot_sprites)
+		# each marker drawn the size of the shop it stands for, on that shop's footprint in the street frame
+		var o := frame_origin(b.lot)
+		var zl: float = Sim.ZONE_LEFT[b.store.size]
+		city_sprite(lots_node, "storefronts", Rect2(0, 0, STOREFRONT.x, STOREFRONT.y), (6.5 - zl + 9.3) * 0.7071, o + Vector3(Sim.ORIGIN.x + (zl + 6.5) / 2, 0, Sim.ORIGIN.y), lot_sprites)
 		if not b.rival.defeated:
-			var o := frame_origin(b.lot)
+			var rs := rival_span(b.rival)
 			var f: int = Sim.RIVALS[b.rival.id].front
-			city_sprite(lots_node, "storefronts", Rect2(f * STOREFRONT.x, 0, STOREFRONT.x, STOREFRONT.y), STOREFRONT_PX, Vector3(o.x + rival_span(b.rival).x + 4.0, 0, L.front - 0.4), lot_sprites)
+			city_sprite(lots_node, "storefronts", Rect2(f * STOREFRONT.x, 0, STOREFRONT.x, STOREFRONT.y), (rs.y - rs.x + 9.0) * 0.7071, o + Vector3((rs.x + rs.y) / 2, 0, Sim.ORIGIN.y), lot_sprites)
 
 
 ## World position of a lot's street frame: your shop centred on the lot, its facade on the lot's front edge.
@@ -1391,10 +1422,9 @@ func update_fade() -> void:
 	var taken := func(f: Rect2) -> bool: return on and (f.intersects(front) or set_feet.any(func(q): return f.intersects(q)))
 	for e in lm_sprites + lot_sprites:
 		var s: Sprite3D = e[0]
-		var at_ := Vector2(s.position.x, s.position.z)
-		var base := iso(s.position - Vector3(0, s.position.y, 0))
-		var tall: float = s.region_rect.size.y * s.pixel_size
-		var r := Rect2(base + Vector2(-e[1], -tall * 0.87), Vector2(e[1] * 2, tall * 0.87))
+		var at_ := Vector2(e[2].x, e[2].z)
+		var base := iso(e[2])
+		var r := Rect2(base + Vector2(-e[1], e[4] - e[3]), Vector2(e[1] * 2, e[3]))
 		s.visible = not taken.call(Rect2(at_ - Vector2(0.5, 0.5), Vector2.ONE))
 		var fade_it: bool = on and r.intersects(scr) and at_.x + at_.y > depth
 		s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED if fade_it else SpriteBase3D.ALPHA_CUT_DISCARD
@@ -1882,12 +1912,21 @@ func build_set() -> void:
 	# a low planter along the back of the car park, below the till's sight line
 	block(set_node, Vector3(5.2, 0.32, 0.5), Vector3(-0.6, 0.12, -16.55), Color("b9b3a6"))
 	block(set_node, Vector3(5.0, 0.26, 0.38), Vector3(-0.6, 0.36, -16.55), Color("5f8f4a"))
+	# a car nosed into the right-hand bay, front wheels at the stop: its art's footprint centre (midway across, a quarter
+	# of its drawn width above its lowest point) held on the bay's centre line, slid along the view to clear the ground
 	var kv: int = b.lot % 3
 	var car := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
-	car.position = Vector3(1.4, VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1, -13.0)
 	set_node.add_child(car)
-	facing(car, Vector3(0, 0, -1), kv * 2, VEHICLE_CELL)  # nosed in towards the shop
-	car.add_child(shadow(car.position.y, 1.5))
+	facing(car, Vector3(0, 0, -1), kv * 2, VEHICLE_CELL)
+	var u: Rect2i = tex["vehicles"].get_image().get_region(Rect2i(car.region_rect)).get_used_rect()
+	var fx: float = u.get_center().x if not car.flip_h else VEHICLE_CELL.x - u.get_center().x
+	var fy: float = u.end.y - u.size.x / 4.0
+	car.offset = Vector2(VEHICLE_CELL.x / 2.0 - fx, fy - VEHICLE_CELL.y / 2.0)
+	var long_: float = (u.end.x - u.position.x) * VEHICLE_PX * 0.5 / 0.7071  # roughly its length along the bay
+	var foot := Vector2(1.46, -15.5 + long_ / 2.0)
+	var tilt := deg_to_rad(PITCH)
+	car.position = Vector3(foot.x, 0, foot.y) + Vector3(sin(PI / 4) * cos(tilt), sin(tilt), cos(PI / 4) * cos(tilt)) * ((u.size.x / 4.0 * VEHICLE_PX - 0.05) / sin(tilt))
+	blob(set_node, foot, 1.3)
 	lit_sprites.append(car)
 	# your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark
 	var ps := Vector3(3.0, 0, -16.5)
@@ -2521,12 +2560,11 @@ func sync_actors(delta: float) -> void:
 		e.node.position += Vector3(a.cross_j * 0.25, 0, (a.lane - 0.5) * 0.5)
 	drop_missing(agent_nodes, seen)
 	seen = {}
-	var col := Color(Sim.RIVALS[branch.rival.id].color)
 	for t in branch.threats:
 		seen[t.id] = true
 		var e = threat_nodes.get(t.id)
 		if e == null:
-			e = make_threat(t, col)
+			e = make_threat(t)
 			threat_nodes[t.id] = e
 		if e.has("a"):
 			move_sprite(e, t, 2.0, delta)
@@ -2544,10 +2582,10 @@ func sync_actors(delta: float) -> void:
 				node.add_child(shadow(0.0, 0.25))
 				e = {"node": node, "y": 0.0}
 			else:
-				node = sprite("walk", Rect2(0, 7 * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
-				node.set_meta("base", ROLE_TINT.get(s.role, Color.WHITE))
+				var row: int = WALK_ROW.get(s.role, 7)
+				node = sprite("walk", Rect2(0, row * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
 				node.add_child(shadow())
-				e = {"node": node, "a": 7, "step": 0.0}
+				e = {"node": node, "a": row, "step": 0.0}
 			actors.add_child(node)
 			staff_nodes[s.id] = e
 		if e.has("a"):
@@ -2596,15 +2634,20 @@ func move_sprite(e: Dictionary, o: Dictionary, speed: float, delta: float) -> vo
 	e.node.region_rect = Rect2(col * PERSON.x, e.a * PERSON.y, PERSON.x, PERSON.y)
 
 
-func make_threat(t: Dictionary, col: Color) -> Dictionary:
+func make_threat(t: Dictionary) -> Dictionary:
 	var e := {}
-	var row := {"flyer": 1, "mascot": 6, "shoplifter": 2, "suit": 0}
-	if row.has(t.type):
-		var node := sprite("walk", Rect2(0, row[t.type] * PERSON.y, PERSON.x, PERSON.y), PERSON_PX * (2.1 if t.type == "mascot" else 1.0))
-		node.set_meta("base", {"flyer": Color.WHITE.lerp(col, 0.45), "mascot": Color.WHITE.lerp(col, 0.6), "shoplifter": Color(0.32, 0.32, 0.4), "suit": Color(0.5, 0.5, 0.56)}[t.type])
-		var sc := 2.1 if t.type == "mascot" else 1.0
+	if WALK_ROW.has(t.type):
+		var row: int = WALK_ROW[t.type]
+		if t.type in ["flyer", "mascot"]:
+			row += Sim.RIVALS.keys().find(branch.rival.id)
+		var sc := MASCOT_SCALE if t.type == "mascot" else 1.0
+		var node := sprite("walk", Rect2(0, row * PERSON.y, PERSON.x, PERSON.y), PERSON_PX * sc)
 		node.add_child(shadow(0.82 * sc - 0.02, 0.5 * sc))
-		e = {"node": node, "a": row[t.type], "step": 0.0, "scale": sc}
+		e = {"node": node, "a": row, "step": 0.0, "scale": sc}
+		if t.type == "review":  # stands on the sidewalk typing at your door
+			e.erase("a")
+			node.position.y = 0.82
+			turn_to(node, Vector2(t.x, t.z), Sim.DOOR)
 	else:
 		var mi := MeshInstance3D.new()
 		match t.type:
@@ -2639,12 +2682,6 @@ func make_threat(t: Dictionary, col: Color) -> Dictionary:
 				mi.mesh = m
 				mi.material_override = mat(Color("f2c230"))
 				mi.position.y = 1.7
-			_:
-				var m := BoxMesh.new()
-				m.size = Vector3(0.3, 0.5, 0.06)
-				mi.mesh = m
-				mi.material_override = mat(Color("2b2d42"))
-				mi.position.y = 1.3
 		e = {"node": mi}
 	actors.add_child(e.node)
 	e.node.position = Vector3(t.x, e.node.position.y, t.z)
@@ -2748,7 +2785,7 @@ func lot_at(pos: Vector2) -> int:
 
 
 func threat_point(t: Dictionary) -> Vector3:
-	var y: float = {"trash": 0.3, "spill": 0.05, "breaker": 1.7, "review": 1.4, "mascot": 1.8}.get(t.type, 1.0)
+	var y: float = {"trash": 0.3, "spill": 0.05, "breaker": 1.7, "mascot": 1.4}.get(t.type, 1.0)
 	return Vector3(t.x, y, t.z)
 
 
@@ -2794,8 +2831,14 @@ func _gui_input(e: InputEvent) -> void:
 		accept_event()
 		return
 	if mode == "city" and e is InputEventMouseMotion and e.button_mask & MOUSE_BUTTON_MASK_RIGHT:
-		yaw -= e.relative.x * 0.006
-		update_camera()
+		# turns in quarter steps: the landmarks and storefronts are drawn for the diagonal views only
+		yaw_drag -= e.relative.x * 0.006
+		var snapped_ := PI / 4 + roundf(yaw_drag / (PI / 2)) * PI / 2
+		if not is_equal_approx(snapped_, yaw):
+			yaw = snapped_
+			for s in lm_sprites + lot_sprites:
+				anchor(s)
+			update_camera()
 		accept_event()
 		return
 	if e is InputEventMouseMotion and e.button_mask & (MOUSE_BUTTON_MASK_MIDDLE | MOUSE_BUTTON_MASK_LEFT):
@@ -3024,7 +3067,7 @@ func draw_street() -> void:
 		if t.fleeing:
 			continue
 		var label: String = {"flyer": "Flyers", "mascot": "Mascot", "trash": "Trash", "review": "1★ review", "shoplifter": "Thief!", "breaker": "Breaker", "suit": "Suit", "spill": "Spill"}[t.type]
-		var top := at + Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit"] else (-44 if t.type == "mascot" else -12))
+		var top := at + Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit", "review"] else (-36 if t.type == "mascot" else -12))
 		pill(top, label, 11, Color("e05a4e") if t.type != "spill" else Color("3a9bd9"))
 		if t.max_clicks > 1:
 			for k in t.max_clicks:

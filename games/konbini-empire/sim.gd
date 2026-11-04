@@ -59,14 +59,15 @@ const PROMOTER_HOME := Vector2(-9.8, -5.7)
 const REVIEW_AT := Vector2(-7.4, -6.5)
 const MASCOT_TURN := -11.4
 const TRASH_SPOTS := [Vector2(2.4, 5.5), Vector2(3.4, 5.8), Vector2(1.5, 5.85)]  # local
-const BREAKER_AT := Vector2(6.3, -3.9)
-const CAT_HOME := Vector2(1.55, 4.05)  # clear of the cleaners' homes and the queue's tail
+const BREAKER_AT := Vector2(6.2, -4.38)  # on the back wall behind the counter
+const CAT_HOME := Vector2(1.9, 4.15)  # by the window, between the queue tail's places on screen
 const COUNTER_END := Vector2(5.7, 2.4)
-const AISLE_CORNER := Vector2(3.1, 3.0)
-const STAFF_HOMES := {"stocker": [Vector2(5.7, 2.2), Vector2(5.7, -3.3)], "cleaner": [Vector2(2.4, 3.75), Vector2(0.7, 3.75)], "guard": [Vector2(3.6, 4.0), Vector2(0.8, 4.0)], "promoter": [Vector2(0.2, 6.0)]}
+const AISLE_COLUMN := 2.75  # the cross aisle: 0.4 off the fixture ends, 0.75 clear of the queue along the counter
+const AISLE_CORNER := Vector2(AISLE_COLUMN, 3.0)
+const STAFF_HOMES := {"stocker": [Vector2(5.7, 2.2), Vector2(5.7, -3.3)], "cleaner": [Vector2(2.7, 4.15), Vector2(1.1, 4.15)], "guard": [Vector2(3.5, 4.15), Vector2(0.3, 4.15)], "promoter": [Vector2(0.2, 6.0)]}
 const REGISTERS := [
-	{"pos": Vector2(4.5, 0.3), "clerk": Vector2(5.35, 0.3), "queue": [Vector2(3.35, 0.3), Vector2(3.35, 1.15), Vector2(3.35, 2.0), Vector2(3.0, 2.85), Vector2(2.2, 3.05), Vector2(1.4, 3.05), Vector2(0.6, 3.05)]},
-	{"pos": Vector2(4.5, -1.6), "clerk": Vector2(5.35, -1.6), "queue": [Vector2(3.35, -1.6), Vector2(3.35, -2.45), Vector2(2.7, -3.1), Vector2(1.9, -3.1)]},
+	{"pos": Vector2(4.5, 0.3), "clerk": Vector2(5.35, 0.3), "queue": [Vector2(3.5, 0.3), Vector2(3.5, 1.15), Vector2(3.5, 2.0), Vector2(3.35, 3.6), Vector2(2.55, 3.6), Vector2(1.75, 3.6), Vector2(0.95, 3.6)]},
+	{"pos": Vector2(4.5, -1.6), "clerk": Vector2(5.35, -1.6), "queue": [Vector2(3.5, -1.6), Vector2(3.5, -2.45), Vector2(2.7, -3.1), Vector2(1.9, -3.1)]},
 ]
 # pick = where a customer stands; counter lines have none
 const SLOTS := {
@@ -745,8 +746,8 @@ static func aisle(from: Vector2, to: Vector2, size: int) -> Array:
 	var r1 := nearest_row(to.y)
 	var pts := [Vector2(from.x, r0)]
 	if r0 != r1:
-		var c := 3.1
-		if size >= 3 and absf(from.x + 6.0) + absf(to.x + 6.0) < absf(from.x - 3.1) + absf(to.x - 3.1):
+		var c := AISLE_COLUMN
+		if size >= 3 and absf(from.x + 6.0) + absf(to.x + 6.0) < absf(from.x - c) + absf(to.x - c):
 			c = -6.0
 		pts.append(Vector2(c, r0))
 		pts.append(Vector2(c, r1))
