@@ -24,6 +24,7 @@ func _init() -> void:
 	vectors()
 	curves()
 	start_state()
+	roads()
 	var t0 := Time.get_ticks_msec()
 	var a := {}
 	for s in SEEDS:
@@ -33,6 +34,44 @@ func _init() -> void:
 	print("bot runs took %.1f s" % ((Time.get_ticks_msec() - t0) / 1000.0))
 	print("RULES OK" if fails.is_empty() else "RULES FAIL (%d)" % fails.size())
 	quit(0 if fails.is_empty() else 1)
+
+
+## Every road ends on another road, at a quay or off the map: a side street at a T or a corner on another street, on
+## the road round a park, or at a railing over the water; an avenue or a park's road on another road.
+func roads() -> void:
+	var City = Sim.City
+	var C: Dictionary = City.get_city()
+	var band := func(s: Dictionary) -> Rect2: return Rect2(s.from, s.line, s.to - s.from, s.w) if s.axis == "h" else Rect2(s.line, s.from, s.w, s.to - s.from)
+	var on_avenue := func(p: Vector2, skip: int) -> bool:
+		for k in C.avenues.size():
+			if k != skip and City._poly_dist(C.avenues[k].pts, p) < C.avenues[k].w / 2 + 1.0:
+				return true
+		return false
+	var dead := []
+	for i in C.streets.size():
+		var s: Dictionary = C.streets[i]
+		var c: float = s.line + s.w / 2
+		for e in 2:
+			var at: float = s.from if e == 0 else s.to
+			var dir := 1.0 if e == 1 else -1.0
+			var probe := Rect2(at - 1.5, s.line + 0.5, 3.0, s.w - 1.0) if s.axis == "h" else Rect2(s.line + 0.5, at - 1.5, s.w - 1.0, 3.0)
+			var tip := Vector2(at + dir, c) if s.axis == "h" else Vector2(c, at + dir)
+			var over := Vector2(at + dir * 2.5, c) if s.axis == "h" else Vector2(c, at + dir * 2.5)
+			var crossed := range(C.streets.size()).any(func(k): return k != i and band.call(C.streets[k]).intersects(probe))
+			if not (crossed or on_avenue.call(tip, -1) or (s.quay[e] and City.is_water(C, over))):
+				dead.append(tip)
+	var c1: PackedVector2Array = City._flat(C.shuto[0].pts)
+	c1.append(c1[0])
+	for k in C.avenues.size():
+		var pts: PackedVector2Array = C.avenues[k].pts
+		if pts[0] == pts[-1]:
+			continue  # a loop round a park
+		for p in [pts[0], pts[-1]]:
+			var on_street: bool = C.streets.any(func(s): return band.call(s).grow(0.5).has_point(p))
+			var ring_in_water: bool = k >= City.AVENUES.size() and City.is_water(C, p)
+			if not (not C.bounds.has_point(p) or on_street or ring_in_water or on_avenue.call(p, k) or City._poly_dist(c1, p) < City.EXPRESS_W / 2 + 1.0):
+				dead.append(p)
+	check(dead.is_empty(), "every road ends on another road, at a quay or off the map (%d don't, e.g. %s)" % [dead.size(), dead.slice(0, 4)])
 
 
 func vectors() -> void:

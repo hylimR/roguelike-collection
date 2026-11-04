@@ -38,7 +38,7 @@ The city is 48 real neighbourhoods laid out roughly where they are:
 
 It's drawn like a city builder:
 
-- Blocks split into side streets that meet in T-junctions, and curved avenues cut across them.
+- Blocks split into side streets that meet in T-junctions and corners, and curved avenues cut across them. Every road ends on another road: a street runs exactly along the blocks it serves, bridges the Sumida, stops at a railed quay on the bay or the palace moat, and meets the ring road round each park; an avenue runs on to the next road. `tests/balance.gd` checks every end.
 - The elevated Shuto expressway rings the palace and runs out along the radial avenues, with ramps down to the street.
 - The Rainbow Bridge crosses to Odaiba, and Yamanote trains circle on their viaduct.
 - Every block is packed with 3D buildings drawn by a pixel facade shader: glass towers at the hubs, neon in the nightlife districts, wooden machiya in the old town, gable-roofed houses in the suburbs. Flat roofs sit inside a parapet whose shadow falls across the roof on its sunny sides, laid in membrane strips with a stair hatch.

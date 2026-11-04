@@ -1,9 +1,10 @@
 extends RefCounted
 ## Tokyo as a city-builder map. Districts sit at their real relative places; the bay, the Sumida and the parks
 ## are carved out; blocks come from splitting the city again and again (so side streets meet in T-junctions and
-## never line up into one grid); curved avenues, the elevated Shuto expressway over some of them (with ramps down
-## to the avenue below) and the Yamanote loop cut across. Built once and cached: Tokyo never changes, only who
-## holds which lot. Node-free; buildings() is only for the view.
+## never line up into one grid), bridging the river, stopping at quays on the bay and ending on a road round every
+## park; curved avenues, the elevated Shuto expressway over some of them (with ramps down to the avenue below) and
+## the Yamanote loop cut across. Every road ends on another road, at a quay or off the map. Built once and cached:
+## Tokyo never changes, only who holds which lot. Node-free; buildings() is only for the view.
 
 const ROAD := 9.2  # sidewalk, two lanes, sidewalk: the street the shop view draws
 const SIDEWALK := 2.2
@@ -20,6 +21,7 @@ const URBAN := 92.0  # built-up land reaches this far from the nearest district 
 const MOAT := 6.0
 const RIVER_W := 16.0
 const RAMP_L := 46.0
+const BRIDGE := 30.0  # the longest water a side street bridges (the Sumida at a slant); longer, it stops at a quay
 
 # [name, profile, x, z, landmark sheet, frame (-1: none), shop lots]. x east, z south; ~40 units a kilometre.
 const DISTRICTS := [
@@ -187,6 +189,20 @@ static func in_park(C: Dictionary, p: Vector2) -> bool:
 	return false
 
 
+## Distance from p to the nearest park with a road round it (0 in one), by the usual ellipse estimate; the
+## palace's edge is its moat, water.
+static func park_dist(C: Dictionary, p: Vector2) -> float:
+	var d := INF
+	for pk in C.parks:
+		if pk.name == "Imperial Palace":
+			continue
+		var r: Vector2 = pk.radii
+		var q: Vector2 = (p - pk.center).abs()
+		var k0 := (q / r).length()
+		d = minf(d, 0.0 if k0 <= 1.0 else k0 * (k0 - 1.0) / (q / (r * r)).length())
+	return d
+
+
 ## [district index, distance] of the nearest district centre.
 static func nearest(C: Dictionary, p: Vector2) -> Array:
 	var best := 0
@@ -273,7 +289,6 @@ static func _build() -> Dictionary:
 	for av in AVENUES:
 		var pts := smooth(av.pts)
 		C.avenues.append({"name": av.name, "w": av.w, "pts": pts, "shuto": av.get("shuto", "")})
-		_add_corridor(C, pts, av.w / 2 + 0.6)
 		if av.has("shuto"):
 			C.shuto.append({"name": av.shuto, "pts": _deck(pts, DECK), "closed": false})
 			var cum := cumulative(pts)
@@ -309,10 +324,7 @@ static func _build() -> Dictionary:
 	rng.seed = 1964
 	var raw := []
 	var leaves := []
-	_split(C, Rect2(-480, -420, 960, 840), 0, [0.0, 0.0, 0.0, 0.0], rng, raw, leaves)
-	C.streets = []
-	for s in raw:
-		C.streets.append_array(_clip_street(C, s))
+	_split(C, Rect2(-480, -420, 960, 840), 0, rng, raw, leaves)
 	C.blocks = []
 	var bounds := Rect2()
 	for r in leaves:
@@ -322,6 +334,11 @@ static func _build() -> Dictionary:
 			C.blocks.append({"rect": r, "d": n[0]})
 			bounds = r if bounds.size == Vector2.ZERO else bounds.merge(r)
 	C.bounds = bounds.grow(20.0)
+	C.streets = _streets(C, raw)
+	_trim_avenues(C)
+	C.avenues.append_array(_edge_roads(C))
+	for av in C.avenues:
+		_add_corridor(C, av.pts, av.w / 2 + 0.6)
 	_place_landmarks(C)
 	_place_lots(C)
 	_place_landmarks_late(C)
@@ -358,8 +375,7 @@ static func _ramp(pts: PackedVector2Array, cum: PackedFloat32Array, s0: float, s
 
 
 ## kd-style split: cut the rectangle with a street across it until blocks are about the local block size.
-## `edge` = widths of the streets on its [left, right, top, bottom] sides (0: none), so streets know their junctions.
-static func _split(C: Dictionary, r: Rect2, depth: int, edge: Array, rng: RandomNumberGenerator, streets: Array, leaves: Array) -> void:
+static func _split(C: Dictionary, r: Rect2, depth: int, rng: RandomNumberGenerator, streets: Array, leaves: Array) -> void:
 	var far := INF
 	for d in C.districts:
 		far = minf(far, d.center.distance_to(d.center.clamp(r.position, r.end)))
@@ -383,40 +399,234 @@ static func _split(C: Dictionary, r: Rect2, depth: int, edge: Array, rng: Random
 	var lo := maxf(0.34, ((min_x if vertical else min_z) + w / 2) / size)
 	var at_ := (r.position.x if vertical else r.position.y) + size * rng.randf_range(lo, 1.0 - lo)
 	if vertical:
-		streets.append({"axis": "v", "line": at_ - w / 2, "from": r.position.y, "to": r.end.y, "w": w, "j": [edge[2], edge[3]]})
-		_split(C, Rect2(r.position.x, r.position.y, at_ - w / 2 - r.position.x, r.size.y), depth + 1, [edge[0], w, edge[2], edge[3]], rng, streets, leaves)
-		_split(C, Rect2(at_ + w / 2, r.position.y, r.end.x - at_ - w / 2, r.size.y), depth + 1, [w, edge[1], edge[2], edge[3]], rng, streets, leaves)
+		streets.append({"axis": "v", "line": at_ - w / 2, "from": r.position.y, "to": r.end.y, "w": w})
+		_split(C, Rect2(r.position.x, r.position.y, at_ - w / 2 - r.position.x, r.size.y), depth + 1, rng, streets, leaves)
+		_split(C, Rect2(at_ + w / 2, r.position.y, r.end.x - at_ - w / 2, r.size.y), depth + 1, rng, streets, leaves)
 	else:
-		streets.append({"axis": "h", "line": at_ - w / 2, "from": r.position.x, "to": r.end.x, "w": w, "j": [edge[0], edge[1]]})
-		_split(C, Rect2(r.position.x, r.position.y, r.size.x, at_ - w / 2 - r.position.y), depth + 1, [edge[0], edge[1], edge[2], w], rng, streets, leaves)
-		_split(C, Rect2(r.position.x, at_ + w / 2, r.size.x, r.end.y - at_ - w / 2), depth + 1, [edge[0], edge[1], w, edge[3]], rng, streets, leaves)
+		streets.append({"axis": "h", "line": at_ - w / 2, "from": r.position.x, "to": r.end.x, "w": w})
+		_split(C, Rect2(r.position.x, r.position.y, r.size.x, at_ - w / 2 - r.position.y), depth + 1, rng, streets, leaves)
+		_split(C, Rect2(r.position.x, at_ + w / 2, r.size.x, r.end.y - at_ - w / 2), depth + 1, rng, streets, leaves)
 
 
-## The pieces of a street that run through the built-up city on dry land, outside the parks.
-static func _clip_street(C: Dictionary, s: Dictionary) -> Array:
+## The streets: each split line runs exactly where it bounds a block, so every end is a block's corner, where the
+## street round that block's side meets it. That street either goes on across the end (a T: `j` is its width, the
+## mouth the view paints) or stops there too (a corner: both run across each other and `j` is minus the width
+## crossed, so the view turns the sidewalk round the outside). It bridges the river (`bridges`, from-to along it)
+## and stops at a quay where it runs into the bay or along the water (`quay`), and stops on the road round a park
+## where it reaches one (`j` 0 at both). No street ends anywhere else.
+static func _streets(C: Dictionary, raw: Array) -> Array:
+	# per split line, [from, to, end at from, end at to, bridges]: where blocks bound it, joined across the streets
+	# between them, less the water and parks it would cross (an end "" is a block's corner)
 	var runs := []
-	var start := -INF
-	var last := 0.0
-	var x: float = s.from
-	while true:
-		var c: Vector2 = Vector2(x, s.line + s.w / 2) if s.axis == "h" else Vector2(s.line + s.w / 2, x)
-		if nearest(C, c)[1] < URBAN + 4.0 and not is_water(C, c) and not in_park(C, c):
-			if start == -INF:
-				start = x
-			last = x
-		elif start != -INF:
-			runs.append([start, last])
-			start = -INF
-		if x >= s.to:
-			break
-		x = minf(x + 2.0, s.to)
-	if start != -INF:
-		runs.append([start, last])
+	for s in raw:
+		var spans := []
+		for b in C.blocks:
+			var r: Rect2 = b.rect
+			var lo: float = r.position.x if s.axis == "h" else r.position.y
+			var hi: float = r.end.x if s.axis == "h" else r.end.y
+			var before: float = r.end.y if s.axis == "h" else r.end.x  # the side of a block before the street
+			var after: float = r.position.y if s.axis == "h" else r.position.x
+			if (absf(before - s.line) < 0.01 or absf(after - s.line - s.w) < 0.01) and lo < s.to and hi > s.from:
+				spans.append([maxf(lo, s.from), minf(hi, s.to)])
+		spans.sort()
+		var joined := []
+		for sp in spans:
+			if not joined.is_empty() and sp[0] - joined[-1][1] <= AVENUE + 1.0:
+				joined[-1][1] = maxf(joined[-1][1], sp[1])
+			else:
+				joined.append(sp)
+		var pieces := []
+		for rn in joined:
+			pieces.append_array(_cut(C, s, rn[0], rn[1]))
+		runs.append(pieces)
 	var out := []
-	for rn in runs:
-		if rn[1] - rn[0] >= 8.0:
-			out.append({"axis": s.axis, "line": s.line, "from": rn[0], "to": rn[1], "w": s.w, "j": [s.j[0] if rn[0] == s.from else 0.0, s.j[1] if rn[1] == s.to else 0.0]})
+	for i in raw.size():
+		var s: Dictionary = raw[i]
+		for rn in runs[i]:
+			var st := {"axis": s.axis, "line": s.line, "from": rn[0], "to": rn[1], "w": s.w, "j": [0.0, 0.0], "quay": [rn[2] == "quay", rn[3] == "quay"], "bridges": rn[4]}
+			for e in 2:
+				if rn[2 + e] != "":
+					continue
+				var dir := 1.0 if e == 1 else -1.0
+				for k in raw.size():
+					var x: Dictionary = raw[k]
+					if x.axis == s.axis or absf((x.line + x.w if e == 0 else x.line) - rn[e]) > 0.01 or x.from > s.line + s.w + 0.01 or x.to < s.line - 0.01:
+						continue
+					var meets: Array = runs[k].filter(func(q): return q[0] <= s.line + s.w + 0.01 and q[1] >= s.line - 0.01)
+					if meets.any(func(q): return q[0] <= s.line + 0.01 and q[1] >= s.line + s.w - 0.01):
+						st.j[e] = x.w
+					elif not meets.is_empty():
+						st.j[e] = -x.w
+						st[["from", "to"][e]] = rn[e] + dir * x.w
+					else:
+						# the street round the corner stopped at the water short of this one: run on to the quay
+						var at_: float = rn[e]
+						var c: float = s.line + s.w / 2
+						while absf(at_ - rn[e]) < x.w + 6.0 and not is_water(C, Vector2(at_ + dir, c) if s.axis == "h" else Vector2(c, at_ + dir)):
+							at_ += dir
+						st[["from", "to"][e]] = at_
+						st.quay[e] = true
+					break
+			out.append(st)
 	return out
+
+
+## A street's run from a to b, less what it can't cross: it bridges water up to BRIDGE across with land beyond, and
+## otherwise stops at a quay half a metre short of it; at a park it stops where its centre reaches the lanes of the
+## road round it, and only grazes that road where it never gets that close. [from, to, end at from, end at to,
+## bridges], an end "quay", "park" or "" (where the run itself ends).
+static func _cut(C: Dictionary, s: Dictionary, a: float, b: float) -> Array:
+	var n := maxi(1, ceili(b - a))
+	var xs := []
+	var wet := []
+	var near := []  # 0 clear of parks, 1 its lanes run into the park road's, 2 its centre is on the park road's lanes
+	for k in n + 1:
+		var x := lerpf(a, b, float(k) / n)
+		var p := Vector2(x, s.line + s.w / 2) if s.axis == "h" else Vector2(s.line + s.w / 2, x)
+		var d := park_dist(C, p)
+		xs.append(x)
+		wet.append(is_water(C, p) or (in_park(C, p) and d > 0.0))  # the palace grounds count as the moat round them
+		near.append(2 if d <= ROAD - SIDEWALK else (1 if d < ROAD + s.w / 2 - 2.0 * SIDEWALK else 0))
+	var gone := []  # [from, to, end before, end after], in order
+	var bridges := []
+	var k := 0
+	while k <= n:
+		if wet[k]:
+			var k0 := k
+			while k <= n and wet[k]:
+				k += 1
+			if k0 > 0 and k <= n and xs[k] - xs[k0 - 1] <= BRIDGE and near[k] == 0 and not in_park(C, Vector2(xs[k], s.line + s.w / 2) if s.axis == "h" else Vector2(s.line + s.w / 2, xs[k])):
+				bridges.append([xs[k0 - 1], xs[k]])
+			else:
+				gone.append([xs[k0 - 1] - 0.5 if k0 > 0 else a, xs[k] + 0.5 if k <= n else b, "quay", "quay"])
+		elif near[k] > 0:
+			var on := []
+			while k <= n and near[k] > 0 and not wet[k]:
+				if near[k] == 2:
+					on.append(k)
+				k += 1
+			if not on.is_empty():
+				gone.append([xs[on[0]], xs[on[-1]], "park", "park"])
+		else:
+			k += 1
+	var out := []
+	var start := a
+	var end0 := ""
+	for g in gone:
+		if g[0] - start > 2.0:
+			out.append([start, g[0], end0, g[2], bridges.filter(func(br): return br[0] >= start and br[1] <= g[0])])
+		start = maxf(start, g[1])
+		end0 = g[3]
+	if b - start > 2.0:
+		out.append([start, b, end0, "", bridges.filter(func(br): return br[0] >= start)])
+	return out
+
+
+## Roads round the parks, a street's width off them, so the streets that reach a park end on one (the palace's edge
+## is its moat, where they stop at quays). Each is cut where it runs onto another park's road, the water or an
+## avenue, ending just on it (and only grazes an avenue whose lanes it touches without reaching it); a loop that
+## meets none stays closed, its first point repeated.
+static func _edge_roads(C: Dictionary) -> Array:
+	var loops := []
+	for pk in C.parks:
+		if pk.name != "Imperial Palace":
+			loops.append(ellipse(pk.center, pk.radii + Vector2.ONE * ROAD / 2, 64))
+	var out := []
+	for lp in loops:
+		var pts := PackedVector2Array()
+		for i in lp.size():
+			var a: Vector2 = lp[i]
+			var b: Vector2 = lp[(i + 1) % lp.size()]
+			var m := maxi(1, ceili(a.distance_to(b) / 2.0))
+			for t in m:
+				pts.append(a.lerp(b, float(t) / m))
+		# 0 clear, 1 its lanes run into an avenue's, 2 on what it runs into
+		var state := Array(pts).map(func(q):
+			if is_water(C, q) or in_park(C, q) or park_dist(C, q) < ROAD / 2 - 1.0 or C.avenues.any(func(av): return _poly_dist(av.pts, q) < av.w / 2):
+				return 2
+			return 1 if C.avenues.any(func(av): return _poly_dist(av.pts, q) < av.w / 2 + ROAD / 2 - 2.0 * SIDEWALK) else 0)
+		var first: int = state.find(2)
+		if first < 0:
+			pts.append(pts[0])
+			out.append({"name": "", "w": ROAD, "pts": pts, "shuto": ""})
+			continue
+		var n := pts.size()
+		var lab := []
+		var ring := []
+		for k in n + 1:  # from a point on what it runs into, round to it again
+			lab.append(state[(first + k) % n])
+			ring.append(pts[(first + k) % n])
+		var k := 0
+		while k <= n:
+			var k0 := k
+			while k <= n and lab[k] == 1:
+				k += 1
+			if k > k0 and lab[k0 - 1] == 0 and lab[k] == 0:
+				for q in range(k0, k):
+					lab[q] = 0
+			k = maxi(k, k0 + 1)
+		var last := 0
+		for k2 in range(1, n + 1):
+			if lab[k2] == 2:
+				if k2 - last > 3:
+					out.append({"name": "", "w": ROAD, "pts": PackedVector2Array(ring.slice(last, k2 + 1)), "shuto": ""})
+				last = k2
+	return out
+
+
+static func _poly_dist(pts: PackedVector2Array, p: Vector2) -> float:
+	var d := INF
+	for k in pts.size() - 1:
+		d = minf(d, Geometry2D.get_closest_point_to_segment(p, pts[k], pts[k + 1]).distance_to(p))
+	return d
+
+
+## An avenue end that meets no road runs on to the next road ahead (up to 60 m), or where it stops in the moat or the
+## sea is cut back to the last road it crosses. Ends under the inner expressway loop, or off the map, are left.
+static func _trim_avenues(C: Dictionary) -> void:
+	var c1 := _flat(C.shuto[0].pts)
+	for i in AVENUES.size():
+		var av: Dictionary = C.avenues[i]
+		var on_road := func(p: Vector2) -> bool:
+			if not C.bounds.has_point(p) or is_water(C, p) or in_park(C, p):
+				return not C.bounds.has_point(p)
+			for k in c1.size():
+				if Geometry2D.get_closest_point_to_segment(p, c1[k], c1[(k + 1) % c1.size()]).distance_to(p) < EXPRESS_W / 2 + 1.0:
+					return true
+			for st in C.streets:
+				var c: float = st.line + st.w / 2
+				var a := Vector2(st.from, c) if st.axis == "h" else Vector2(c, st.from)
+				var b := Vector2(st.to, c) if st.axis == "h" else Vector2(c, st.to)
+				if Geometry2D.get_closest_point_to_segment(p, a, b).distance_to(p) < st.w / 2:
+					return true
+			for k in C.avenues.size():
+				var o: PackedVector2Array = C.avenues[k].pts
+				if k != i:
+					for m in o.size() - 1:
+						if Geometry2D.get_closest_point_to_segment(p, o[m], o[m + 1]).distance_to(p) < C.avenues[k].w / 2:
+							return true
+			return false
+		var pts: PackedVector2Array = av.pts
+		for e in 2:  # each end in turn, at the front
+			if not on_road.call(pts[0]):
+				var ahead := PackedVector2Array()
+				var dir := (pts[0] - pts[1]).normalized()
+				var q := pts[0]
+				while ahead.size() < 30 and not is_water(C, q) and not in_park(C, q):
+					q += dir * 2.0
+					ahead.append(q)
+					if on_road.call(q):
+						break
+				if not ahead.is_empty() and on_road.call(ahead[-1]):
+					ahead.reverse()
+					pts = ahead + pts
+				else:
+					var lo := 0
+					while lo < pts.size() - 2 and not on_road.call(pts[lo]):
+						lo += 1
+					pts = pts.slice(lo)
+			pts.reverse()
+		av.pts = pts
 
 
 ## A landmark on the park it names, else on a free square in the block nearest its district centre.

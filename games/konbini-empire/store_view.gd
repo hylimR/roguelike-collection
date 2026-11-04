@@ -915,17 +915,31 @@ func build_roads() -> void:
 	var SW := Sim.City.SIDEWALK
 	for s in C.streets:
 		var along_z: bool = s.axis == "v"
-		var a0: float = s.from - (SW if s.j[0] > 0.0 else 0.0)
-		var a1: float = s.to + (SW if s.j[1] > 0.0 else 0.0)
+		# the tarmac runs into a T's crossing sidewalk and a park road; at a corner the sidewalk turns round the end,
+		# at a quay it meets the railing
+		var a0: float = s.from + (0.0 if s.quay[0] else (SW if s.j[0] < 0.0 else -SW))
+		var a1: float = s.to - (0.0 if s.quay[1] else (SW if s.j[1] < 0.0 else -SW))
+		var d0: float = s.from - minf(s.j[0], 0.0)  # lane markings stop short of a corner
+		var d1: float = s.to + minf(s.j[1], 0.0)
 		rect_quad(walkway, srect(s, s.from, s.to, 0.0, s.w), -0.12, 0.0, false, 0.5)
 		rect_quad(tar, srect(s, a0, a1, SW, s.w - SW), -0.11)
-		var len_: float = s.to - s.from
+		var len_: float = d1 - d0
 		if s.w > Sim.City.ROAD:
-			rect_quad(solid, srect(s, s.from, s.to, s.w / 2 - 0.12, s.w / 2 + 0.12), -0.1)
+			rect_quad(solid, srect(s, d0, d1, s.w / 2 - 0.12, s.w / 2 + 0.12), -0.1)
 			for off in [(s.w / 2 + SW) / 2, (s.w * 1.5 - SW) / 2]:
-				rect_quad(dash, srect(s, s.from, s.to, off - 0.07, off + 0.07), -0.1, len_ / 2.0, along_z)
+				rect_quad(dash, srect(s, d0, d1, off - 0.07, off + 0.07), -0.1, len_ / 2.0, along_z)
 		else:
-			rect_quad(dash, srect(s, s.from, s.to, s.w / 2 - 0.08, s.w / 2 + 0.08), -0.1, len_ / 2.0, along_z)
+			rect_quad(dash, srect(s, d0, d1, s.w / 2 - 0.08, s.w / 2 + 0.08), -0.1, len_ / 2.0, along_z)
+		# railings: along both sides of a bridge, across a quay
+		var c: float = s.line + s.w / 2
+		var pt := func(x: float, off := 0.0) -> Vector3: return Vector3(x, 0, c + off) if s.axis == "h" else Vector3(c + off, 0, x)
+		for br in s.bridges:
+			for side in [s.w / 2 - 0.2, 0.2 - s.w / 2]:
+				wall(rail, PackedVector3Array([pt.call(br[0] - 1.0), pt.call(br[1] + 1.0)]), side, -0.12, 0.55)
+		for e in 2:
+			if s.quay[e]:
+				var x: float = s.from + 0.1 if e == 0 else s.to - 0.1
+				wall(rail, PackedVector3Array([pt.call(x, -s.w / 2), pt.call(x, s.w / 2)]), 0.0, -0.12, 0.55)
 		# where the street meets the one across its end: clear that street's markings, paint a crossing
 		for e in 2:
 			if s.j[e] <= 0.0:
@@ -939,7 +953,9 @@ func build_roads() -> void:
 		var half: float = av.w / 2
 		ribbon(walkway, pts, half, -half, -0.12, 0.5)
 		ribbon(tar, pts, half - SW, SW - half, -0.11)
-		if av.shuto == "":
+		if av.w <= Sim.City.ROAD:  # a park's road: two lanes, as a side street
+			ribbon(dash, pts, 0.08, -0.08, -0.1, 0.5)
+		elif av.shuto == "":
 			ribbon(solid, pts, 0.12, -0.12, -0.1)
 			var mid_lane: float = (half - SW) / 2
 			ribbon(dash, pts, mid_lane + 0.07, mid_lane - 0.07, -0.1, 0.5)
@@ -3333,6 +3349,8 @@ func draw_city_marks(font: Font) -> void:
 		overlay.draw_string(bf, Vector2(at.x - w / 2, at.y), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, px, Color("fff1c9") if d.type == "hub" else Color("f7f3e8"))
 	if zoom < 0.45:
 		for av in C.avenues:
+			if av.name == "":
+				continue
 			var pts: PackedVector2Array = av.pts
 			var third: Vector2 = pts[int(pts.size() / 3.0)]
 			var at := screen_world(Vector3(third.x, 0, third.y))
