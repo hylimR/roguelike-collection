@@ -2954,9 +2954,9 @@ func draw_street() -> void:
 			pill(screen(Vector3(s.x, 1.9, s.z)), "Break", 10, Color(1.0, 0.98, 0.92), Color("a08c69"))
 	# the crossing lights
 	var lt: Array = sim.lights()
+	var walk: bool = lt[0] and (not lt[1] or floori(Time.get_ticks_msec() / 250.0) % 2 == 0)
 	for pole in light_poles:
-		var at := screen(pole)
-		overlay.draw_circle(at, 4.0, Color("35d06a") if lt[0] and (not lt[1] or floori(Time.get_ticks_msec() / 250.0) % 2 == 0) else Color("e04a3a"))
+		draw_signal(screen(pole + Vector3(0, 0.17, 0)), screen(pole - Vector3(0, 0.17, 0)), walk)
 	if not hover.is_empty():
 		var at := Vector2.ZERO
 		match hover.type:
@@ -2979,6 +2979,31 @@ func draw_street() -> void:
 			overlay.draw_arc(at, 16.0, 0.0, TAU, 24, Color(1, 1, 1, 0.9), 2.0)
 	for f in floaters:
 		text(screen(f.at), f.text, 15, f.color)
+
+
+## A Japanese pedestrian signal's two lamps, red standing figure over green walking one; the lit one glows after dark.
+func draw_signal(top: Vector2, bottom: Vector2, walk: bool) -> void:
+	var r := maxf(3.0, top.distance_to(bottom) * 0.46)
+	for k in 2:
+		var c := top if k == 0 else bottom
+		var on := (k == 1) == walk
+		var hue := Color("35d06a") if k == 1 else Color("ff4a36")
+		if on:
+			overlay.draw_circle(c, r * 1.9, Color(hue, 0.15 + 0.3 * night))
+		overlay.draw_circle(c, r, hue if on else Color("1a1b26"))
+		var fig := hue.lightened(0.75) if on else hue.darkened(0.7)
+		var w := maxf(1.0, r * 0.2)
+		overlay.draw_circle(c + Vector2(0.05, -0.5) * r, r * 0.17, fig)
+		if k == 1:
+			overlay.draw_polyline(PackedVector2Array([c + Vector2(-0.35, 0.65) * r, c + Vector2(-0.05, 0.25) * r, c + Vector2(0.3, 0.65) * r]), fig, w)
+			overlay.draw_line(c + Vector2(0.05, -0.28) * r, c + Vector2(-0.05, 0.25) * r, fig, w * 1.3)
+			overlay.draw_polyline(PackedVector2Array([c + Vector2(-0.35, 0.05) * r, c + Vector2(0.03, -0.18) * r, c + Vector2(0.35, 0.0) * r]), fig, w)
+		else:
+			overlay.draw_line(c + Vector2(0.05, -0.28) * r, c + Vector2(0.05, 0.25) * r, fig, w * 1.6)
+			overlay.draw_line(c + Vector2(-0.07, 0.25) * r, c + Vector2(-0.07, 0.68) * r, fig, w)
+			overlay.draw_line(c + Vector2(0.17, 0.25) * r, c + Vector2(0.17, 0.68) * r, fig, w)
+			overlay.draw_line(c + Vector2(-0.18, -0.22) * r, c + Vector2(-0.18, 0.2) * r, fig, w)
+			overlay.draw_line(c + Vector2(0.28, -0.22) * r, c + Vector2(0.28, 0.2) * r, fig, w)
 
 
 func lot_poly(li: int) -> PackedVector2Array:
