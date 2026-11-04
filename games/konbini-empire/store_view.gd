@@ -889,7 +889,7 @@ func build_static() -> void:
 		var lm: Array = C.districts[L.d].lm
 		if Models.MODELS.has("%s:%d" % lm):
 			continue
-		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_SPAN, Vector3(L.pos.x, 0, L.pos.y), lm_sprites)
+		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_SPAN * L.size / 22.0, Vector3(L.pos.x, 0, L.pos.y), lm_sprites)
 	build_paths()
 
 
@@ -1071,24 +1071,25 @@ func build_buildings() -> void:
 		var key := "%s:%d" % C.districts[L.d].lm
 		if not Models.MODELS.has(key):
 			continue
-		var rec := {"foot": Rect2(L.pos - Vector2(11, 11), Vector2(22, 22)), "h": 0.0, "box": [], "roof": [], "hidden": STANDING, "lm": true}
+		var k: float = L.size / 22.0  # models are traced on a 22 m square; a smaller square gets a smaller landmark
+		var rec := {"foot": Rect2(L.pos - Vector2.ONE * L.size / 2, Vector2.ONE * L.size), "h": 0.0, "box": [], "roof": [], "hidden": STANDING, "lm": true}
 		for q in Models.MODELS[key]:
 			if q[0] == 3:
-				lm_trees.append([Vector3(L.pos.x + q[1], q[5], L.pos.y + q[2]), q[3], q[4]])
+				lm_trees.append([Vector3(L.pos.x + q[1] * k, q[5] * k, L.pos.y + q[2] * k), q[3] * k, q[4]])
 				continue
-			var lo := Vector2(q[1], q[2])
-			var sz := Vector2(q[3] - q[1], q[4] - q[2])
+			var lo := Vector2(q[1], q[2]) * k
+			var sz := Vector2(q[3] - q[1], q[4] - q[2]) * k
 			var at_: Vector2 = L.pos + lo + sz / 2
 			if q[0] == 0:
 				var tint := Color(q[7])
 				tint.a = (q[9] + 0.5) / 8.0
 				rec.box.append(boxes.size())
-				boxes.append([Vector3(sz.x, q[6] - q[5], sz.y), Vector3(at_.x, (q[5] + q[6]) / 2, at_.y), tint, q[8] + 0.245 if q[8] >= 0 else -1.0, 0.0])
-				rec.h = maxf(rec.h, q[6])
+				boxes.append([Vector3(sz.x, (q[6] - q[5]) * k, sz.y), Vector3(at_.x, (q[5] + q[6]) / 2 * k, at_.y), tint, q[8] + 0.245 if q[8] >= 0 else -1.0, 0.0])
+				rec.h = maxf(rec.h, q[6] * k)
 			else:
 				rec.roof.append(roofs.size())
-				roofs.append([at_, sz, q[5], q[6], Color(q[7]), 0.0, q[0] == 1])
-				rec.h = maxf(rec.h, q[5] + q[6])
+				roofs.append([at_, sz, q[5] * k, q[6] * k, Color(q[7]), 0.0, q[0] == 1])
+				rec.h = maxf(rec.h, (q[5] + q[6]) * k)
 		brecs.append(rec)
 	var shader := Shader.new()
 	shader.code = BUILDING_SHADER

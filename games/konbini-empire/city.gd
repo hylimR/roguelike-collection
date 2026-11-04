@@ -324,6 +324,7 @@ static func _build() -> Dictionary:
 	C.bounds = bounds.grow(20.0)
 	_place_landmarks(C)
 	_place_lots(C)
+	_place_landmarks_late(C)
 	return C
 
 
@@ -438,7 +439,44 @@ static func _place_landmarks(C: Dictionary) -> void:
 					reserve(C, sq)
 					break
 		if pos != Vector2.INF:
-			C.landmarks.append({"d": di, "pos": pos})
+			C.landmarks.append({"d": di, "pos": pos, "size": 22.0})
+
+
+## Districts whose landmark found no free 22 m square at a block's centre (the dense centre and the old town, cut up
+## by avenues, rail and the expressway) get one after the lots are placed: anywhere inside one of the district's own
+## blocks, the biggest square from 22 m down to 14 m that fits, nearest the district centre (failing that, any block
+## within 60 m: the centre's own blocks can all be cut by rail and the expressway). Its art is drawn to that size.
+static func _place_landmarks_late(C: Dictionary) -> void:
+	var placed := {}
+	for L in C.landmarks:
+		placed[L.d] = true
+	for fallback in [false, true]:  # every district's own blocks first, so one's fallback doesn't take another's spot
+		for di in C.districts.size():
+			var d: Dictionary = C.districts[di]
+			if d.lm[1] < 0 or placed.has(di):
+				continue
+			var near: Array = C.blocks.filter(func(b): return b.rect.get_center().distance_to(d.center) < 60.0 if fallback else b.d == di)
+			for size in ([18.0, 14.0] if fallback else [22.0, 18.0, 14.0]):
+				var best := Rect2()
+				var best_d := INF
+				for b in near:
+					var r: Rect2 = b.rect
+					var x := r.position.x
+					while x + size <= r.end.x:
+						var z := r.position.y
+						while z + size <= r.end.y:
+							var sq := Rect2(x, z, size, size)
+							var dd := sq.get_center().distance_to(d.center)
+							if dd < best_d and not blocked(C, sq):
+								best = sq
+								best_d = dd
+							z += 2.0
+						x += 2.0
+				if best_d < INF:
+					reserve(C, best)
+					C.landmarks.append({"d": di, "pos": best.get_center(), "size": size})
+					placed[di] = true
+					break
 
 
 ## Shop lots: 22 x 10 on the north side of an east-west street, as near each district centre as they fit. The
