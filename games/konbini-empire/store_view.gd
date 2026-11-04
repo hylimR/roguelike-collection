@@ -507,6 +507,27 @@ func paving() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+## Sidewalk pavers for a 2 m repeat: 50 x 25 cm blocks in running bond along the street, each a shade off, joints
+## darker; mipmapped so whole streets of them stay calm from the city view.
+func pavers() -> StandardMaterial3D:
+	var r := RandomNumberGenerator.new()
+	r.seed = 23
+	var base := Color("cec9c0")
+	var img := Image.create(32, 32, false, Image.FORMAT_RGB8)
+	for row in 8:
+		for k in 4:
+			var shade := r.randf_range(0.96, 1.02) if r.randf() < 0.88 else r.randf_range(0.9, 0.93)
+			for y in 4:
+				for x in 8:
+					var px := posmod(k * 8 + x - 4 * (row % 2), 32)
+					var v := shade * (0.9 if x == 7 or y == 3 else (1.02 if y == 0 else 1.0))
+					img.set_pixel(px, row * 4 + y, Color(base.r * v, base.g * v, base.b * v))
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	return m
+
+
 func tiles(a: Color, b: Color) -> ImageTexture:
 	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
 	img.fill(a)
@@ -763,7 +784,7 @@ func build_static() -> void:
 
 ## Side streets as rectangles (with junction mouths, zebra crossings and dashes) and the curved avenues.
 func build_roads() -> void:
-	var walkway := surface(mat(Color.WHITE, tiles(Color("c9c4bb"), Color("a9a49b"))))
+	var walkway := surface(pavers())
 	var asphalt := mat(Color("5d5f66"))
 	var tar := surface(asphalt)
 	var mouth := surface(asphalt)
@@ -1732,7 +1753,7 @@ func build_set() -> void:
 		roads.append_array(water_runs(SET.position.y, -20.2) + water_runs(-20.2, -7.2, SET.position.x, -16.5) + water_runs(-20.2, -7.2, span.y, SET.end.x))
 	var far_gaps := mouths(-8.2, -3.6, side_roads, Vector2(-16.5, span.y))  # none between your shop and the rival
 	var near_gaps := mouths(3.6, 8.2, side_roads)
-	var walk := surface(mat(Color.WHITE, tiles(Color("c9c4bb"), Color("a9a49b"))))
+	var walk := surface(pavers())
 	var tar := surface(tiled(speckle([Color("5d5f66"), Color("585a61"), Color("63656c"), Color("55575d")]), Vector2.ONE))
 	rect_quad(tar, Rect2(SET.position.x, -3.7, SET.size.x, 7.4), -0.045, 0.0, false, 0.5)
 	var kerb := surface(mat(Color("8f8b84")))
