@@ -69,8 +69,8 @@ const WEATHER_LOOK := {
 }
 # the hour's light on everything outdoors, [hour, tint]: a pink dawn, plain day, golden hour, dusk, night; lit windows,
 # your shop's interior and the street lamps' pools stay bright
-const DAYLIGHT := [[6.0, Color(0.62, 0.58, 0.8)], [6.6, Color(1.0, 0.8, 0.8)], [7.3, Color(1.0, 0.9, 0.84)], [8.0, Color.WHITE], [15.5, Color.WHITE], [17.0, Color(1.0, 0.93, 0.8)],
-	[18.3, Color(0.98, 0.84, 0.7)], [19.1, Color(0.8, 0.62, 0.7)], [19.8, Color(0.5, 0.5, 0.72)], [21.0, Color(0.36, 0.4, 0.62)],
+const DAYLIGHT := [[6.0, Color(0.62, 0.58, 0.8)], [6.6, Color(1.0, 0.8, 0.8)], [7.3, Color(1.0, 0.9, 0.84)], [8.0, Color.WHITE], [15.5, Color.WHITE], [16.8, Color(1.0, 0.92, 0.77)],
+	[17.8, Color(1.0, 0.84, 0.62)], [18.5, Color(0.97, 0.75, 0.62)], [19.1, Color(0.8, 0.62, 0.7)], [19.8, Color(0.5, 0.5, 0.72)], [21.0, Color(0.36, 0.4, 0.62)],
 	[24.0, Color(0.32, 0.36, 0.58)]]
 const GOLDEN := [16.0, 17.8, 19.2]  # golden hour's rise, peak and end: walls facing the low sun glow, the rest go cool
 const DAWN := [6.0, 6.5, 7.8]  # the same for sunrise, from the other side and rosier
@@ -502,7 +502,7 @@ func update_light() -> void:
 		building_mat.set_shader_parameter("golden", golden_at(h))
 		building_mat.set_shader_parameter("dawn", dawn_at(h))
 	if shadow_mat:
-		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night))
+		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	env.background_color = SEA * light
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
