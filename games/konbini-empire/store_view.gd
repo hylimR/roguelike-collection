@@ -224,7 +224,7 @@ var next_walker := 0.0
 var next_car := 0.0
 var mode := "store"  # store | city
 var city_sig := ""
-var lm_sprites: Array = []  # [Sprite3D, half width]: landmarks, faded when they cover the shop
+var lm_sprites: Array = []  # [Sprite3D, half width]: landmarks, cleared when they cover the street
 var lot_sprites: Array = []  # the same for storefronts on lots
 var hover_lot := -1
 var pick := ""  # city mode: "" | listing
@@ -1425,11 +1425,8 @@ func update_fade() -> void:
 		var at_ := Vector2(e[2].x, e[2].z)
 		var base := iso(e[2])
 		var r := Rect2(base + Vector2(-e[1], e[4] - e[3]), Vector2(e[1] * 2, e[3]))
-		s.visible = not taken.call(Rect2(at_ - Vector2(0.5, 0.5), Vector2.ONE))
-		var fade_it: bool = on and r.intersects(scr) and at_.x + at_.y > depth
-		s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED if fade_it else SpriteBase3D.ALPHA_CUT_DISCARD
-		s.set_meta("base", Color(1, 1, 1, 0.25) if fade_it else Color.WHITE)
-		shine(s)
+		# cleared like the trees when in front of the street, rather than left as a see-through ghost over it
+		s.visible = not taken.call(Rect2(at_ - Vector2(0.5, 0.5), Vector2.ONE)) and not (on and r.intersects(scr) and at_.x + at_.y > depth)
 	var away := Transform3D(Basis.from_scale(Vector3.ONE * 0.001), Vector3(0, -50, 0))
 	# city buildings in front of the street are cut down to their ground floor (cut back to the far edge of the
 	# near sidewalk when they reach over it), so the street shows over a block that still reads as city
