@@ -172,7 +172,8 @@ def rows(p):
     """A primitive's rows in landmark_models.gd; a curved or slanted one becomes its faces (undersides dropped)."""
     if any(k in p for k in ("box", "gable", "tree")):
         return [row(p)]
-    face = lambda q, n: [4, p["c"].lstrip("#"), *[round(float(v), 3) for v in n], *[round(float(v), 2) for v in q.ravel()]]
+    hexa = p["c"].lstrip("#") + ("%02x" % round(255 * (1 - p["glow"] / 2)) if "glow" in p else "")  # floodlit at night
+    face = lambda q, n: [4, hexa, *[round(float(v), 3) for v in n], *[round(float(v), 2) for v in q.ravel()]]
     if "cyl" in p and "s" in p and p.get("top", 1.0) == 1.0:  # a windowed drum: each side a turned box with the facade
         cx, cz, rx, rz, y0, y1 = p["cyl"]
         n = int(p.get("n", 12))
@@ -214,7 +215,8 @@ def pack():
 ## a side of a windowed round wall);
 ## [1 or 2, x0, z0, x1, z1, y0, rise, colour] a gable roof with its ridge along x (1) or z (2);
 ## [3, x, z, scale, kind, base height] a tree, kind an art/outdoor.png frame (1 broadleaf, 3 pine, 4 bush);
-## [4, colour, normal x, y, z, then x, y, z per corner] a flat face of a curved or slanted part, wound round its normal.
+## [4, colour, normal x, y, z, then x, y, z per corner] a flat face of a curved or slanted part, wound round its normal
+## (a colour with alpha is floodlit after dark).
 
 const MODELS := {
 %s

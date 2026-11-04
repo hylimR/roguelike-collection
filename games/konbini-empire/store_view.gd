@@ -104,7 +104,7 @@ void fragment() {
 }
 """
 # Buildings: boxes in a MultiMesh. Custom data = size and facade style (-1: plain shaded colour, for roofs); colour =
-# wall tint, alpha = accent index / 8. Walls pick a 3-unit bay and floor tile from the facade atlas.
+# wall tint, alpha = accent index / 8. A landmark's curved faces (no size) use alpha below 1 for floodlighting. Walls pick a 3-unit bay and floor tile from the facade atlas.
 const BUILDING_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_back;
@@ -194,6 +194,8 @@ void fragment() {
 			glow = (m.g * max(step(0.6, r), m.b) * lamp + m.r * ACCENT[pick] * 0.9) * night;
 		}
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
+	} else if (info.x == 0.0 && tint.a < 0.99) {  // a landmark face packed with alpha under 1 is floodlit after dark
+		glow = vec3(1.0, 0.62, 0.3) * (1.0 - tint.a) * 2.0 * night;  // a warm floodlight, its strength in the alpha
 	}
 	float low_sun = max(dot(n, normalize(vec3(-0.5, 0.3, 0.8))), 0.0);
 	vec3 grade = mix(vec3(0.8, 0.84, 1.04), vec3(1.2, 1.02, 0.78), low_sun);
