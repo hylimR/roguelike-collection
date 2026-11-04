@@ -228,6 +228,7 @@ var next_walker := 0.0
 var next_car := 0.0
 var mode := "store"  # store | city
 var city_sig := ""
+var lm_ground := {}  # "water" / "grass" -> [material, uv per metre]: the city's ground, for landmarks' own pools and lawns
 var lm_sprites: Array = []  # [Sprite3D, half width]: landmarks, cleared when they cover the street
 var lot_nodes: Array = []  # [Node3D, footprint centre]: the shops built on other branches' lots, hidden under the set
 var lm_trees: Array = []  # [world position, scale, outdoor frame]: trees planted by landmark models
@@ -877,6 +878,7 @@ func build_static() -> void:
 	var park_tex := tiled(speckle([Color("6f9e4c"), Color("7cab57"), Color("659446"), Color("86b360")]), Vector2.ONE)
 	park_tex.texture_repeat = true
 	var ps := surface(park_tex)
+	lm_ground = {"water": [sea, 0.125], "grass": [park_tex, 0.25]}
 	for pk in C.parks:
 		poly_fill(ps, Sim.City.ellipse(pk.center, pk.radii, 40), -0.13, 0.25)
 	commit([ws, land, ps], city)
@@ -1039,6 +1041,14 @@ func build_elevated() -> void:
 
 ## Every building as a box with a facade shader (one MultiMesh), gable roofs on houses and kit on flat roofs.
 func build_buildings() -> void:
+	var shader := Shader.new()
+	shader.code = BUILDING_SHADER
+	building_mat = ShaderMaterial.new()
+	building_mat.shader = shader
+	var atlas := facade_atlas()
+	building_mat.set_shader_parameter("facades", atlas[0])
+	building_mat.set_shader_parameter("accents", atlas[1])
+	building_mat.set_shader_parameter("styles", float(Sim.City.STYLE_COUNT))
 	var all: Array = Sim.City.buildings()
 	var boxes := []
 	var roofs := []
@@ -1073,32 +1083,61 @@ func build_buildings() -> void:
 			continue
 		var k: float = L.size / 22.0  # models are traced on a 22 m square; a smaller square gets a smaller landmark
 		var rec := {"foot": Rect2(L.pos - Vector2.ONE * L.size / 2, Vector2.ONE * L.size), "h": 0.0, "box": [], "roof": [], "hidden": STANDING, "lm": true}
+		var st: SurfaceTool = null
+		var grounds := {}
 		for q in Models.MODELS[key]:
 			if q[0] == 3:
 				lm_trees.append([Vector3(L.pos.x + q[1] * k, q[5] * k, L.pos.y + q[2] * k), q[3] * k, q[4]])
+				continue
+			if q[0] == 4:
+				if st == null:
+					st = SurfaceTool.new()
+					st.begin(Mesh.PRIMITIVE_TRIANGLES)
+				var pts: Array[Vector3] = []
+				for i in range(5, q.size(), 3):
+					pts.append(Vector3(L.pos.x + q[i] * k, q[i + 1] * k, L.pos.y + q[i + 2] * k))
+					rec.h = maxf(rec.h, q[i + 1] * k)
+				st.set_color(Color(q[1]))
+				st.set_normal(Vector3(q[2], q[3], q[4]).normalized())
+				for i in range(1, pts.size() - 1):  # packed counter-clockwise round the normal; Godot's front faces are clockwise
+					st.add_vertex(pts[0])
+					st.add_vertex(pts[i + 1])
+					st.add_vertex(pts[i])
 				continue
 			var lo := Vector2(q[1], q[2]) * k
 			var sz := Vector2(q[3] - q[1], q[4] - q[2]) * k
 			var at_: Vector2 = L.pos + lo + sz / 2
 			if q[0] == 0:
 				var tint := Color(q[7])
+				# a pool or lawn slab takes the city's own textured water or park ground on top: a pool lies flush on the
+				# ground in place of its slab, a lawn keeps its slab (a raised bank) under a textured top
+				var gk := ""
+				if q[8] < 0 and q[6] - q[5] <= 0.6 and sz.x * sz.y >= 4.0 and tint.s > 0.3 and tint.v > 0.35:
+					gk = "water" if tint.h > 0.5 and tint.h < 0.67 and tint.v > 0.45 and q[5] < 1.0 else ("grass" if tint.h > 0.17 and tint.h < 0.45 else "")
+				if gk != "":
+					if not grounds.has(gk):
+						grounds[gk] = surface(lm_ground[gk][0])
+					var gy: float = maxf(q[5] * k, 0.0) + 0.01 if gk == "water" else q[6] * k + 0.01
+					rect_quad(grounds[gk], Rect2(L.pos + lo, sz), gy, 0.0, false, lm_ground[gk][1])
+					if gk == "water":
+						continue
 				tint.a = (q[9] + 0.5) / 8.0
 				rec.box.append(boxes.size())
-				boxes.append([Vector3(sz.x, (q[6] - q[5]) * k, sz.y), Vector3(at_.x, (q[5] + q[6]) / 2 * k, at_.y), tint, q[8] + 0.245 if q[8] >= 0 else -1.0, 0.0])
+				boxes.append([Vector3(sz.x, (q[6] - q[5]) * k, sz.y), Vector3(at_.x, (q[5] + q[6]) / 2 * k, at_.y), tint, q[8] + 0.245 if q[8] >= 0 else -1.0, q[10] if q.size() > 10 else 0.0])
 				rec.h = maxf(rec.h, q[6] * k)
 			else:
 				rec.roof.append(roofs.size())
 				roofs.append([at_, sz, q[5] * k, q[6] * k, Color(q[7]), 0.0, q[0] == 1])
 				rec.h = maxf(rec.h, (q[5] + q[6]) * k)
+		if st:  # the curved and slanted parts: one mesh in vertex colours, shaded as the plain path of the boxes' shader
+			var mm := multimesh(st.commit(), 1, true, true)
+			mm.set_instance_transform(0, Transform3D.IDENTITY)
+			mm.set_instance_color(0, Color.WHITE)
+			mm.set_instance_custom_data(0, Color(0, 0, 0, -1))
+			rec.shapes = [mm_node(mm, building_mat, city)]
+		if not grounds.is_empty():
+			rec.shapes = rec.get("shapes", []) + [commit(grounds.values(), city)]
 		brecs.append(rec)
-	var shader := Shader.new()
-	shader.code = BUILDING_SHADER
-	building_mat = ShaderMaterial.new()
-	building_mat.shader = shader
-	var atlas := facade_atlas()
-	building_mat.set_shader_parameter("facades", atlas[0])
-	building_mat.set_shader_parameter("accents", atlas[1])
-	building_mat.set_shader_parameter("styles", float(Sim.City.STYLE_COUNT))
 	var bm := BoxMesh.new()
 	box_mm = multimesh(bm, boxes.size(), true, true)
 	box_base.clear()
@@ -1142,6 +1181,10 @@ func build_shadows() -> void:
 	white.cull_mode = BaseMaterial3D.CULL_DISABLED
 	for mm in [box_mm, roof_mm, pillar_mm]:
 		mm_node(mm, white, mask_vp)
+	for rec in brecs:
+		for n in rec.get("shapes", []).duplicate():
+			if n is MultiMeshInstance3D:
+				rec.shapes.append(mm_node(n.multimesh, white, mask_vp))
 	for part in elevated:
 		var mi := MeshInstance3D.new()
 		mi.mesh = part[0].mesh
@@ -1302,6 +1345,12 @@ func facade_atlas() -> Array:
 						r.call(3, 7, 26, 25, fixed("c9b98a"))
 						r.call(4, 8, 24, 23, fixed("39475a"))
 						r.call(4, 23, 24, 8, fixed("e8dcb0"))
+				10:  # brick: two upright windows a bay in white stone frames on every floor, a string course at the floor line
+					r.call(0, 29, 32, 3, fixed("e6e0d2"))
+					for x in [5, 19]:
+						r.call(x, 6, 8, 19, fixed("efe9dc"))
+						r.call(x + 1, 7, 6, 17, glass2)
+						r.call(x + 1, 13, 6, 1, fixed("efe9dc"))
 				_:  # plain
 					r.call(0, 30, 32, 2, wall_px(0.86))
 					r.call(12, 10, 8, 5, wall_px(0.7))
@@ -1490,10 +1539,7 @@ func update_fade() -> void:
 				state = GONE
 			elif f.intersects(front) or (f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr)):
 				state = maxf(f.position.y, edge)
-				if rec.has("lm"):
-					state = GONE
-				var t0: Transform3D = box_base[rec.box[0]]
-				if f.end.y - state < 2.0 or (state > f.position.y and t0.basis.x.z != 0.0):  # too thin, or turned
+				if rec.has("lm") or f.end.y - state < 2.0 or (state > f.position.y and box_base[rec.box[0]].basis.x.z != 0.0):  # too thin, or turned
 					state = GONE
 		if state == rec.hidden:
 			continue
@@ -1517,6 +1563,8 @@ func update_fade() -> void:
 		for k in rec.roof:
 			roof_mm.set_instance_transform(k, roof_base[k] if state == STANDING else away)
 			dirty[roof_mm] = true
+		for n in rec.get("shapes", []):
+			n.visible = state == STANDING
 	for tm in tree_mms:
 		for k in tm[1].size():
 			var p: Vector3 = tm[1][k].origin

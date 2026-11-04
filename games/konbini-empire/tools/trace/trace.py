@@ -9,8 +9,8 @@
 
 Keys are sheet_frame (landmarks_0, tokyo_8). render.py scores a model against its drawing in the city camera's own
 projection; the Codex prompt (prompt.txt) loops on it. Packing turns the green blocks a trace draws for tree crowns
-into the game's tree sprites, standing on what is under them. Tokyo Tower, the Skytree and the Odaiba wheel are
-lattices and a wheel, so they stay drawings.
+into the game's tree sprites, standing on what is under them, and cuts the curved and slanted parts (cylinders, domes,
+vaults, beams, temple roofs, arches) into the same flat faces render.py scored.
 """
 import colorsys
 import glob
@@ -22,11 +22,17 @@ import sys
 
 from PIL import Image
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import render  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME = os.path.normpath(os.path.join(HERE, "..", ".."))
 JOBS = os.path.join(GAME, "build", "trace")
 MODELS = os.path.join(HERE, "models")
 WHAT = {
+    "tokyo_0": "Tokyo Tower: a red and white lattice tower on four splayed legs with two observation decks, over a low white building",
+    "tokyo_1": "Tokyo Skytree: a very tall white lattice tower, round and tapering, with two ring-shaped observation decks and a mast",
+    "tokyo_10": "Odaiba: a big Ferris wheel on the waterfront with a low glass mall beside it",
     "landmarks_0": "a commuter railway station: station building, platform canopy, a train at the platform, tracks",
     "landmarks_2": "a university/school: classroom blocks, a sports ground, trees round the edge",
     "landmarks_3": "a Shinto shrine: hall with a curved tiled roof, torii gate, stone lanterns, trees",
@@ -82,11 +88,22 @@ def hsv(c):
     return colorsys.rgb_to_hsv(r, g, b)
 
 
+def extent(p):
+    if "box" in p:
+        return p["box"]
+    cx, cz, rx, rz, y0, h = p["dome"]
+    return [cx - rx, cz - rz, cx + rx, cz + rz, y0, y0 + h]
+
+
 def treeify(prims, pines):
-    """Green boxes held up off the ground are tree crowns the trace drew as blocks: they become the game's tree
-    sprites (one per ~3.6 m of crown, sized by the crown's height), standing on whatever is under them (a bank, a
-    plinth); the thin trunks under them go, and trees closer than 2.2 m merge."""
-    crowns = [p for p in prims if "box" in p and p["box"][4] >= 0.8 and 0.2 < hsv(p["c"])[0] < 0.45 and hsv(p["c"])[1] > 0.25]
+    """Green boxes held up off the ground and green domes are tree crowns the trace drew as solids: they become the
+    game's tree sprites (one per ~3.6 m of crown, sized by the crown's height), standing on whatever is under them (a
+    bank, a plinth); the thin trunks under them go, and trees closer than 2.2 m merge. A broad thin green slab is a lawn, a thin upright one a sign, a flat one up a wall an awning."""
+    green = lambda p: "c" in p and 0.2 < hsv(p["c"])[0] < 0.45 and hsv(p["c"])[1] > 0.25
+    lawn = lambda b: b[5] - b[4] < 0.5 and (b[2] - b[0]) * (b[3] - b[1]) > 12.0
+    panel = lambda b: min(b[2] - b[0], b[3] - b[1]) < 0.6 and b[5] - b[4] > min(b[2] - b[0], b[3] - b[1])  # a sign or screen
+    awning = lambda b: b[5] - b[4] < 0.5 and b[4] > 2.5
+    crowns = [p for p in prims if green(p) and ("dome" in p or "box" in p and p["box"][4] >= 0.8 and not any(f(p["box"]) for f in (lawn, panel, awning)))]
     rest = [p for p in prims if "box" in p and p not in crowns]
 
     def base(x, z, top):  # the highest broad surface under (x, z) that is not above `top`
@@ -100,7 +117,7 @@ def treeify(prims, pines):
             x, z, sc = p["tree"]
             trees.append([x, z, sc, 1, base(x, z, 4.0)])
     for p in crowns:
-        x0, z0, x1, z1, y0, y1 = p["box"]
+        x0, z0, x1, z1, y0, y1 = extent(p)
         nx, nz = max(1, math.ceil((x1 - x0) / 3.6 - 0.2)), max(1, math.ceil((z1 - z0) / 3.6 - 0.2))
         for i in range(nx):
             for j in range(nz):
@@ -113,14 +130,45 @@ def treeify(prims, pines):
             merged.append(t)
     for k, t in enumerate(merged):
         t[3] = 4 if t[2] < 0.6 else (3 if pines and k % 2 == 0 else 1)
-    under = lambda q: any(c["box"][0] - 0.5 <= (q["box"][0] + q["box"][2]) / 2 <= c["box"][2] + 0.5 and c["box"][1] - 0.5 <= (q["box"][1] + q["box"][3]) / 2 <= c["box"][3] + 0.5 for c in crowns)
-    trunk = lambda q: "box" in q and q["box"][2] - q["box"][0] <= 1.0 and q["box"][3] - q["box"][1] <= 1.0 and q["box"][5] - q["box"][4] > 0.8 and under(q)
+    under = lambda x, z: any(extent(c)[0] - 0.5 <= x <= extent(c)[2] + 0.5 and extent(c)[1] - 0.5 <= z <= extent(c)[3] + 0.5 for c in crowns)
+
+    def trunk(q):  # a thin upright box, or a dark upright beam, under a crown
+        if "box" in q:
+            b = q["box"]
+            return b[2] - b[0] <= 1.0 and b[3] - b[1] <= 1.0 and b[5] - b[4] > 0.8 and under((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)
+        if "beam" in q:
+            b = q["beam"]
+            return abs(b[0] - b[3]) < 0.3 and abs(b[2] - b[5]) < 0.3 and abs(b[1] - b[4]) > 0.8 and hsv(q["c"])[2] < 0.5 and under(b[0], b[2])
+        return False
+
     kept = [p for p in prims if p not in crowns and "tree" not in p and not trunk(p)]
     return kept + [{"tree": t[:3], "kind": t[3], "y": round(t[4], 2)} for t in merged[:40]]
 
 
 def num(v):
     return ("%.2f" % v).rstrip("0").rstrip(".") if isinstance(v, float) else str(v)
+
+
+def rows(p):
+    """A primitive's rows in landmark_models.gd; a curved or slanted one becomes its faces (undersides dropped)."""
+    if any(k in p for k in ("box", "gable", "tree")):
+        return [row(p)]
+    face = lambda q, n: [4, p["c"].lstrip("#"), *[round(float(v), 3) for v in n], *[round(float(v), 2) for v in q.ravel()]]
+    if "cyl" in p and "s" in p and p.get("top", 1.0) == 1.0:  # a windowed drum: each side a turned box with the facade
+        cx, cz, rx, rz, y0, y1 = p["cyl"]
+        n = int(p.get("n", 12))
+        ring = render.ring(cx, cz, rx, rz, y0, n)
+        out = []
+        for i in range(n):
+            (ax, _, az), (bx, _, bz) = ring[i], ring[(i + 1) % n]
+            w, tx, tz = math.hypot(bx - ax, bz - az), (bx - ax), (bz - az)
+            nx, nz = tz / w, -tx / w  # outward, as the ring runs counter-clockwise seen from above
+            if nx * ((ax + bx) / 2 - cx) + nz * ((az + bz) / 2 - cz) < 0:
+                nx, nz = -nx, -nz
+            mx, mz = (ax + bx) / 2 - nx * 0.15, (az + bz) / 2 - nz * 0.15
+            out.append([0, mx - w / 2, mz - 0.15, mx + w / 2, mz + 0.15, y0, y1, p["c"].lstrip("#"), p["s"], p.get("a", 0), round(math.atan2(-tz, tx), 4)])
+        return out + [face(q, nn) for q, nn, c in render.faces(p) if nn[1] > 0.9]
+    return [face(q, n) for q, n, c in render.faces(p) if n[1] > -0.9]
 
 
 def row(p):
@@ -137,15 +185,17 @@ def pack():
     for key in keys:
         m = json.load(open(os.path.join(MODELS, key + ".json"), encoding="utf-8"))
         sheet, frame = key.rsplit("_", 1)
-        rows = [row(p) for p in treeify(m["prims"], key in PINES)]
-        body = ",\n\t\t".join("[" + ", ".join('"%s"' % v if isinstance(v, str) else num(v) for v in r) + "]" for r in rows)
+        rs = [r for p in treeify(m["prims"], key in PINES) for r in rows(p)]
+        body = ",\n\t\t".join("[" + ", ".join('"%s"' % v if isinstance(v, str) else num(v) for v in r) + "]" for r in rs)
         lines.append('\t"%s:%s": [  # %s\n\t\t%s,\n\t],' % (sheet, frame, m.get("name", key), body))
     src = '''## Landmarks rebuilt as boxes, traced from their drawings in art/landmarks.png and art/tokyo.png by
 ## tools/trace/trace.py (the models are in tools/trace/models/); regenerate rather than edit. Keyed "sheet:frame";
 ## metres from the centre of the landmark's 22 m square, x east, z south, y up. Rows:
-## [0, x0, z0, x1, z1, y0, y1, colour, facade style or -1, accent] a box;
+## [0, x0, z0, x1, z1, y0, y1, colour, facade style or -1, accent, turn] a box (turned about y by `turn` radians:
+## a side of a windowed round wall);
 ## [1 or 2, x0, z0, x1, z1, y0, rise, colour] a gable roof with its ridge along x (1) or z (2);
-## [3, x, z, scale, kind, base height] a tree, kind an art/outdoor.png frame (1 broadleaf, 3 pine, 4 bush).
+## [3, x, z, scale, kind, base height] a tree, kind an art/outdoor.png frame (1 broadleaf, 3 pine, 4 bush);
+## [4, colour, normal x, y, z, then x, y, z per corner] a flat face of a curved or slanted part, wound round its normal.
 
 const MODELS := {
 %s

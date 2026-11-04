@@ -238,8 +238,8 @@ static func reserve(C: Dictionary, r: Rect2) -> void:
 		C.reserved[k].append(r)
 
 
-## True when a footprint would sit on a road corridor, water, a park, or a reserved lot or landmark.
-static func blocked(C: Dictionary, r: Rect2) -> bool:
+## True when a footprint would sit on a road corridor, water (unless `wet`), a park, or a reserved lot or landmark.
+static func blocked(C: Dictionary, r: Rect2, wet := false) -> bool:
 	for k in _bucket_keys(r):
 		for s in C.corridors.get(k, []):
 			if seg_rect_dist(s[0], s[1], r) < s[2]:
@@ -250,7 +250,7 @@ static func blocked(C: Dictionary, r: Rect2) -> bool:
 	for fx in [0.0, 0.5, 1.0]:
 		for fz in [0.0, 0.5, 1.0]:
 			var p := r.position + r.size * Vector2(fx, fz)
-			if is_water(C, p) or in_park(C, p):
+			if (not wet and is_water(C, p)) or in_park(C, p):
 				return true
 	return false
 
@@ -445,18 +445,20 @@ static func _place_landmarks(C: Dictionary) -> void:
 ## Districts whose landmark found no free 22 m square at a block's centre (the dense centre and the old town, cut up
 ## by avenues, rail and the expressway) get one after the lots are placed: anywhere inside one of the district's own
 ## blocks, the biggest square from 22 m down to 14 m that fits, nearest the district centre (failing that, any block
-## within 60 m: the centre's own blocks can all be cut by rail and the expressway). Its art is drawn to that size.
+## within 60 m: the centre's own blocks can all be cut by rail and the expressway; failing that, a square of its own
+## blocks that reaches out over the water from the shore, as Odaiba's waterfront does). Its art is drawn to that size.
 static func _place_landmarks_late(C: Dictionary) -> void:
 	var placed := {}
 	for L in C.landmarks:
 		placed[L.d] = true
-	for fallback in [false, true]:  # every district's own blocks first, so one's fallback doesn't take another's spot
+	for pass_ in ["own", "near", "shore"]:  # every district's own blocks first, so one's fallback doesn't take another's spot
+		var fallback: bool = pass_ == "near"
 		for di in C.districts.size():
 			var d: Dictionary = C.districts[di]
 			if d.lm[1] < 0 or placed.has(di):
 				continue
 			var near: Array = C.blocks.filter(func(b): return b.rect.get_center().distance_to(d.center) < 60.0 if fallback else b.d == di)
-			for size in ([18.0, 14.0] if fallback else [22.0, 18.0, 14.0]):
+			for size in ([18.0, 14.0] if pass_ != "own" else [22.0, 18.0, 14.0]):
 				var best := Rect2()
 				var best_d := INF
 				for b in near:
@@ -467,7 +469,7 @@ static func _place_landmarks_late(C: Dictionary) -> void:
 						while z + size <= r.end.y:
 							var sq := Rect2(x, z, size, size)
 							var dd := sq.get_center().distance_to(d.center)
-							if dd < best_d and not blocked(C, sq):
+							if dd < best_d and (not blocked(C, sq) if pass_ != "shore" else not is_water(C, sq.get_center()) and not blocked(C, sq, true)):
 								best = sq
 								best_d = dd
 							z += 2.0
@@ -523,8 +525,8 @@ static func _place_lots(C: Dictionary) -> void:
 
 # ---------- buildings (view only) ----------
 
-enum { GLASS, CONCRETE, APARTMENT, SHOPS, NEON, WOOD, HOUSE, WAREHOUSE, STONE, PLAIN }
-const STYLE_COUNT := 10
+enum { GLASS, CONCRETE, APARTMENT, SHOPS, NEON, WOOD, HOUSE, WAREHOUSE, STONE, PLAIN, BRICK }
+const STYLE_COUNT := 11
 const TINTS := [
 	["c9cfd6", "e6e8ea", "9aa3ad", "b7c2cc"],
 	["d9cfbd", "c8c2b5", "e3dccd", "b9b2a6", "d6c6a8"],
