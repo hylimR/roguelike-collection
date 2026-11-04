@@ -70,6 +70,9 @@ var pick_btn: Button
 var info: Label
 var head: Label
 var sub: Label
+var rival_chip: PanelContainer
+var rival_name: Label
+var rival_tier: Label
 var rival_lbl: Label
 var rival_bar: ProgressBar
 var shelf_box: GridContainer
@@ -441,11 +444,21 @@ func build() -> void:
 	sub = para("", MUTED, CARD_W - 20)
 	sub.add_theme_font_size_override("font_size", 11)
 	sv.add_child(sub)
-	rival_lbl = label("", INK)
-	rival_lbl.clip_text = true
-	sv.add_child(rival_lbl)
-	rival_bar = progress(RED, 6)
-	sv.add_child(rival_bar)
+	rival_name = label("", Color.WHITE, 12)
+	rival_tier = label("", Color(1, 1, 1, 0.8), 11)
+	rival_chip = chip([rival_name, rival_tier], RED)
+	rival_chip.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	sv.add_child(rival_chip)
+	var rrow := HBoxContainer.new()
+	rrow.add_theme_constant_override("separation", 6)
+	rival_bar = progress(RED, 8)
+	rival_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rival_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rrow.add_child(rival_bar)
+	rival_lbl = label("", MUTED, 11)
+	rival_lbl.size_flags_horizontal = Control.SIZE_SHRINK_END
+	rrow.add_child(rival_lbl)
+	sv.add_child(rrow)
 	shelf_box = GridContainer.new()
 	shelf_box.columns = 4
 	shelf_box.add_theme_constant_override("h_separation", 4)
@@ -757,13 +770,18 @@ func refresh_ui() -> void:
 	var ev: String = "" if b.event == null else "  ·  " + Sim.EVENTS[b.event.id].name
 	sub.text = "%s, %s%s\nRent %s + wages %s\n%d served, %d lost%s" % [d.name, Sim.QUIRKS[b.quirk].name.to_lower(), ev, yen(sim.rent(b)), yen(sim.wages(b)), b.day_stats.customers, b.day_stats.lost, "" if b.regulars == 0 else "  ·  %d regulars due" % b.regulars]
 	var rv: Dictionary = b.rival
+	var chain := Color(Sim.RIVALS[rv.id].color)
+	rival_name.text = Sim.RIVALS[rv.id].name
+	(rival_chip.get_theme_stylebox("panel") as StyleBoxFlat).bg_color = Color("a99f8c") if rv.defeated else chain.darkened(0.1)
+	rival_bar.visible = not rv.defeated
 	if rv.defeated:
-		rival_lbl.text = "%s closed  ·  new rival in %d day%s" % [Sim.RIVALS[rv.id].name, 2 - rv.closed_days, "" if 2 - rv.closed_days == 1 else "s"]
-		rival_bar.value = 0.0
+		rival_tier.text = "closed"
+		rival_lbl.text = "new rival %s" % ("tomorrow" if 2 - rv.closed_days == 1 else "in %d days" % (2 - rv.closed_days))
 	else:
-		rival_lbl.text = "%s  T%d  %s / %s" % [Sim.RIVALS[rv.id].name, rv.tier, Sim.money(ceili(rv.hp)), Sim.money(int(rv.max_hp))]
+		rival_tier.text = "Tier %d" % rv.tier
+		rival_lbl.text = "%s / %s" % [Sim.money(ceili(rv.hp)), Sim.money(int(rv.max_hp))]
 		rival_bar.value = rv.hp / rv.max_hp
-		(rival_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = Color(Sim.RIVALS[rv.id].color)
+		(rival_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = chain
 	refresh_shelves(b)
 	store_card.visible = view.mode == "store"  # the map gets the whole screen
 	store_card.size = Vector2(CARD_W, 0)  # shrinks back to its content when a store has fewer lines
