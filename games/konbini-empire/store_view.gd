@@ -2995,9 +2995,9 @@ func draw_city_marks(font: Font) -> void:
 	var pins := []
 	for b in sim.branches:
 		var p2: Vector2 = Sim.lot_pos(sim.lots[b.lot])
-		var at := screen_world(Vector3(p2.x + 2.0, 4.0, p2.y + 3.0))
-		pins.append([at, b])
-		taken.append(Rect2(at + Vector2(-40, -10), Vector2(80, 18)))
+		var ground := screen_world(Vector3(p2.x + 2.0, 0.0, p2.y + 3.0))
+		pins.append([ground, b])
+		taken.append(Rect2(ground + Vector2(-40, -42), Vector2(80, 46)))
 	var order := []
 	for rank in 3:
 		order += sim.districts.filter(func(d): return (0 if d.type == "hub" else (1 if d.lm[1] >= 0 else 2)) == rank)
@@ -3048,14 +3048,22 @@ func draw_city_marks(font: Font) -> void:
 			var at := screen_world(Vector3(p2.x, 3.0, p2.y))
 			overlay.draw_circle(at, 10.0, Color("3fae49"))
 			overlay.draw_string(font, at + Vector2(-10, 5), str(offered[li] + 1), HORIZONTAL_ALIGNMENT_CENTER, 20, 13, Color.WHITE)
+	# each branch as a map pin: its name raised on a stem over a dot on the lot, the rival's dot beside it on the ground
 	for e in pins:
-		var at: Vector2 = e[0]
+		var ground: Vector2 = e[0]
 		var b: Dictionary = e[1]
-		if not Rect2(Vector2.ZERO, size).grow(20).has_point(at):
+		if not Rect2(Vector2.ZERO, size).grow(40).has_point(ground):
 			continue
-		pill(at + Vector2(0, 4), b.name, 11, Color("e98a1d") if is_same(b, branch) else Color("c46a14"))
+		var c := Color("e98a1d") if is_same(b, branch) else Color("c46a14")
+		var at := ground + Vector2(0, -26)
 		if not b.rival.defeated:
-			var o := frame_origin(b.lot)
-			var rat := screen_world(o + Vector3(rival_span(b.rival).x + 4.0, 4.0, -7.2))
+			var rat := screen_world(frame_origin(b.lot) + Vector3(rival_span(b.rival).x + 4.0, 0.0, -7.2))
+			overlay.draw_circle(rat + Vector2(0, 1.5), 5.5, Color(0, 0, 0, 0.3))
 			overlay.draw_circle(rat, 5.0, Color.WHITE)
-			overlay.draw_circle(rat, 3.8, Color(Sim.RIVALS[b.rival.id].color))
+			overlay.draw_circle(rat, 3.6, Color(Sim.RIVALS[b.rival.id].color))
+		overlay.draw_line(ground + Vector2(1, 0), at + Vector2(1, 0), Color(0, 0, 0, 0.3), 3.0)
+		overlay.draw_line(ground, at, Color.WHITE, 2.0)
+		overlay.draw_circle(ground + Vector2(0, 1.5), 5.5, Color(0, 0, 0, 0.3))
+		overlay.draw_circle(ground, 5.0, Color.WHITE)
+		overlay.draw_circle(ground, 3.6, c)
+		pill(at, b.name, 11, c)
