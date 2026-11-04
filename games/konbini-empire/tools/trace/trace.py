@@ -3,7 +3,8 @@
     python tools/trace/trace.py jobs [key ...]   cut each drawing into build/trace/<key>/ with render.py and a prompt
     sh tools/trace/run.sh key [key ...]          let Codex fit build/trace/<key>/model.json, 5 at a time
     python tools/trace/trace.py fix notes.json   a job per key in notes.json ({key: review notes}) that starts from the
-                                                 kept model and fixes only what the notes say (then run.sh again)
+                                                 kept model and fixes only what the notes say (then run.sh again; copy
+                                                 tools/trace/models/ aside first, `keep` overwrites the reviewed model)
     python tools/trace/trace.py keep [key ...]   copy the fitted models into tools/trace/models/
     python tools/trace/trace.py pack             write landmark_models.gd from tools/trace/models/
 
@@ -18,6 +19,7 @@ import json
 import math
 import os
 import shutil
+import subprocess
 import sys
 
 from PIL import Image
@@ -48,6 +50,20 @@ WHAT = {
     "tokyo_9": "Meiji Shrine at Yoyogi: a great wooden torii on a gravel path through a forest",
     "tokyo_11": "Roppongi Hills: a tall rounded office tower on a podium with plazas",
 }
+# drawings the square can't hold as drawn, with what the trace should do instead (appended to their prompt)
+NOTES = {
+    "tokyo_3": "\nTHIS DRAWING\nTokyo Station is drawn longer than the square: in the picture it runs about 30 m along x. Keep x "
+               "and z within [-11, 11] anyway and build the whole station compressed along x into the square's 22 m, at the "
+               "drawing's low proportions: from west to east a domed end wing, the long body, the central entrance block, the "
+               "long body again, the other domed end wing. The body is 2 storeys of red brick (6 m to the eaves, \"s\" 10 with "
+               "#b4513c) with white stone bands as thin boxes, under a slate-blue (#4a5880) hipped \"roof\" about 2 m high; the "
+               "centre block 7 m to its eaves under its own pointed hipped roof; each end wing a square block 7 m to its eaves "
+               "carrying an octagonal brick drum (cyl, n 8) to about 8.5 m and a slate-blue \"dome\" (n 8) to about 11 m with "
+               "a small finial (a thin cyl with top 0). The building is about 6 m deep along z (z about -2 to 4); in front (+z) "
+               "a pale paved forecourt slab with a few lamps and trees, behind it a thin ground slab.\nBecause the drawing is "
+               "longer than the square, render.py's iou cannot reach 0.85 here: stop when iou stops improving (expect about "
+               "0.5) or after 15 runs, judging by compare.png that the parts stand in the drawing's order along the facade.\n",
+}
 HEIGHT = {"landmarks": 256, "tokyo": 384}
 PINES = {"tokyo_8"}
 
@@ -61,7 +77,7 @@ def jobs(keys):
         im = Image.open(os.path.join(GAME, "art", sheet + ".png")).convert("RGBA")
         im.crop((int(frame) * 256, 0, int(frame) * 256 + 256, HEIGHT[sheet])).save(os.path.join(d, "cell.png"))
         shutil.copy(os.path.join(HERE, "render.py"), d)
-        open(os.path.join(d, "prompt.txt"), "w", encoding="utf-8").write(prompt.replace("{WHAT}", WHAT[key]))
+        open(os.path.join(d, "prompt.txt"), "w", encoding="utf-8").write(prompt.replace("{WHAT}", WHAT[key]) + NOTES.get(key, ""))
         print(key, "->", d)
 
 
@@ -71,10 +87,13 @@ def fix(path):
     for key, text in notes.items():
         d = os.path.join(JOBS, key)
         shutil.copy(os.path.join(MODELS, key + ".json"), os.path.join(d, "model.json"))
+        # hold the fix to the kept model's own fit: some are kept well under 0.85 on purpose (a compressed or reworked one)
+        out = subprocess.run([sys.executable, "render.py", "model.json", "cell.png"], cwd=d, capture_output=True, text=True).stdout
+        floor = max(0.4, round(json.loads(out.splitlines()[0])["iou"] - 0.05, 2))
         with open(os.path.join(d, "prompt.txt"), "a", encoding="utf-8") as f:
             f.write("\nTHIS RUN\nmodel.json already holds a finished trace. A review of it in the game found the defects below. "
-                    "Fix exactly these and keep everything else as it is; check with render.py that iou stays >= 0.85 "
-                    "(at most 8 runs), then reply with one line of scores.\n" + text + "\n")
+                    "Fix exactly these and keep everything else as it is; check with render.py that iou stays >= %.2f "
+                    "(at most 8 runs), then reply with one line of scores.\n%s\n" % (floor, text))
 
 
 def keep(keys):
