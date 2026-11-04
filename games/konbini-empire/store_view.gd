@@ -1,10 +1,10 @@
 extends Control
 ## The city stage: Tokyo (city.gd) as a city builder sees it, through an orthographic isometric camera. Streets,
 ## avenues, the elevated expressway and the Yamanote are generated meshes; buildings are boxes in one MultiMesh
-## with a pixel facade shader, and each branch's shop and its rival are built from boxes; trees, landmarks, cars and
-## people are Codex sprites. In store mode the
-## focused branch's street set is carved into the city on its lot: your shop as a cutaway, the rival next door,
-## the street with its crossing, and the sim's pedestrians, threats and staff live. Clicks on threats, tills and
+## with a pixel facade shader, as are most landmarks (traced from their drawings); each branch's shop and its rival
+## are boxes too; trees, the other landmarks, cars and people are Codex sprites. In store mode the focused branch's
+## street set is carved into the city on its lot: your shop as a cutaway, the rival next door, the street with its
+## crossing, and the sim's pedestrians, threats and staff live. Clicks on threats, tills and
 ## shelves go out as actions; in city mode you pick lots. Labels draw on a 2D overlay. Street-frame nodes live
 ## under `site` (sim.gd's street frame, 1:1), the shop interior under `room` (the shop's local frame).
 
@@ -36,6 +36,7 @@ const PROPS := {"till": [0, 0.0075, Vector2(0.34, 0.44)], "coffee": [1, 0.0075, 
 	"cat": [6, 0.009, Vector2.ZERO], "karaage": [7, 0.0075, Vector2(0.47, 0.52)], "oden": [8, 0.0075, Vector2(0.4, 0.55)]}
 const COUNTER_H := 0.75  # the counter top, at the staff's elbows
 const LANDMARK := 256
+const Models := preload("res://landmark_models.gd")  # landmarks traced from their drawings into boxes
 const LANDMARK_H := {"landmarks": 256, "tokyo": 384}  # the Tokyo sheet has tall cells for the towers
 const TRAIN := Vector2i(320, 192)
 const TRAIN_PX := 0.05
@@ -229,6 +230,7 @@ var mode := "store"  # store | city
 var city_sig := ""
 var lm_sprites: Array = []  # [Sprite3D, half width]: landmarks, cleared when they cover the street
 var lot_nodes: Array = []  # [Node3D, footprint centre]: the shops built on other branches' lots, hidden under the set
+var lm_trees: Array = []  # [world position, scale, outdoor frame]: trees planted by landmark models
 var lot_feet: Array = []  # their world footprints (your shop's and the rival's), where the city gives way
 var hover_lot := -1
 var pick := ""  # city mode: "" | listing
@@ -885,6 +887,8 @@ func build_static() -> void:
 	build_shadows()
 	for L in C.landmarks:
 		var lm: Array = C.districts[L.d].lm
+		if Models.MODELS.has("%s:%d" % lm):
+			continue
 		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_SPAN, Vector3(L.pos.x, 0, L.pos.y), lm_sprites)
 	build_paths()
 
@@ -1044,13 +1048,13 @@ func build_buildings() -> void:
 		var c: Vector2 = bd.center
 		var sz: Vector2 = bd.size
 		var h: float = bd.floors * Sim.City.FLOOR
-		var rec := {"foot": r, "h": h, "box": [boxes.size()], "roof": -1, "hidden": STANDING}
+		var rec := {"foot": r, "h": h, "box": [boxes.size()], "roof": [], "hidden": STANDING}
 		var tint: Color = bd.tint
 		tint.a = (bd.accent + 0.5) / 8.0
 		boxes.append([Vector3(sz.x, h, sz.y), Vector3(c.x, h / 2, c.y), tint, bd.style + bd.kit * 0.49, bd.angle])
 		if bd.roof != "":
 			var rh := minf(sz.x, sz.y) * 0.32
-			rec.roof = roofs.size()
+			rec.roof.append(roofs.size())
 			roofs.append([c, sz, h, rh, Color(bd.roof), bd.angle])
 			rec.h += rh
 		elif bd.floors >= 3 and bd.angle == 0.0 and r.size.x > 6.0 and r.size.y > 6.0:
@@ -1059,6 +1063,32 @@ func build_buildings() -> void:
 			var at_ := Vector3(r.position.x + 1.0 + ks.x / 2 + (r.size.x - ks.x - 2.0) * k, h + 0.6, r.position.y + 1.0 + ks.z / 2 + (r.size.y - ks.z - 2.0) * (1.0 - k))
 			rec.box.append(boxes.size())
 			boxes.append([ks, at_, Color("c9c7c0"), Sim.City.PLAIN, 0.0])
+		brecs.append(rec)
+	# landmarks with a traced model join the city's boxes and roofs on their square, one record each, so they cast
+	# shadows, light up and clear for the street set like any building, but go whole
+	lm_trees.clear()
+	for L in C.landmarks:
+		var key := "%s:%d" % C.districts[L.d].lm
+		if not Models.MODELS.has(key):
+			continue
+		var rec := {"foot": Rect2(L.pos - Vector2(11, 11), Vector2(22, 22)), "h": 0.0, "box": [], "roof": [], "hidden": STANDING, "lm": true}
+		for q in Models.MODELS[key]:
+			if q[0] == 3:
+				lm_trees.append([Vector3(L.pos.x + q[1], q[5], L.pos.y + q[2]), q[3], q[4]])
+				continue
+			var lo := Vector2(q[1], q[2])
+			var sz := Vector2(q[3] - q[1], q[4] - q[2])
+			var at_: Vector2 = L.pos + lo + sz / 2
+			if q[0] == 0:
+				var tint := Color(q[7])
+				tint.a = (q[9] + 0.5) / 8.0
+				rec.box.append(boxes.size())
+				boxes.append([Vector3(sz.x, q[6] - q[5], sz.y), Vector3(at_.x, (q[5] + q[6]) / 2, at_.y), tint, q[8] + 0.245 if q[8] >= 0 else -1.0, 0.0])
+				rec.h = maxf(rec.h, q[6])
+			else:
+				rec.roof.append(roofs.size())
+				roofs.append([at_, sz, q[5], q[6], Color(q[7]), 0.0, q[0] == 1])
+				rec.h = maxf(rec.h, q[5] + q[6])
 		brecs.append(rec)
 	var shader := Shader.new()
 	shader.code = BUILDING_SHADER
@@ -1085,7 +1115,7 @@ func build_buildings() -> void:
 		var e: Array = roofs[k]
 		var sz: Vector2 = e[1]
 		var basis := Basis.from_scale(Vector3(sz.x, e[3], sz.y))
-		if sz.x > sz.y:  # ridge along the longer side
+		if e[6] if e.size() > 6 else sz.x > sz.y:  # ridge along the longer side, or as a landmark model says
 			basis = Basis(Vector3.UP, PI / 2) * Basis.from_scale(Vector3(sz.y, e[3], sz.x))
 		var tf := Transform3D(Basis(Vector3.UP, e[5]) * basis, Vector3(e[0].x, e[2] + e[3] / 2, e[0].y))
 		roof_mm.set_instance_transform(k, tf)
@@ -1321,6 +1351,10 @@ func build_trees() -> void:
 					add.call(id, p, r.randf_range(0.8, 1.05))
 				x += 5.5
 			y += 5.0
+	for t in lm_trees:  # the trees a landmark model plants, on the bank or plinth under them
+		if not spots.has(t[2]):
+			spots[t[2]] = []
+		spots[t[2]].append([t[0], t[1]])
 	for av in C.avenues:
 		if av.shuto != "":
 			continue
@@ -1455,6 +1489,8 @@ func update_fade() -> void:
 				state = GONE
 			elif f.intersects(front) or (f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr)):
 				state = maxf(f.position.y, edge)
+				if rec.has("lm"):
+					state = GONE
 				var t0: Transform3D = box_base[rec.box[0]]
 				if f.end.y - state < 2.0 or (state > f.position.y and t0.basis.x.z != 0.0):  # too thin, or turned
 					state = GONE
@@ -1477,8 +1513,8 @@ func update_fade() -> void:
 				var z1 := t.origin.z + sz.z / 2
 				box_mm.set_instance_transform(k, Transform3D(t.basis.orthonormalized() * Basis.from_scale(Vector3(sz.x, LOW, z1 - z0)), Vector3(t.origin.x, LOW / 2, (z0 + z1) / 2)))
 				box_mm.set_instance_custom_data(k, Color(cd.r, LOW, z1 - z0, cd.a))
-		if rec.roof >= 0:
-			roof_mm.set_instance_transform(rec.roof, roof_base[rec.roof] if state == STANDING else away)
+		for k in rec.roof:
+			roof_mm.set_instance_transform(k, roof_base[k] if state == STANDING else away)
 			dirty[roof_mm] = true
 	for tm in tree_mms:
 		for k in tm[1].size():

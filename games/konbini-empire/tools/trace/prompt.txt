@@ -1,0 +1,31 @@
+You are rebuilding a pixel-art landmark from a city-builder game as a list of 3D boxes, so the game can draw it in code in the same style as its other buildings. Work only in the current folder. The attached image is cell.png (also in this folder): {WHAT}, drawn in the game's isometric view on a transparent background.
+
+Your deliverable is model.json in this folder. Do not edit render.py or cell.png, and do not create or touch files outside this folder.
+
+THE FRAME
+- Units are metres. The origin is the centre of the landmark's 22 m x 22 m square of ground: x runs east, z runs south, y runs up. Everything stays inside the square: x and z within [-11, 11]. Heights are >= 0. Ground level is y = 0.
+- The camera looks down from the south-east (yaw 45 deg, pitch 30 deg, orthographic). In the picture, the +z faces of boxes are the walls facing down-left, the +x faces are the walls facing down-right, and tops face up. A box's north-west corner (min x, min z) is at the back, top of the picture.
+- render.py projects a model exactly as the game does and lines it up with the drawing automatically. You never deal with pixels.
+
+THE SCHEMA (model.json)
+{"name": "short name", "prims": [ ... ]}, where each prim is one of:
+- {"box": [x0, z0, x1, z1, y0, y1], "c": "#rrggbb"} : an axis-aligned box from (x0, y0, z0) to (x1, y1, z1), x0 < x1, z0 < z1, y0 < y1.
+  Optional "s": a facade style int, giving the walls windows by floor (3 m per floor) that light up at night: 0 glass curtain wall, 1 concrete office with ribbon windows, 2 apartments with balconies, 3 shops on the ground floor and flats above, 4 neon-sign building, 5 wooden machiya, 6 plaster house, 7 warehouse, 8 stone and bronze, 9 plain wall. Omit "s" for flat-coloured things: roofs, slabs, ground, canopies, signs, pillars, parapets, trains, anything under 3 m tall. Never give "s" to a box under 1 m tall. With "s", "c" tints the wall and optional "a" (0-7: red, orange, yellow, green, blue, purple, pink, teal) picks the accent for awnings and signs.
+- {"gable": [x0, z0, x1, z1, y0, h], "ridge": "x" or "z", "c": "#rrggbb"} : a pitched roof whose eaves sit on the rectangle at height y0 and whose ridge, h above, runs along x or z through the middle.
+- {"tree": [x, z, scale]} : one of the game's tree sprites standing at (x, z); scale 0.7-1.1 (scale 1 is about 3.8 m tall and wide).
+Keep it to at most 90 boxes and gables plus at most 30 trees. Every primitive is one real part of the drawing, standing where that part stands: never let one box stand in for several parts or fill space the drawing shows as something else (a building box running on under a canopy where the drawing shows a platform and a train is wrong even if the outline matches). Model the structure, not the texture: windows come from "s", and small details (signs, awnings, lanterns, rails) are thin boxes at least 0.2 m thick, only where they shape the silhouette.
+
+COLOURS
+The game shades every face itself: tops x1.0, walls facing down-left (+z) x0.9, walls facing down-right (+x) x0.75. So pick "c" as the colour of the material in full light: the main fill of a top, or of a down-left wall divided by 0.9, ignoring the drawing's dark outlines and shading lines. Pick colours by eye from the drawing's palette (a white train stays white, a red gate stays red); never solve for colours numerically to lower the score, fitted colours come out muddy and dull.
+
+PROPORTIONS
+The drawing's depth and height are ambiguous in this view (moving a part toward the camera and lowering it looks the same), so anchor them: every part rests on the ground or on another part, nothing floats; a storey is 3 m (walls with "s" draw one window row per 3 m, so match the drawing's count of window rows); a person-height door is 2.2 m, a train or bus about 3.5 m tall, a platform about 1 m, a canopy about 4 m up on its posts, a torii 6-10 m. Keep these even if a slightly better score tempts you otherwise.
+
+THE LOOP
+1. Look at cell.png and first write parts.txt: each part you see (ground, buildings, roofs, canopies, platforms, vehicles, gates, trees...), its colour, and where it stands in the square in metres. Then write a first model.json from that list: the ground plinth or plaza first (a thin slab, e.g. y 0 to 0.2), then the main masses, then roofs, then the smaller parts and trees.
+2. Run: python render.py model.json cell.png compare.png   (any Python 3 with numpy and Pillow, e.g. C:/Python314/python.exe here; no setup needed)
+   It prints {"iou": ...} (overlap of your silhouette with the drawing's, 1.0 is perfect), "block_err" (mean colour difference in 6 px blocks where both cover, 0-255: whether the right material stands in the right place; the drawing's own pixel texture leaves a floor of roughly 15-20), "rgb_err" (per pixel, for reference), the primitive counts, and a 6 x 6 grid over the drawing: in each cell, M = % of the drawing your model misses, E = % your model covers outside the drawing, C = the block colour error there. A high C where the outline already fits means the wrong part or colour stands there. Use the grid to see where to grow, shrink or move things. compare.png shows, left to right: the drawing, your render, and an overlay (grey both, red = missing, blue = extra); look at it if you can view images.
+3. Edit model.json and run it again. Stop when iou >= 0.85 and no grid cell has M or E above 35, or after 15 runs. block_err is a guide to wrong parts (a high C), not a target to drive down by moving or recolouring parts against the drawing. Keep the version that best shows the drawing's parts in their colours and proportions.
+Parts the drawing shows that boxes can't (a lattice, a curved arch roof, a round dome) get the closest blocky stand-in, such as stepped boxes for a dome or a curve.
+
+When you finish, reply with one line: the final scores and counts as render.py printed them.
