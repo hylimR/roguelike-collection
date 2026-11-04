@@ -2920,14 +2920,23 @@ func draw_street() -> void:
 	var def: Dictionary = Sim.RIVALS[rv.id]
 	var span := rival_span(rv)
 	var sign_at := screen(Vector3((span.x + span.y) / 2, 4.6, -7.2))
-	pill(sign_at, def.name + ("  (closed)" if rv.defeated else ""), 13, Color("a99f8c") if rv.defeated else Color(def.color).darkened(0.1))
 	if not rv.defeated:
-		bar(Rect2(sign_at + Vector2(-50, 9), Vector2(100, 8)), rv.hp / rv.max_hp, Color(def.color))
+		# name and takings on one cream plate, so the bar never sits on the chain's own fascia color
+		var font: Font = bold if bold else get_theme_default_font()
+		var w := maxf(font.get_string_size(def.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 14, 100) + 12
+		var plate := Rect2(sign_at + Vector2(-w / 2, -font.get_ascent(13) - 8), Vector2(w, font.get_ascent(13) + 32))
+		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 11), Rect2(plate.position + Vector2(0, 3), plate.size))
+		overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.96), 11), plate)
+		pill(sign_at, def.name, 13, Color(def.color).darkened(0.1))
+		bar(Rect2(Vector2(plate.position.x + 8, plate.end.y - 13), Vector2(w - 16, 7)), rv.hp / rv.max_hp, Color(def.color), Color(0.42, 0.3, 0.15, 0.22))
+	else:
+		pill(sign_at, def.name + "  (closed)", 13, Color("a99f8c"))
+	if not rv.defeated:
 		if rv.price_war > 0.0:
-			pill(sign_at + Vector2(0, 36), "Price war %ds" % ceili(rv.price_war), 12, Color("e05a4e"))
+			pill(sign_at + Vector2(0, 44), "Price war %ds" % ceili(rv.price_war), 12, Color("e05a4e"))
 		elif rv.telegraph != "":
 			var blink := floori(Time.get_ticks_msec() / 250.0) % 2 == 0
-			pill(sign_at + Vector2(0, 36), "! %s in %ds" % [Sim.ATTACKS[rv.telegraph].name, ceili(maxf(0.0, rv.attack_timer))], 12, Color("e05a4e") if blink else Color("b8372d"))
+			pill(sign_at + Vector2(0, 44), "! %s in %ds" % [Sim.ATTACKS[rv.telegraph].name, ceili(maxf(0.0, rv.attack_timer))], 12, Color("e05a4e") if blink else Color("b8372d"))
 	# shelves: stock bars, red when low
 	for pid in st.products:
 		var p: Dictionary = st.products[pid]
