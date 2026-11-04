@@ -18,7 +18,8 @@ const ITEM_PX := 0.007
 const DECOR_PX := 0.014
 const OUTDOOR_PX := 0.03
 # per-prop size: trees full, street furniture smaller (art/outdoor.png draws every prop the same size)
-const OUTDOOR_SCALE := [1.0, 1.0, 0.95, 1.05, 0.45, 0.45, 0.6, 0.32, 0.38, 0.38, 0.36, 0.5]
+const OUTDOOR_SCALE := [1.0, 1.0, 0.95, 1.05, 0.45, 0.45, 0.6, 0.84, 0.66, 0.38, 0.5, 1.23]
+const PROP_BLOB := {7: 0.35, 8: 0.5, 10: 0.6, 11: 0.25}  # street props whose shadow is narrower than their art
 const VEHICLE_CELL := Vector2i(128, 96)
 const VEHICLE_PX := 0.025
 # atlas cells (art is cut at 2x its own pixel grid)
@@ -27,6 +28,13 @@ const PERSON := Vector2i(72, 96)
 const DECOR := 96
 const OUTDOOR := 128
 const STOREFRONT := Vector2i(256, 192)
+# art/props.png: fittings drawn in the store camera's own 2:1 view, each cell's footprint centre at (64, 150).
+# name: [cell, metres per texel, footprint along x and z]
+const PROP := Vector2i(128, 176)
+const PROPS := {"till": [0, 0.0075, Vector2(0.34, 0.44)], "coffee": [1, 0.0075, Vector2(0.42, 0.45)], "atm": [2, 0.014, Vector2(0.7, 0.8)],
+	"vending": [3, 0.014, Vector2(1.0, 0.75)], "gacha": [4, 0.014, Vector2(1.5, 0.5)], "bench": [5, 0.014, Vector2(1.5, 0.4)],
+	"cat": [6, 0.009, Vector2.ZERO], "karaage": [7, 0.0075, Vector2(0.47, 0.52)], "oden": [8, 0.0075, Vector2(0.4, 0.55)]}
+const COUNTER_H := 0.75  # the counter top, at the staff's elbows
 const STOREFRONT_PX := 0.13
 const LANDMARK := 256
 const LANDMARK_H := {"landmarks": 256, "tokyo": 384}  # the Tokyo sheet has tall cells for the towers
@@ -189,7 +197,7 @@ void fragment() {
 }
 """
 # the back wall's art: a crop of the side-view background, tiled along the wall
-const LAYOUT := {"bg": "bg_konbini", "wall": Rect2i(0, 140, 544, 108), "floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]}
+const LAYOUT := {"bg": "bg_konbini", "wall": Rect2i(208, 44, 316, 201), "floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]}
 
 var tex := {}
 var sim
@@ -419,6 +427,24 @@ func sprite(sheet: String, region: Rect2, px: float, billboard := true) -> Sprit
 	s.shaded = false
 	if billboard:
 		s.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	return s
+
+
+## A fitting from art/props.png with its footprint centred on `at`. Its art is drawn in the store camera's own view
+## (the till's front to the clerk, the rest to the street), which holds because that camera's yaw is locked.
+func prop(parent: Node3D, kind: String, at: Vector3) -> Sprite3D:
+	var p: Array = PROPS[kind]
+	var s := sprite("props", Rect2(p[0] * PROP.x, 0, PROP.x, PROP.y), p[1])
+	s.offset = Vector2(0, 150 - PROP.y / 2.0)
+	s.position = at
+	if p[2] != Vector2.ZERO:
+		s.scale.y = 1.0 / cos(deg_to_rad(PITCH))  # the art already is the tilted view: undo the billboard's foreshortening
+		# slid toward the camera along its line of sight (the screen spot stays) till the plane clears the footprint's
+		# near corner, so the floor or counter top never cuts off the art's lower edge
+		var reach: float = (p[2].x + p[2].y) / (2.0 * sqrt(2.0)) / cos(deg_to_rad(PITCH)) + 0.02
+		s.position += Vector3(sin(PI / 4) * cos(deg_to_rad(PITCH)), sin(deg_to_rad(PITCH)), cos(PI / 4) * cos(deg_to_rad(PITCH))) * reach
+	if parent:
+		parent.add_child(s)
 	return s
 
 
@@ -2031,7 +2057,7 @@ func build_set() -> void:
 		s.position = Vector3(p[1].x, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55 - 0.05, p[1].y)
 		set_node.add_child(s)
 		lit_sprites.append(s)
-		blob(set_node, p[1], OUTDOOR_SCALE[p[0]] * 1.5)
+		blob(set_node, p[1], PROP_BLOB.get(p[0], OUTDOOR_SCALE[p[0]] * 1.5))
 	spill(Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7)  # your shop's open front
 	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6], [5, Vector2(-8.3, -6.2), 0.7]]:
 		var s := sprite("decor", Rect2(d[0] * DECOR, 0, DECOR, DECOR), DECOR_PX * d[2])
@@ -2052,22 +2078,21 @@ func build_set() -> void:
 		block(set_node, Vector3(0.12, 2.6, 0.12), pole + Vector3(0, 1.3, 0), Color("4a4d57"))
 		block(set_node, Vector3(0.36, 0.7, 0.3), pole + Vector3(0, 2.5, 0), Color("2b2d42"))
 	# outside facilities
-	var outside := {"vending": ["decor", 2, Vector3(Sim.VENDING_X, 0, -7.0)], "gacha": ["decor", 3, Vector3(Sim.GACHA_X, 0, -7.0)],
-		"bench": ["decor", 1, Vector3(-13.6, 0, -6.6)], "delivery": ["perks", 7, Vector3(-2.4, 0, -6.4)]}
+	var outside := {"vending": Vector3(Sim.VENDING_X, 0, -7.2 + 0.375), "gacha": Vector3(Sim.GACHA_X - 0.1, 0, -7.2 + 0.25), "bench": Vector3(-13.6, 0, -6.6)}
 	for f in st.facilities:
 		if outside.has(f):
-			var e: Array = outside[f]
-			var cell := DECOR if e[0] == "decor" else 80
-			var px := DECOR_PX if e[0] == "decor" else 0.012
-			var s := sprite(e[0], Rect2(e[1] * cell, 0, cell, cell), px)
-			s.position = e[2] + Vector3(0, cell / 2.0 * px, 0)
-			set_node.add_child(s)
-			lit_sprites.append(s)
-			blob(set_node, Vector2(e[2].x, e[2].z), 0.6 if f == "delivery" else 0.8)
+			var at: Vector3 = outside[f]
+			lit_sprites.append(prop(set_node, f, at))
+			blob(set_node, Vector2(at.x, at.z), 0.8)
 			if f in ["vending", "gacha"]:
-				pool(set_node, e[2] + Vector3(0, 0, 0.6), Vector2(3.5, 3.5))
-	if st.facilities.has("neon"):
-		block(set_node, Vector3(6.0, 0.7, 0.2), Vector3(-6.5, 3.75, -7.1), Color("ff4fa0"), true)
+				pool(set_node, at + Vector3(0, 0, 0.6), Vector2(3.5, 3.5))
+	if st.facilities.has("delivery"):  # the courier waits on the car park's apron, nose to the street
+		var dv := sprite("vehicles", Rect2(6 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), 0.016)
+		dv.position = Vector3(-2.0, VEHICLE_CELL.y / 2.0 * 0.016 - 0.05, -8.2)
+		set_node.add_child(dv)
+		facing(dv, Vector3(0, 0, 1), 6, VEHICLE_CELL)
+		lit_sprites.append(dv)
+		blob(set_node, Vector2(-2.0, -8.2), 0.6)
 	# the city gives way to everything built behind the street: your shop, the rival and the rows of neighbours
 	var o2 := Vector2(site.position.x, site.position.z)
 	set_feet = [Rect2(o2 + Vector2(-16.5, -20.2), Vector2(span.y + 16.5, 13.0))]
@@ -2314,8 +2339,8 @@ func build_room() -> void:
 	block(room, Vector3(w + 0.25, wall_h, 0.25), Vector3(cx, wall_h / 2, -4.62), Color("e6dcc6"))
 	art_panel(room, crop, Vector2(w, wall_h), Vector3(cx, wall_h / 2, -4.49), Color.WHITE, w / (wall_h * crop.get_width() / crop.get_height()))
 	block(room, Vector3(0.25, wall_h, 9.25), Vector3(zl - 0.125, wall_h / 2, 0.0), Color("efe6d2"))
-	block(room, Vector3(0.02, 0.16, 9.0), Vector3(zl + 0.01, wall_h * 0.72, 0.0), L.stripe[0])
-	block(room, Vector3(0.02, 0.16, 9.0), Vector3(zl + 0.01, wall_h * 0.62, 0.0), L.stripe[1])
+	block(room, Vector3(0.02, 0.15, 9.0), Vector3(zl + 0.01, wall_h * 0.927, 0.0), L.stripe[0])  # level with the back wall art's stripes
+	block(room, Vector3(0.02, 0.15, 9.0), Vector3(zl + 0.01, wall_h * 0.866, 0.0), L.stripe[1])
 	block(room, Vector3(w + 0.6, 0.14, 0.35), Vector3(cx, wall_h + 0.07, -4.62), Color("5b4632"))
 	block(room, Vector3(0.35, 0.14, 9.6), Vector3(zl - 0.125, wall_h + 0.07, 0.0), Color("5b4632"))
 	# low stubs where the cut-away right wall and glass front stand, the door gap left open
@@ -2323,15 +2348,13 @@ func build_room() -> void:
 	block(room, Vector3(Sim.DOOR_IN.x - 0.8 - zl, 0.35, 0.2), Vector3((zl + Sim.DOOR_IN.x - 0.8) / 2, 0.175, 4.6), Color("cfd9de"))
 	block(room, Vector3(6.6 - Sim.DOOR_IN.x - 0.8, 0.35, 0.2), Vector3((6.6 + Sim.DOOR_IN.x + 0.8) / 2, 0.175, 4.6), Color("cfd9de"))
 	# counter and registers
-	block(room, Vector3(0.85, 1.0, 5.3), Vector3(4.5, 0.5, -0.75), Color("f3ecdc"))
-	block(room, Vector3(0.87, 0.1, 5.32), Vector3(4.5, 0.62, -0.75), L.stripe[0])
-	block(room, Vector3(0.87, 0.1, 5.32), Vector3(4.5, 0.45, -0.75), L.stripe[1])
+	block(room, Vector3(0.85, COUNTER_H, 5.3), Vector3(4.5, COUNTER_H / 2, -0.75), Color("f3ecdc"))
+	block(room, Vector3(0.87, 0.08, 5.32), Vector3(4.5, 0.47, -0.75), L.stripe[0])
+	block(room, Vector3(0.87, 0.08, 5.32), Vector3(4.5, 0.34, -0.75), L.stripe[1])
 	for reg in st.registers:
 		if reg.active:
 			var p: Vector2 = Sim.REGISTERS[reg.id].pos
-			var till := sprite("perks", Rect2(10 * 80, 0, 80, 80), 0.0075)
-			till.position = Vector3(p.x, 1.28, p.y)
-			room.add_child(till)
+			prop(room, "till", Vector3(p.x, COUNTER_H, p.y))
 	# a fixture per product line, its stock as up to three product icons
 	for pid in st.products:
 		var slot: Dictionary = Sim.SLOTS[Sim.PRODUCTS[pid].slot]
@@ -2357,29 +2380,37 @@ func build_room() -> void:
 				h = 0.9
 				block(room, Vector3(2.3, h, 0.8), Vector3(p.x, h / 2, p.y), Color("eef3f6") if pid == "icecream" else Color("e9e4d6"))
 			"rack":
-				h = 1.3
+				h = 0.45  # a low plinth: the magazine racks on it are the fixture
 				block(room, Vector3(2.0, h, 0.45), Vector3(p.x, h / 2, p.y), Color("b9a37f"))
 			_:
-				if pid == "coffee":
-					var machine := sprite("perks", Rect2(3 * 80, 0, 80, 80), 0.0075)
-					machine.position = Vector3(p.x, 1.28, p.y)
-					room.add_child(machine)
-				else:
-					block(room, Vector3(0.5, 0.45, 0.6), Vector3(p.x, 1.22, p.y), {"chicken": Color("c9ccd1"), "oden": Color("8a5a3c")}.get(pid, Color.GRAY))
-				h = 1.45
+				# a counter line is its own station (coffee machine, hot-snack case, oden pot), greyed when sold out
+				slot_icons[pid] = [prop(room, {"coffee": "coffee", "chicken": "karaage", "oden": "oden"}[pid], Vector3(p.x, COUNTER_H, p.y))]
+				continue
+		if pid == "icecream":  # the freezer's glass lid
+			block(room, Vector3(2.1, 0.03, 0.6), Vector3(p.x, h + 0.015, p.y), Color("bfe3f2"))
 		goods(pid, slot, h)
 		var icons := []
 		var ic: Array = Sim.PRODUCTS[pid].icon
 		var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
-		var n := 1 if slot.has("pick") == false else 3
-		for k in n:
-			var s := sprite(ic[0], Rect2(ic[1] * cell, 0, cell, cell), ITEM_PX * ITEM / cell)
-			s.position = Vector3(p.x - 0.6 * (n - 1) / 2.0 + 0.6 * k, h + 0.25, p.y + 0.2)
+		var region := Rect2(ic[1] * cell, 0, cell, cell)
+		var px: float = ITEM_PX * ITEM / cell * (1.6 if pid == "manga" else 1.0)
+		# each icon's drawn bottom rests on the fixture's top (a shelf's top board stands 0.1 above h)
+		var top := h + (0.1 if slot_kind(Sim.PRODUCTS[pid].slot) == "shelf" else 0.0)
+		var foot: int = cell - tex[ic[0]].get_image().get_region(Rect2i(region)).get_used_rect().end.y
+		for k in 3:
+			var s := sprite(ic[0], region, px)
+			s.position = Vector3(p.x - 0.6 + 0.6 * k, top + (cell / 2.0 - foot) * px, p.y + (0.0 if pid == "manga" else 0.2))
 			room.add_child(s)
 			icons.append(s)
 		slot_icons[pid] = icons
 	# inside facilities
-	var inside := {"atm": ["decor", 6, Vector3(6.0, 0, 3.7)], "maneki": ["perks", 9, Vector3(4.5, 1.0, 1.75)], "camera": ["perks", 6, Vector3(5.6, 2.5, -4.35)]}
+	if st.facilities.has("atm"):  # in the front corner facing the door, its side to the right stub
+		prop(room, "atm", Vector3(6.1, 0, 3.95))
+	if st.facilities.has("neon"):  # the shopfront is the cut-away side, so the sign tops the back wall: a lit tube on a dark board
+		var sw := minf(6.0, w - 1.0)
+		block(room, Vector3(sw, 0.62, 0.12), Vector3(cx, wall_h + 0.45, -4.62), Color("2b2d42"))
+		block(room, Vector3(sw - 0.24, 0.34, 0.04), Vector3(cx, wall_h + 0.45, -4.54), Color("ff4fa0"))
+	var inside := {"maneki": ["perks", 9, Vector3(4.5, COUNTER_H, 1.75)], "camera": ["perks", 6, Vector3(5.6, 2.5, -4.35)]}
 	for f in st.facilities:
 		if inside.has(f):
 			var e: Array = inside[f]
@@ -2482,6 +2513,12 @@ func sync_actors(delta: float) -> void:
 			agent_nodes[a.id] = e
 		e.node.visible = a.state != "inRival"
 		move_sprite(e, a, a.speed if not a.inside else Sim.INSIDE_SPEED, delta)
+		if a.state == "browse" and Sim.PRODUCTS.has(a.get("want", "")):
+			turn_to(e.node, Vector2(a.x, a.z), Sim.world(Sim.SLOTS[Sim.PRODUCTS[a.want].slot].pos))
+		elif a.state == "queue" and not a.moving:
+			turn_to(e.node, Vector2(a.x, a.z), Sim.world(Sim.REGISTERS[a.register].pos))
+		# a fixed sideways step per walker, so a group through the door walks abreast instead of stacked
+		e.node.position += Vector3(a.cross_j * 0.25, 0, (a.lane - 0.5) * 0.5)
 	drop_missing(agent_nodes, seen)
 	seen = {}
 	var col := Color(Sim.RIVALS[branch.rival.id].color)
@@ -2503,8 +2540,9 @@ func sync_actors(delta: float) -> void:
 		if e == null:
 			var node: Sprite3D
 			if s.role == "cat":
-				node = sprite("perks", Rect2(9 * 80, 0, 80, 80), 0.007)
-				e = {"node": node, "y": 0.28}
+				node = prop(null, "cat", Vector3.ZERO)
+				node.add_child(shadow(0.0, 0.25))
+				e = {"node": node, "y": 0.0}
 			else:
 				node = sprite("walk", Rect2(0, 7 * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
 				node.set_meta("base", ROLE_TINT.get(s.role, Color.WHITE))
@@ -2515,14 +2553,26 @@ func sync_actors(delta: float) -> void:
 		if e.has("a"):
 			move_sprite(e, s, Sim.STAFF_WALK, delta)
 			if not s.moving and s.role in ["cashier", "stocker"]:
-				e.node.flip_h = true
+				var at := Vector2(s.x - 1.0, s.z)  # the counter is on the clerks' -x side
+				if s.role == "stocker" and s.get("phase", "") == "work" and Sim.PRODUCTS.has(s.get("task", "")):
+					at = Sim.world(Sim.SLOTS[Sim.PRODUCTS[s.task].slot].pos)
+				turn_to(e.node, Vector2(s.x, s.z), at)
 		else:
 			e.node.position = Vector3(s.x, e.y, s.z)
+			if s.moving:
+				turn_to(e.node, Vector2(s.x, s.z), Vector2(s.x + cos(s.heading), s.z + sin(s.heading)))
 	drop_missing(staff_nodes, seen)
 	for d in [agent_nodes, threat_nodes, staff_nodes]:
 		for id in d:
 			if d[id].node is Sprite3D:
 				shine(d[id].node)
+
+
+## Turns a standing sprite's profile toward a spot, in screen terms (the art faces screen-right).
+func turn_to(node: Sprite3D, from: Vector2, to: Vector2) -> void:
+	var sx := Vector3(to.x - from.x, 0, to.y - from.y).dot(cam.global_transform.basis.x)
+	if absf(sx) > 0.05:
+		node.flip_h = sx < 0.0
 
 
 func drop_missing(d: Dictionary, seen: Dictionary) -> void:
@@ -2552,8 +2602,9 @@ func make_threat(t: Dictionary, col: Color) -> Dictionary:
 	if row.has(t.type):
 		var node := sprite("walk", Rect2(0, row[t.type] * PERSON.y, PERSON.x, PERSON.y), PERSON_PX * (2.1 if t.type == "mascot" else 1.0))
 		node.set_meta("base", {"flyer": Color.WHITE.lerp(col, 0.45), "mascot": Color.WHITE.lerp(col, 0.6), "shoplifter": Color(0.32, 0.32, 0.4), "suit": Color(0.5, 0.5, 0.56)}[t.type])
-		node.add_child(shadow())
-		e = {"node": node, "a": row[t.type], "step": 0.0, "scale": 2.1 if t.type == "mascot" else 1.0}
+		var sc := 2.1 if t.type == "mascot" else 1.0
+		node.add_child(shadow(0.82 * sc - 0.02, 0.5 * sc))
+		e = {"node": node, "a": row[t.type], "step": 0.0, "scale": sc}
 	else:
 		var mi := MeshInstance3D.new()
 		match t.type:
@@ -2720,7 +2771,7 @@ func target_at(pos: Vector2) -> Dictionary:
 	for reg in branch.store.registers:
 		if reg.active:
 			var p: Vector2 = Sim.REGISTERS[reg.id].pos
-			var d := screen_room(Vector3(p.x, 1.2, p.y)).distance_to(pos)
+			var d := screen_room(Vector3(p.x, COUNTER_H + 0.2, p.y)).distance_to(pos)
 			if d < best_d:
 				best_d = d
 				best = {"type": "ringUp", "register": reg.id}
@@ -2951,7 +3002,7 @@ func draw_street() -> void:
 		if not reg.active:
 			continue
 		var rp: Vector2 = Sim.REGISTERS[reg.id].pos
-		var at := screen_room(Vector3(rp.x, 1.6, rp.y))
+		var at := screen_room(Vector3(rp.x, COUNTER_H + 0.6, rp.y))
 		if not reg.queue.is_empty():
 			var head = sim.agent_by_id(b, reg.queue[0])
 			if head != null and head.at_head:
@@ -3012,7 +3063,7 @@ func draw_street() -> void:
 					at = screen(threat_point(t))
 			"ringUp":
 				var p: Vector2 = Sim.REGISTERS[hover.register].pos
-				at = screen_room(Vector3(p.x, 1.2, p.y))
+				at = screen_room(Vector3(p.x, COUNTER_H + 0.2, p.y))
 			"restock":
 				if st.products.has(hover.product):
 					var p: Vector2 = Sim.SLOTS[Sim.PRODUCTS[hover.product].slot].pos

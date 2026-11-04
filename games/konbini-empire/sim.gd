@@ -60,13 +60,13 @@ const REVIEW_AT := Vector2(-7.4, -6.5)
 const MASCOT_TURN := -11.4
 const TRASH_SPOTS := [Vector2(2.4, 5.5), Vector2(3.4, 5.8), Vector2(1.5, 5.85)]  # local
 const BREAKER_AT := Vector2(6.3, -3.9)
-const CAT_HOME := Vector2(2.4, 3.9)
+const CAT_HOME := Vector2(1.55, 4.05)  # clear of the cleaners' homes and the queue's tail
 const COUNTER_END := Vector2(5.7, 2.4)
 const AISLE_CORNER := Vector2(3.1, 3.0)
-const STAFF_HOMES := {"stocker": [Vector2(5.7, 2.2), Vector2(5.7, -3.3)], "cleaner": [Vector2(2.4, 3.75), Vector2(-0.6, 3.75)], "guard": [Vector2(3.6, 4.0), Vector2(0.8, 4.0)], "promoter": [Vector2(0.2, 6.0)]}
+const STAFF_HOMES := {"stocker": [Vector2(5.7, 2.2), Vector2(5.7, -3.3)], "cleaner": [Vector2(2.4, 3.75), Vector2(0.7, 3.75)], "guard": [Vector2(3.6, 4.0), Vector2(0.8, 4.0)], "promoter": [Vector2(0.2, 6.0)]}
 const REGISTERS := [
-	{"pos": Vector2(4.5, 0.3), "clerk": Vector2(5.6, 0.3), "queue": [Vector2(3.35, 0.3), Vector2(3.35, 1.15), Vector2(3.35, 2.0), Vector2(3.0, 2.85), Vector2(2.2, 3.05), Vector2(1.4, 3.05), Vector2(0.6, 3.05)]},
-	{"pos": Vector2(4.5, -1.6), "clerk": Vector2(5.6, -1.6), "queue": [Vector2(3.35, -1.6), Vector2(3.35, -2.45), Vector2(2.7, -3.1), Vector2(1.9, -3.1)]},
+	{"pos": Vector2(4.5, 0.3), "clerk": Vector2(5.35, 0.3), "queue": [Vector2(3.35, 0.3), Vector2(3.35, 1.15), Vector2(3.35, 2.0), Vector2(3.0, 2.85), Vector2(2.2, 3.05), Vector2(1.4, 3.05), Vector2(0.6, 3.05)]},
+	{"pos": Vector2(4.5, -1.6), "clerk": Vector2(5.35, -1.6), "queue": [Vector2(3.35, -1.6), Vector2(3.35, -2.45), Vector2(2.7, -3.1), Vector2(1.9, -3.1)]},
 ]
 # pick = where a customer stands; counter lines have none
 const SLOTS := {
@@ -93,7 +93,7 @@ const PRODUCTS := {
 	"coffee": {"name": "Hot Coffee", "price": 150, "cost": 20, "cap": 20, "slot": "counterA", "zone": 1, "counter": true, "icon": ["products", 3]},
 	"bento": {"name": "Bento", "price": 520, "cost": 160, "cap": 6, "slot": "fridgeA", "zone": 3, "icon": ["products", 1]},
 	"chicken": {"name": "Karaage", "price": 230, "cost": 55, "cap": 8, "slot": "counterB", "zone": 1, "counter": true, "icon": ["perks", 5]},
-	"oden": {"name": "Oden", "price": 300, "cost": 75, "cap": 10, "slot": "counterC", "zone": 1, "counter": true, "icon": ["products", 16]},
+	"oden": {"name": "Oden", "price": 300, "cost": 75, "cap": 10, "slot": "counterC", "zone": 1, "counter": true, "icon": ["products", 24]},
 	"icecream": {"name": "Ice Cream", "price": 250, "cost": 70, "cap": 10, "slot": "island", "zone": 2, "icon": ["products", 9]},
 	"beer": {"name": "Beer & Chūhai", "price": 290, "cost": 80, "cap": 12, "slot": "fridgeB", "zone": 2, "icon": ["products", 22]},
 	"manga": {"name": "Manga & Mags", "price": 420, "cost": 130, "cap": 8, "slot": "rack", "zone": 3, "icon": ["decor", 8]},
@@ -1027,6 +1027,7 @@ func step_agent(b: Dictionary, a: Dictionary, dt: float) -> bool:
 		"shopping":
 			if follow(a, INSIDE_SPEED * dt):
 				a.state = "browse"
+				a.moving = false
 				a.timer = rng.range_f(0.8, 1.5)
 		"browse":
 			a.timer -= dt
@@ -1419,6 +1420,7 @@ func update_threats(b: Dictionary, dt: float) -> void:
 				if t.phase == "walk":
 					if follow_once(t, 2.6 * dt):
 						t.phase = "post"
+						t.moving = false
 						t.timer = 1.5
 				else:
 					t.timer -= dt
@@ -1473,6 +1475,7 @@ func step_shoplifter(b: Dictionary, t: Dictionary, dt: float) -> void:
 		"in":
 			if follow_once(t, 1.6 * dt):
 				t.phase = "steal"
+				t.moving = false
 				t.timer = 2.2
 		"steal":
 			t.timer -= dt
