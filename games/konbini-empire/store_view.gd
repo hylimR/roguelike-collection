@@ -108,6 +108,7 @@ varying vec3 lpos;
 varying vec3 lnrm;
 varying vec4 info;
 varying vec4 tint;
+varying vec2 sunl;
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
 const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.68, 0.64, 0.42), vec3(0.52, 0.52, 0.5), vec3(0.68, 0.66, 0.61));  // boards, tatami, concrete, tile
 const vec3 ROOF[8] =vec3[8](vec3(0.62, 0.62, 0.6), vec3(0.72, 0.72, 0.7), vec3(0.62, 0.4, 0.32), vec3(0.47, 0.6, 0.38), vec3(0.46, 0.53, 0.6), vec3(0.6, 0.56, 0.5), vec3(0.44, 0.45, 0.48), vec3(0.7, 0.65, 0.53));
@@ -117,6 +118,7 @@ void vertex() {
 	tint = COLOR;
 	lnrm = NORMAL;
 	lpos = (VERTEX + 0.5) * INSTANCE_CUSTOM.xyz;
+	sunl = vec2(dot(normalize(MODEL_MATRIX[0].xz), vec2(-0.35, 0.6)), dot(normalize(MODEL_MATRIX[2].xz), vec2(-0.35, 0.6)));
 }
 
 void fragment() {
@@ -142,8 +144,23 @@ void fragment() {
 				vec3 fl = FLOOR[k] * seam * mix(0.72, 1.0, smoothstep(0.0, 0.5, wall));
 				col = wall < 0.0 ? tint.rgb * 1.08 : fl;
 				glow = wall < 0.0 ? vec3(0.0) : fl * vec3(1.0, 0.86, 0.62) * step(0.5, fract(r * 13.0)) * 0.45 * night;
-			} else
-				col = mix(ROOF[pick], tint.rgb, 0.15) * (min(e.x, e.y) < 0.35 ? 1.12 : 0.92);
+			} else {  // a flat roof: coping round a parapet that shades the roof on its sunny sides, membrane in strips, a hatch
+				vec2 q = lpos.xz;
+				float fine = 1.0 - smoothstep(0.1, 0.3, fwidth(q.x) + fwidth(q.y));
+				float u = (info.x >= info.z ? q.y : q.x) / 1.2;
+				float lane = fract(sin((floor(u) + seed * 53.0) * 12.9898) * 43758.5453);
+				float f = mix(1.0, (0.95 + 0.07 * lane) * (min(fract(u), 1.0 - fract(u)) < 0.035 ? 0.88 : 1.0), fine) * 0.92;
+				vec2 into = vec2(sunl.x < 0.0 ? q.x : info.x - q.x, sunl.y > 0.0 ? info.z - q.y : q.y) - 0.3;
+				float shadow = max(step(0.0, into.x) * step(into.x, 0.7 * abs(sunl.x)), step(0.0, into.y) * step(into.y, 0.7 * abs(sunl.y)));
+				f *= 1.0 - 0.2 * shadow;
+				if (min(info.x, info.z) > 3.5) {
+					vec2 hc = info.xz * vec2(0.22 + 0.56 * fract(seed * 7.31), 0.25 + 0.5 * fract(seed * 3.17));
+					vec2 hd = abs(q - hc);
+					vec2 sd = abs(q - hc + sunl * 0.45);
+					f = max(hd.x, hd.y) < 0.5 ? (max(hd.x, hd.y) < 0.4 ? 1.12 : 0.8) : (max(sd.x, sd.y) < 0.5 ? f * 0.78 : f);
+				}
+				col = mix(ROOF[pick], tint.rgb, 0.15) * (min(e.x, e.y) < 0.3 ? 1.14 : f);
+			}
 		} else {
 			bool front = abs(lnrm.z) > 0.5;
 			float width = front ? info.x : info.z;
