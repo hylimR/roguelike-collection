@@ -59,10 +59,11 @@ const WEATHER_LOOK := {
 }
 # the hour's light on everything outdoors, [hour, tint]: a pink dawn, plain day, golden hour, dusk, night; lit windows,
 # your shop's interior and the street lamps' pools stay bright
-const DAYLIGHT := [[6.0, Color(0.96, 0.86, 0.86)], [8.0, Color.WHITE], [15.5, Color.WHITE], [17.0, Color(1.0, 0.93, 0.8)],
+const DAYLIGHT := [[6.0, Color(0.62, 0.58, 0.8)], [6.6, Color(1.0, 0.8, 0.8)], [7.3, Color(1.0, 0.9, 0.84)], [8.0, Color.WHITE], [15.5, Color.WHITE], [17.0, Color(1.0, 0.93, 0.8)],
 	[18.3, Color(0.98, 0.84, 0.7)], [19.1, Color(0.8, 0.62, 0.7)], [19.8, Color(0.5, 0.5, 0.72)], [21.0, Color(0.36, 0.4, 0.62)],
 	[24.0, Color(0.32, 0.36, 0.58)]]
 const GOLDEN := [16.0, 17.8, 19.2]  # golden hour's rise, peak and end: walls facing the low sun glow, the rest go cool
+const DAWN := [6.0, 6.5, 7.8]  # the same for sunrise, from the other side and rosier
 const LAMP := Color(1.0, 0.85, 0.58)
 const SEA := Color("3f7fbf")
 const PITCH := 30.0
@@ -101,6 +102,7 @@ uniform float styles = 10.0;
 uniform float night = 0.0;
 uniform vec3 light = vec3(1.0);
 uniform float golden = 0.0;
+uniform float dawn = 0.0;
 varying vec3 lpos;
 varying vec3 lnrm;
 varying vec4 info;
@@ -163,7 +165,9 @@ void fragment() {
 	}
 	float low_sun = max(dot(n, normalize(vec3(-0.5, 0.3, 0.8))), 0.0);
 	vec3 grade = mix(vec3(0.8, 0.84, 1.04), vec3(1.2, 1.02, 0.78), low_sun);
-	ALBEDO = col * shade * light * mix(vec3(1.0), grade, golden) + glow;
+	float east = max(dot(n, normalize(vec3(0.8, 0.3, 0.5))), 0.0);
+	vec3 rose = mix(vec3(0.84, 0.84, 1.06), vec3(1.2, 0.94, 0.92), east);
+	ALBEDO = col * shade * light * mix(vec3(1.0), grade, golden) * mix(vec3(1.0), rose, dawn) + glow;
 }
 """
 # the back wall's art: a crop of the side-view background, tiled along the wall
@@ -218,7 +222,7 @@ var mask_vp: SubViewport  # the city seen from the sun, for ground shadows
 var shadow_mat: ShaderMaterial
 var env: Environment
 var light := Color.WHITE  # the hour's tint (DAYLIGHT)
-var night := 0.0  # 0 by day, 1 from 22:00: lit windows and lamp pools
+var night := 0.0  # 0 by day, 1 from 22:00, fading out at first light: lit windows and lamp pools
 var lit_mats: Array = []  # [weakref to an outdoor material, its own colour]
 var lit_sprites: Array = []  # outdoor sprites that stand still, relit when the light changes
 var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the street after dark
@@ -428,7 +432,7 @@ func update_light() -> void:
 		k += 1
 	var t := clampf(inverse_lerp(DAYLIGHT[k - 1][0], DAYLIGHT[k][0], h), 0.0, 1.0)
 	var c: Color = DAYLIGHT[k - 1][1].lerp(DAYLIGHT[k][1], t)
-	var n := clampf((h - 18.0) / 4.0, 0.0, 1.0)
+	var n := maxf(clampf((h - 18.0) / 4.0, 0.0, 1.0), 0.7 * clampf((7.0 - h) / 1.0, 0.0, 1.0))  # lamps still on at first light
 	if is_equal_approx(n, night) and Vector3(c.r - light.r, c.g - light.g, c.b - light.b).length() < 0.004:
 		return
 	light = c
@@ -440,6 +444,7 @@ func update_light() -> void:
 		building_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
 		building_mat.set_shader_parameter("night", night)
 		building_mat.set_shader_parameter("golden", golden_at(h))
+		building_mat.set_shader_parameter("dawn", dawn_at(h))
 	if shadow_mat:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night))
 	env.background_color = SEA * light
@@ -457,6 +462,10 @@ func golden_at(h: float) -> float:
 	if h < GOLDEN[1]:
 		return clampf(inverse_lerp(GOLDEN[0], GOLDEN[1], h), 0.0, 1.0)
 	return clampf(inverse_lerp(GOLDEN[2], GOLDEN[1], h), 0.0, 1.0)
+
+
+func dawn_at(h: float) -> float:
+	return lerpf(0.6, 1.0, clampf(inverse_lerp(DAWN[0], DAWN[1], h), 0.0, 1.0)) * clampf(inverse_lerp(DAWN[2], DAWN[1], h), 0.0, 1.0)
 
 
 ## What a sprite standing at p sees: the hour's light, lifted under a lamp after dark and full inside your shop.
