@@ -460,9 +460,9 @@ func prop(parent: Node3D, kind: String, at: Vector3) -> Sprite3D:
 
 
 ## A picture on an upright quad facing +z (shop art, the rival's window), mipmapped so it stays clean when small.
-func art_panel(parent: Node3D, img: Image, size_: Vector2, pos: Vector3, tint := Color.WHITE, reps := 1.0) -> void:
+func art_panel(parent: Node3D, img: Image, size_: Vector2, pos: Vector3, tint := Color.WHITE, reps := 1.0, lit := true) -> void:
 	img.generate_mipmaps()
-	var m := mat(tint, ImageTexture.create_from_image(img), true)
+	var m := mat(tint, ImageTexture.create_from_image(img), lit)
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	m.uv1_scale = Vector3(reps, 1, 1)
 	var mi := MeshInstance3D.new()
@@ -2377,12 +2377,9 @@ static func free_runs(x0: float, x1: float, z0: float, z1: float, roads: Array) 
 func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	var w := span.y - span.x
 	var cx := (span.x + span.y) / 2
-	var c := Color(Sim.RIVALS[rv.id].color)
+	var c := Color("8a8780") if rv.defeated else Color(Sim.RIVALS[rv.id].color)  # a beaten chain's sign goes grey
 	block(parent, Vector3(w, 4.2, 9.0), Vector3(cx, 2.1, -11.7), Color("f1eee6"))
-	block(parent, Vector3(w + 0.1, 0.8, 0.12), Vector3(cx, 3.65, -7.16), Color("8a8780") if rv.defeated else c)
-	if rv.defeated:
-		block(parent, Vector3(w - 0.8, 2.9, 0.08), Vector3(cx, 1.45, -7.12), Color("a9a59c"))
-		return
+	block(parent, Vector3(w + 0.1, 0.8, 0.12), Vector3(cx, 3.65, -7.16), c)
 	# fascia in the chain's stripes; a grey roof inside a parapet, with a stair hatch, a walkway, skylights over the
 	# shop floor (lit from below at night) and the air-conditioning units on their plinths, piped into one trunk
 	var band := Image.create(1, 10, false, Image.FORMAT_RGB8)
@@ -2390,7 +2387,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	band.set_pixel(0, 6, Color.WHITE)
 	for y in [7, 8, 9]:
 		band.set_pixel(0, y, c.darkened(0.25))
-	art_panel(parent, band, Vector2(w + 0.1, 0.8), Vector3(cx, 3.65, -7.095))
+	art_panel(parent, band, Vector2(w + 0.1, 0.8), Vector3(cx, 3.65, -7.095), Color.WHITE, 1.0, not rv.defeated)
 	block(parent, Vector3(w - 0.4, 0.05, 8.6), Vector3(cx, 4.22, -11.7), Color("a3a29e"))
 	for e in [[Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -7.3)], [Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -16.1)],
 			[Vector3(0.2, 0.34, 9.0), Vector3(span.x + 0.1, 4.37, -11.7)], [Vector3(0.2, 0.34, 9.0), Vector3(span.y - 0.1, 4.37, -11.7)]]:
@@ -2403,7 +2400,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	for k in 2:
 		var sx := span.x + 3.2 + k * 2.6
 		block(parent, Vector3(1.9, 0.2, 1.3), Vector3(sx, 4.3, -10.0), Color("d6d3ca"))
-		block(parent, Vector3(1.6, 0.04, 1.0), Vector3(sx, 4.41, -10.0), Color("dceaf0"), true)
+		block(parent, Vector3(1.6, 0.04, 1.0), Vector3(sx, 4.41, -10.0), Color("dceaf0"), not rv.defeated)
 	for k in 3:
 		var ac := Vector3(span.x + 4.2 + k * 1.6, 4.25, -14.4)
 		block(parent, Vector3(1.25, 0.1, 1.05), ac + Vector3(0, 0.05, 0), Color("8e8d88"))
@@ -2422,9 +2419,17 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 			fan.position = ac + Vector3(0, 0.71 + (0.01 if ring[0] < 0.2 else 0.0), 0)
 			parent.add_child(fan)
 	block(parent, Vector3(span.y - span.x - 5.0, 0.12, 0.12), Vector3((span.x + 4.5 + span.y - 0.5) / 2, 4.35, -15.25), Color("c9c6bd"))
-	# the shop floor behind the glass (the chain's shelves, lit at night), mullions, the sliding door
-	var shelves: Image = load("res://art/bg_super.png").get_image().get_region(Rect2i(80, 126, 560, 119))
-	art_panel(parent, shelves, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
+	# the shop floor behind the glass (the chain's shelves, lit at night), mullions, the sliding door; a beaten chain's
+	# shop is shut behind roll-down shutters and stays dark
+	if rv.defeated:
+		var slats := Image.create(1, 16, false, Image.FORMAT_RGB8)
+		for y in 16:
+			slats.set_pixel(0, y, Color("b8b5ad") if y % 2 == 0 else Color("a29f97"))
+		art_panel(parent, slats, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color.WHITE, 1.0, false)
+		block(parent, Vector3(w - 0.6, 0.3, 0.3), Vector3(cx, 2.72, -7.0), Color("8f8c85"))  # the shutter boxes
+	else:
+		var shelves: Image = load("res://art/bg_super.png").get_image().get_region(Rect2i(80, 126, 560, 119))
+		art_panel(parent, shelves, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
 	block(parent, Vector3(w - 0.8, 0.12, 0.12), Vector3(cx, 2.6, -7.06), Color("5e6670"))
 	block(parent, Vector3(w - 0.8, 0.16, 0.14), Vector3(cx, 0.08, -7.06), Color("5e6670"))
 	var x0 := span.x + 0.4
@@ -2432,11 +2437,13 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		if absf(x0 - rv.x) > 0.8:
 			block(parent, Vector3(0.08, 2.6, 0.1), Vector3(x0, 1.3, -7.05), Color("5e6670"))
 		x0 += 2.0
-	block(parent, Vector3(1.4, 2.6, 0.1), Vector3(rv.x, 1.3, -7.05), Color(0.86, 0.93, 0.98, 0.55), true)
-	for dx in [-0.72, 0.0, 0.72]:
-		block(parent, Vector3(0.07, 2.6, 0.12), Vector3(rv.x + dx, 1.3, -7.03), Color("8b96a1"))
+	if not rv.defeated:
+		block(parent, Vector3(1.4, 2.6, 0.1), Vector3(rv.x, 1.3, -7.05), Color(0.86, 0.93, 0.98, 0.55), true)
+		for dx in [-0.72, 0.0, 0.72]:
+			block(parent, Vector3(0.07, 2.6, 0.12), Vector3(rv.x + dx, 1.3, -7.03), Color("8b96a1"))
 	block(parent, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
-	spill(parent, cx, w + 1.6, -7.05)
+	if not rv.defeated:
+		spill(parent, cx, w + 1.6, -7.05)
 
 
 ## Your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark (street frame).
