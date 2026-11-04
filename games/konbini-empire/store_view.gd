@@ -65,6 +65,7 @@ const DAYLIGHT := [[6.0, Color(0.62, 0.58, 0.8)], [6.6, Color(1.0, 0.8, 0.8)], [
 const GOLDEN := [16.0, 17.8, 19.2]  # golden hour's rise, peak and end: walls facing the low sun glow, the rest go cool
 const DAWN := [6.0, 6.5, 7.8]  # the same for sunrise, from the other side and rosier
 const LAMP := Color(1.0, 0.85, 0.58)
+const SHOP_LIGHT := Color(0.86, 0.95, 1.0)  # a konbini's cool white strip lights
 const SEA := Color("3f7fbf")
 const PITCH := 30.0
 const SUN :=Vector3(-0.35, 1.0, 0.6)  # towards the sun; the building shader lights its faces from here too
@@ -229,6 +230,7 @@ var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the s
 var pool_mat: StandardMaterial3D
 var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after dark
 var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
+var spill_mat: StandardMaterial3D  # shop light falling out of a glass front across the sidewalk
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
@@ -282,6 +284,13 @@ func _ready() -> void:
 	pool_mat.albedo_color = Color(0, 0, 0, 0)
 	halo_mat = pool_mat.duplicate()
 	halo_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	spill_mat = pool_mat.duplicate()
+	var fall := Image.create(64, 32, false, Image.FORMAT_RGBA8)
+	for y in 32:
+		for x in 64:
+			var u := x / 63.0
+			fall.set_pixel(x, y, Color(1, 1, 1, (exp(-2.2 * y / 31.0) - exp(-2.2)) / (1.0 - exp(-2.2)) * smoothstep(0.0, 0.2, u) * smoothstep(0.0, 0.2, 1.0 - u)))
+	spill_mat.albedo_texture = ImageTexture.create_from_image(fall)
 	lamp_mat = StandardMaterial3D.new()
 	lamp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	lamp_mat.vertex_color_use_as_albedo = true
@@ -450,6 +459,7 @@ func update_light() -> void:
 	env.background_color = SEA * light
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
+	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
 	soft_mat.albedo_color.a = 0.34 - 0.14 * night
 	ao_mat.albedo_color.a = 0.3 - 0.1 * night
@@ -490,6 +500,16 @@ func pool(parent: Node3D, at: Vector3, size_: Vector2) -> void:
 	plane(parent, size_, Vector3(at.x, -0.03, at.z), pool_mat)
 	var w := parent.global_position + at
 	pools.append(Vector3(w.x, w.z, maxf(size_.x, size_.y) * 0.45))
+
+
+## Shop light falling out of a glass front at face_z across the sidewalk to the kerb, faded in after dusk.
+func spill(cx: float, w: float, face_z: float) -> void:
+	plane(set_node, Vector2(w, 4.6), Vector3(cx, -0.028, face_z + 2.3), spill_mat)
+	var x := cx - w / 2 + 1.5
+	while x < cx + w / 2 - 1.0:
+		var g := set_node.global_position + Vector3(x, 0, face_z + 1.2)
+		pools.append(Vector3(g.x, g.z, 2.2))
+		x += 2.5
 
 
 func ground_mat(tex_: ImageTexture) -> StandardMaterial3D:
@@ -1995,7 +2015,7 @@ func build_set() -> void:
 		set_node.add_child(s)
 		lit_sprites.append(s)
 		blob(set_node, p[1], OUTDOOR_SCALE[p[0]] * 1.5)
-	pool(set_node, Vector3(Sim.ORIGIN.x + (zl + 6.6) / 2, 0, Sim.ORIGIN.y + 4.7), Vector2(10.6 - zl, 6.0))  # your shop's glass front
+	spill(Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7)  # your shop's open front
 	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6], [5, Vector2(-8.3, -6.2), 0.7]]:
 		var s := sprite("decor", Rect2(d[0] * DECOR, 0, DECOR, DECOR), DECOR_PX * d[2])
 		s.position = Vector3(d[1].x, DECOR / 2.0 * DECOR_PX * d[2], d[1].y)
@@ -2255,7 +2275,7 @@ func build_rival(span: Vector2) -> void:
 	for dx in [-0.72, 0.0, 0.72]:
 		block(set_node, Vector3(0.07, 2.6, 0.12), Vector3(rv.x + dx, 1.3, -7.03), Color("8b96a1"))
 	block(set_node, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
-	pool(set_node, Vector3(cx, 0, -7.2), Vector2(w + 2.0, 5.0))
+	spill(cx, w + 1.6, -7.05)
 
 
 ## Your shop as a cutaway (shop-local frame, 1:1): floor, back and side walls, counter and registers, a fixture per
