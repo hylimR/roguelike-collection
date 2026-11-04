@@ -1,7 +1,8 @@
 extends Control
 ## The city stage: Tokyo (city.gd) as a city builder sees it, through an orthographic isometric camera. Streets,
 ## avenues, the elevated expressway and the Yamanote are generated meshes; buildings are boxes in one MultiMesh
-## with a pixel facade shader; trees, landmarks, storefronts, cars and people are Codex sprites. In store mode the
+## with a pixel facade shader, and each branch's shop and its rival are built from boxes; trees, landmarks, cars and
+## people are Codex sprites. In store mode the
 ## focused branch's street set is carved into the city on its lot: your shop as a cutaway, the rival next door,
 ## the street with its crossing, and the sim's pedestrians, threats and staff live. Clicks on threats, tills and
 ## shelves go out as actions; in city mode you pick lots. Labels draw on a 2D overlay. Street-frame nodes live
@@ -27,7 +28,6 @@ const ITEM := 64
 const PERSON := Vector2i(72, 96)
 const DECOR := 96
 const OUTDOOR := 128
-const STOREFRONT := Vector2i(256, 192)
 # art/props.png: fittings drawn in the store camera's own 2:1 view, each cell's footprint centre at (64, 150).
 # name: [cell, metres per texel, footprint along x and z]
 const PROP := Vector2i(128, 176)
@@ -133,7 +133,10 @@ void vertex() {
 
 void fragment() {
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	float shade = 0.6 + 0.4 * max(dot(n, normalize(vec3(-0.35, 1.0, 0.6))), 0.0);
+	// the house's three tones, shared with shaded_box: roofs full, walls turned to the sun 0.9, walls away 0.75 (the
+	// drawn art's shaded wall is 0.83 of its lit one); a gable's slope away from the sun 0.85
+	float sun = dot(n.xz, vec2(-0.35, 0.6));
+	float shade = n.y > 0.95 ? 1.0 : (n.y > 0.5 ? (sun >= 0.0 ? 1.0 : 0.85) : (sun > 0.0 ? 0.9 : 0.75));
 	vec3 col = tint.rgb;
 	vec3 glow = vec3(0.0);
 	if (info.w > -0.5) {
@@ -225,7 +228,8 @@ var next_car := 0.0
 var mode := "store"  # store | city
 var city_sig := ""
 var lm_sprites: Array = []  # [Sprite3D, half width]: landmarks, cleared when they cover the street
-var lot_sprites: Array = []  # the same for storefronts on lots
+var lot_nodes: Array = []  # [Node3D, footprint centre]: the shops built on other branches' lots, hidden under the set
+var lot_feet: Array = []  # their world footprints (your shop's and the rival's), where the city gives way
 var hover_lot := -1
 var pick := ""  # city mode: "" | listing
 var site: Node3D
@@ -393,14 +397,14 @@ func block(parent: Node3D, size_: Vector3, pos: Vector3, color: Color, indoor :=
 	parent.add_child(mi)
 
 
-## A unit cube with each face pre-shaded as if lit from the sun's side (top brightest, the street face next), so
-## unshaded boxes still read as solid.
+## A unit cube with each face pre-shaded in the house's three tones (top full, the walls turned to the sun 0.9, the
+## walls away 0.75, as BUILDING_SHADER shades), so unshaded boxes still read as solid.
 func shaded_box() -> ArrayMesh:
 	if box_mesh:
 		return box_mesh
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for f in [[Vector3.UP, 1.0], [Vector3.BACK, 0.92], [Vector3.RIGHT, 0.8], [Vector3.LEFT, 0.88], [Vector3.FORWARD, 0.85], [Vector3.DOWN, 0.7]]:
+	for f in [[Vector3.UP, 1.0], [Vector3.BACK, 0.9], [Vector3.RIGHT, 0.75], [Vector3.LEFT, 0.9], [Vector3.FORWARD, 0.75], [Vector3.DOWN, 0.7]]:
 		var n: Vector3 = f[0]
 		var u := n.cross(Vector3.RIGHT if absf(n.x) < 0.5 else Vector3.UP) * 0.5
 		var v := n.cross(u)
@@ -550,11 +554,13 @@ func pool(parent: Node3D, at: Vector3, size_: Vector2) -> void:
 
 
 ## Shop light falling out of a glass front at face_z across the sidewalk to the kerb, faded in after dusk.
-func spill(cx: float, w: float, face_z: float) -> void:
-	plane(set_node, Vector2(w, 4.6), Vector3(cx, -0.028, face_z + 2.3), spill_mat)
+func spill(parent: Node3D, cx: float, w: float, face_z: float) -> void:
+	plane(parent, Vector2(w, 4.6), Vector3(cx, -0.028, face_z + 2.3), spill_mat)
+	if parent != set_node:
+		return  # a shop on the city map: its glow only, the lamp pools that light sprites belong to the set
 	var x := cx - w / 2 + 1.5
 	while x < cx + w / 2 - 1.0:
-		var g := set_node.global_position + Vector3(x, 0, face_z + 1.2)
+		var g := parent.global_position + Vector3(x, 0, face_z + 1.2)
 		pools.append(Vector3(g.x, g.z, 2.2))
 		x += 2.5
 
@@ -621,7 +627,7 @@ func set_mode(m: String) -> void:
 	zoom = 1.0
 	yaw = PI / 4  # the shop cutaway is drawn for this angle
 	yaw_drag = 0.0
-	for e in lm_sprites + lot_sprites:
+	for e in lm_sprites:
 		anchor(e)
 	pick = "" if m == "store" else pick
 	hover = {}
@@ -1366,7 +1372,8 @@ func build_trees() -> void:
 func build_lots() -> void:
 	for c in lots_node.get_children():
 		c.free()
-	lot_sprites.clear()
+	lot_nodes.clear()
+	lot_feet.clear()
 	var plot := surface(mat(Color.WHITE, tiles(Color("d8d2c4"), Color("bdb6a6"))))
 	for L in sim.lots:
 		rect_quad(plot, Rect2(L.x0, L.front - Sim.City.LOT_D, Sim.City.LOT_W, Sim.City.LOT_D), -0.08, 0.0, false, 0.5)
@@ -1374,14 +1381,18 @@ func build_lots() -> void:
 	for b in sim.branches:
 		if mode == "store" and is_same(b, branch):
 			continue
-		# each marker drawn the size of the shop it stands for, on that shop's footprint in the street frame
+		# your shop and the rival next door, built from the same boxes as the street set, in the lot's street frame
 		var o := frame_origin(b.lot)
+		var n := Node3D.new()
+		n.position = o
+		lots_node.add_child(n)
+		build_shop(n, Sim.ZONE_LEFT[b.store.size])
+		build_rival(n, b.rival, rival_span(b.rival))
+		lot_nodes.append([n, Vector2(o.x + Sim.ORIGIN.x, o.z + Sim.ORIGIN.y)])
 		var zl: float = Sim.ZONE_LEFT[b.store.size]
-		city_sprite(lots_node, "storefronts", Rect2(0, 0, STOREFRONT.x, STOREFRONT.y), (6.5 - zl + 9.3) * 0.7071, o + Vector3(Sim.ORIGIN.x + (zl + 6.5) / 2, 0, Sim.ORIGIN.y), lot_sprites)
-		if not b.rival.defeated:
-			var rs := rival_span(b.rival)
-			var f: int = Sim.RIVALS[b.rival.id].front
-			city_sprite(lots_node, "storefronts", Rect2(f * STOREFRONT.x, 0, STOREFRONT.x, STOREFRONT.y), (rs.y - rs.x + 9.0) * 0.7071, o + Vector3((rs.x + rs.y) / 2, 0, Sim.ORIGIN.y), lot_sprites)
+		var rs := rival_span(b.rival)
+		lot_feet.append(Rect2(o.x + Sim.ORIGIN.x + zl, o.z + Sim.ORIGIN.y - 4.65, 6.6 - zl, 9.3))
+		lot_feet.append(Rect2(o.x + rs.x, o.z - 16.2, rs.y - rs.x, 9.0))
 
 
 ## World position of a lot's street frame: your shop centred on the lot, its facade on the lot's front edge.
@@ -1402,7 +1413,7 @@ func city_signature() -> String:
 	for L in sim.lots:
 		parts.append(L.use)
 	for b in sim.branches:
-		parts.append("%d%s%s" % [b.lot, b.rival.id, b.rival.defeated])
+		parts.append("%d%s%s%d" % [b.lot, b.rival.id, b.rival.defeated, b.store.size])
 	return ",".join(parts)
 
 
@@ -1420,7 +1431,9 @@ func update_fade() -> void:
 		scr = foot_rect(Rect2(o.x - 24.0, o.z - 18.0, 54.0, 26.0), 5.0)
 		depth = o.x + o.z
 	var taken := func(f: Rect2) -> bool: return on and (f.intersects(front) or set_feet.any(func(q): return f.intersects(q)))
-	for e in lm_sprites + lot_sprites:
+	for e in lot_nodes:
+		e[0].visible = not taken.call(Rect2(e[1] - Vector2(0.5, 0.5), Vector2.ONE))
+	for e in lm_sprites:
 		var s: Sprite3D = e[0]
 		var at_ := Vector2(e[2].x, e[2].z)
 		var base := iso(e[2])
@@ -1435,7 +1448,9 @@ func update_fade() -> void:
 	for rec in brecs:
 		var f: Rect2 = rec.foot
 		var state := STANDING
-		if on:
+		if lot_feet.any(func(q): return f.intersects(q)):
+			state = GONE
+		elif on:
 			if set_feet.any(func(q): return f.intersects(q)) or (f.intersects(front) and f.get_center().y < front.position.y + 7.2):
 				state = GONE
 			elif f.intersects(front) or (f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr)):
@@ -1468,7 +1483,7 @@ func update_fade() -> void:
 	for tm in tree_mms:
 		for k in tm[1].size():
 			var p: Vector3 = tm[1][k].origin
-			var cut: bool = taken.call(Rect2(p.x - 1.5, p.z - 1.5, 3, 3)) or (on and p.x + p.z > depth and foot_rect(Rect2(p.x - 1.5, p.z - 1.5, 3, 3), tm[2]).intersects(scr))
+			var cut: bool = taken.call(Rect2(p.x - 1.5, p.z - 1.5, 3, 3)) or lot_feet.any(func(q): return q.has_point(Vector2(p.x, p.z))) or (on and p.x + p.z > depth and foot_rect(Rect2(p.x - 1.5, p.z - 1.5, 3, 3), tm[2]).intersects(scr))
 			if tm[0].get_instance_transform(k) != (away if cut else tm[1][k]):
 				tm[0].set_instance_transform(k, away if cut else tm[1][k])
 				dirty[tm[0]] = true
@@ -1925,23 +1940,7 @@ func build_set() -> void:
 	car.position = Vector3(foot.x, 0, foot.y) + Vector3(sin(PI / 4) * cos(tilt), sin(tilt), cos(PI / 4) * cos(tilt)) * ((u.size.x / 4.0 * VEHICLE_PX - 0.05) / sin(tilt))
 	blob(set_node, foot, 1.3)
 	lit_sprites.append(car)
-	# your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark
-	var ps := Vector3(3.0, 0, -16.5)
-	block(set_node, Vector3(0.22, 6.2, 0.22), ps + Vector3(0, 3.1, 0), Color("9aa0a6"))
-	block(set_node, Vector3(1.7, 1.5, 0.34), ps + Vector3(0, 6.4, 0), Color("fbfaf5"), true)
-	block(set_node, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 6.15, 0), LAYOUT.stripe[0], true)
-	block(set_node, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 5.92, 0), LAYOUT.stripe[1], true)
-	var face := PlaneMesh.new()
-	face.orientation = PlaneMesh.FACE_Z
-	face.size = Vector2(1.5, 0.75)
-	for side in [1.0, -1.0]:  # the logo on both faces of the lightbox
-		var lf := MeshInstance3D.new()
-		lf.mesh = face
-		lf.material_override = mat(Color.WHITE, sign_face(), true)
-		lf.position = ps + Vector3(0, 6.7, 0.175 * side)
-		lf.rotation.y = 0.0 if side > 0 else PI
-		set_node.add_child(lf)
-	blob(set_node, Vector2(ps.x, ps.z), 0.3)
+	pole_sign(set_node)
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
 		for ring in [[0.46, Color("74767c"), -0.039], [0.36, Color("4d4f55"), -0.037]]:
 			var disc := MeshInstance3D.new()
@@ -2063,7 +2062,7 @@ func build_set() -> void:
 		block(set_node, Vector3(0.9, 0.5, 0.04), Vector3(vx + 0.4, 1.5, -7.14), Color("fbfaf5"))
 		block(set_node, Vector3(0.6, 0.06, 0.05), Vector3(vx + 0.4, 1.56, -7.13), Color("3d3a36"))
 		block(set_node, Vector3(0.42, 0.06, 0.05), Vector3(vx + 0.4, 1.42, -7.13), Color("3d3a36"))
-	build_rival(span)
+	build_rival(set_node, b.rival, span)
 	build_room()
 	# a soft dark seam where each building meets the sidewalk
 	var seam := surface(ao_mat)
@@ -2094,7 +2093,7 @@ func build_set() -> void:
 		set_node.add_child(s)
 		lit_sprites.append(s)
 		blob(set_node, p[1], PROP_BLOB.get(p[0], OUTDOOR_SCALE[p[0]] * 1.5))
-	spill(Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7)  # your shop's open front
+	spill(set_node, Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7)  # your shop's open front
 	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6], [5, Vector2(-8.3, -6.2), 0.7]]:
 		var s := sprite("decor", Rect2(d[0] * DECOR, 0, DECOR, DECOR), DECOR_PX * d[2])
 		s.position = Vector3(d[1].x, DECOR / 2.0 * DECOR_PX * d[2], d[1].y)
@@ -2290,15 +2289,14 @@ static func free_runs(x0: float, x1: float, z0: float, z1: float, roads: Array) 
 
 
 ## The rival's shop: chain colours on the fascia and awning, glass front; shutters once it has closed.
-func build_rival(span: Vector2) -> void:
-	var rv: Dictionary = branch.rival
+func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	var w := span.y - span.x
 	var cx := (span.x + span.y) / 2
 	var c := Color(Sim.RIVALS[rv.id].color)
-	block(set_node, Vector3(w, 4.2, 9.0), Vector3(cx, 2.1, -11.7), Color("f1eee6"))
-	block(set_node, Vector3(w + 0.1, 0.8, 0.12), Vector3(cx, 3.65, -7.16), Color("8a8780") if rv.defeated else c)
+	block(parent, Vector3(w, 4.2, 9.0), Vector3(cx, 2.1, -11.7), Color("f1eee6"))
+	block(parent, Vector3(w + 0.1, 0.8, 0.12), Vector3(cx, 3.65, -7.16), Color("8a8780") if rv.defeated else c)
 	if rv.defeated:
-		block(set_node, Vector3(w - 0.8, 2.9, 0.08), Vector3(cx, 1.45, -7.12), Color("a9a59c"))
+		block(parent, Vector3(w - 0.8, 2.9, 0.08), Vector3(cx, 1.45, -7.12), Color("a9a59c"))
 		return
 	# fascia in the chain's stripes; a grey roof inside a parapet, with a stair hatch, a walkway, skylights over the
 	# shop floor (lit from below at night) and the air-conditioning units on their plinths, piped into one trunk
@@ -2307,26 +2305,26 @@ func build_rival(span: Vector2) -> void:
 	band.set_pixel(0, 6, Color.WHITE)
 	for y in [7, 8, 9]:
 		band.set_pixel(0, y, c.darkened(0.25))
-	art_panel(set_node, band, Vector2(w + 0.1, 0.8), Vector3(cx, 3.65, -7.095))
-	block(set_node, Vector3(w - 0.4, 0.05, 8.6), Vector3(cx, 4.22, -11.7), Color("a3a29e"))
+	art_panel(parent, band, Vector2(w + 0.1, 0.8), Vector3(cx, 3.65, -7.095))
+	block(parent, Vector3(w - 0.4, 0.05, 8.6), Vector3(cx, 4.22, -11.7), Color("a3a29e"))
 	for e in [[Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -7.3)], [Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -16.1)],
 			[Vector3(0.2, 0.34, 9.0), Vector3(span.x + 0.1, 4.37, -11.7)], [Vector3(0.2, 0.34, 9.0), Vector3(span.y - 0.1, 4.37, -11.7)]]:
-		block(set_node, e[0], e[1], Color("e6e2d8"))
+		block(parent, e[0], e[1], Color("e6e2d8"))
 	var hatch := Vector3(span.x + 1.4, 4.2, -14.9)
-	block(set_node, Vector3(1.8, 1.3, 1.6), hatch + Vector3(0, 0.65, 0), Color("dedad0"))
-	block(set_node, Vector3(1.95, 0.1, 1.75), hatch + Vector3(0, 1.35, 0), Color("aca89f"))
-	block(set_node, Vector3(0.7, 1.0, 0.04), hatch + Vector3(0.3, 0.5, 0.81), Color("7d8590"))
-	block(set_node, Vector3(w - 2.2, 0.03, 0.8), Vector3(cx + 0.5, 4.25, -13.4), Color("c9c6bd"))
+	block(parent, Vector3(1.8, 1.3, 1.6), hatch + Vector3(0, 0.65, 0), Color("dedad0"))
+	block(parent, Vector3(1.95, 0.1, 1.75), hatch + Vector3(0, 1.35, 0), Color("aca89f"))
+	block(parent, Vector3(0.7, 1.0, 0.04), hatch + Vector3(0.3, 0.5, 0.81), Color("7d8590"))
+	block(parent, Vector3(w - 2.2, 0.03, 0.8), Vector3(cx + 0.5, 4.25, -13.4), Color("c9c6bd"))
 	for k in 2:
 		var sx := span.x + 3.2 + k * 2.6
-		block(set_node, Vector3(1.9, 0.2, 1.3), Vector3(sx, 4.3, -10.0), Color("d6d3ca"))
-		block(set_node, Vector3(1.6, 0.04, 1.0), Vector3(sx, 4.41, -10.0), Color("dceaf0"), true)
+		block(parent, Vector3(1.9, 0.2, 1.3), Vector3(sx, 4.3, -10.0), Color("d6d3ca"))
+		block(parent, Vector3(1.6, 0.04, 1.0), Vector3(sx, 4.41, -10.0), Color("dceaf0"), true)
 	for k in 3:
 		var ac := Vector3(span.x + 4.2 + k * 1.6, 4.25, -14.4)
-		block(set_node, Vector3(1.25, 0.1, 1.05), ac + Vector3(0, 0.05, 0), Color("8e8d88"))
-		block(set_node, Vector3(1.05, 0.6, 0.85), ac + Vector3(0, 0.4, 0), Color("dcddd8"))
-		block(set_node, Vector3(0.85, 0.36, 0.03), ac + Vector3(0, 0.38, 0.43), Color("7a8088"))
-		block(set_node, Vector3(0.1, 0.1, 0.75), ac + Vector3(0.3, 0.1, -0.8), Color("c9c6bd"))
+		block(parent, Vector3(1.25, 0.1, 1.05), ac + Vector3(0, 0.05, 0), Color("8e8d88"))
+		block(parent, Vector3(1.05, 0.6, 0.85), ac + Vector3(0, 0.4, 0), Color("dcddd8"))
+		block(parent, Vector3(0.85, 0.36, 0.03), ac + Vector3(0, 0.38, 0.43), Color("7a8088"))
+		block(parent, Vector3(0.1, 0.1, 0.75), ac + Vector3(0.3, 0.1, -0.8), Color("c9c6bd"))
 		for ring in [[0.32, Color("41464c")], [0.09, Color("a7adb3")]]:
 			var fan := MeshInstance3D.new()
 			var cm := CylinderMesh.new()
@@ -2337,23 +2335,71 @@ func build_rival(span: Vector2) -> void:
 			fan.mesh = cm
 			fan.material_override = mat(ring[1])
 			fan.position = ac + Vector3(0, 0.71 + (0.01 if ring[0] < 0.2 else 0.0), 0)
-			set_node.add_child(fan)
-	block(set_node, Vector3(span.y - span.x - 5.0, 0.12, 0.12), Vector3((span.x + 4.5 + span.y - 0.5) / 2, 4.35, -15.25), Color("c9c6bd"))
+			parent.add_child(fan)
+	block(parent, Vector3(span.y - span.x - 5.0, 0.12, 0.12), Vector3((span.x + 4.5 + span.y - 0.5) / 2, 4.35, -15.25), Color("c9c6bd"))
 	# the shop floor behind the glass (the chain's shelves, lit at night), mullions, the sliding door
 	var shelves: Image = load("res://art/bg_super.png").get_image().get_region(Rect2i(80, 126, 560, 119))
-	art_panel(set_node, shelves, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
-	block(set_node, Vector3(w - 0.8, 0.12, 0.12), Vector3(cx, 2.6, -7.06), Color("5e6670"))
-	block(set_node, Vector3(w - 0.8, 0.16, 0.14), Vector3(cx, 0.08, -7.06), Color("5e6670"))
+	art_panel(parent, shelves, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
+	block(parent, Vector3(w - 0.8, 0.12, 0.12), Vector3(cx, 2.6, -7.06), Color("5e6670"))
+	block(parent, Vector3(w - 0.8, 0.16, 0.14), Vector3(cx, 0.08, -7.06), Color("5e6670"))
 	var x0 := span.x + 0.4
 	while x0 < span.y - 0.3:
 		if absf(x0 - rv.x) > 0.8:
-			block(set_node, Vector3(0.08, 2.6, 0.1), Vector3(x0, 1.3, -7.05), Color("5e6670"))
+			block(parent, Vector3(0.08, 2.6, 0.1), Vector3(x0, 1.3, -7.05), Color("5e6670"))
 		x0 += 2.0
-	block(set_node, Vector3(1.4, 2.6, 0.1), Vector3(rv.x, 1.3, -7.05), Color(0.86, 0.93, 0.98, 0.55), true)
+	block(parent, Vector3(1.4, 2.6, 0.1), Vector3(rv.x, 1.3, -7.05), Color(0.86, 0.93, 0.98, 0.55), true)
 	for dx in [-0.72, 0.0, 0.72]:
-		block(set_node, Vector3(0.07, 2.6, 0.12), Vector3(rv.x + dx, 1.3, -7.03), Color("8b96a1"))
-	block(set_node, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
-	spill(cx, w + 1.6, -7.05)
+		block(parent, Vector3(0.07, 2.6, 0.12), Vector3(rv.x + dx, 1.3, -7.03), Color("8b96a1"))
+	block(parent, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
+	spill(parent, cx, w + 1.6, -7.05)
+
+
+## Your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark (street frame).
+func pole_sign(parent: Node3D) -> void:
+	var ps := Vector3(3.0, 0, -16.5)
+	block(parent, Vector3(0.22, 6.2, 0.22), ps + Vector3(0, 3.1, 0), Color("9aa0a6"))
+	block(parent, Vector3(1.7, 1.5, 0.34), ps + Vector3(0, 6.4, 0), Color("fbfaf5"), true)
+	block(parent, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 6.15, 0), LAYOUT.stripe[0], true)
+	block(parent, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 5.92, 0), LAYOUT.stripe[1], true)
+	var face := PlaneMesh.new()
+	face.orientation = PlaneMesh.FACE_Z
+	face.size = Vector2(1.5, 0.75)
+	for side in [1.0, -1.0]:  # the logo on both faces of the lightbox
+		var lf := MeshInstance3D.new()
+		lf.mesh = face
+		lf.material_override = mat(Color.WHITE, sign_face(), true)
+		lf.position = ps + Vector3(0, 6.7, 0.175 * side)
+		lf.rotation.y = 0.0 if side > 0 else PI
+		parent.add_child(lf)
+	blob(parent, Vector2(ps.x, ps.z), 0.3)
+
+
+## Your shop closed up, as the city map shows it on a lot (street frame, 1:1, where the street set's cutaway stands):
+## the box, the glass front, the fascia in your stripes round the front and the street-side wall, a parapet roof.
+func build_shop(parent: Node3D, zl: float) -> void:
+	var o := Sim.ORIGIN
+	var w := 6.6 - zl
+	var cx := o.x + (zl + 6.6) / 2
+	var front := o.y + 4.65
+	block(parent, Vector3(w, 3.1, 9.3), Vector3(cx, 1.55, o.y), Color("f4f1e8"))
+	var crop: Image = tex[LAYOUT.bg].get_image().get_region(LAYOUT.wall)  # the shop's back wall, seen through the glass
+	art_panel(parent, crop, Vector2(w - 1.0, 2.05), Vector3(cx, 1.12, front + 0.04), Color(0.86, 0.94, 1.0), (w - 1.0) / (2.05 * crop.get_width() / crop.get_height()))
+	var x := cx - (w - 1.0) / 2
+	while x <= cx + (w - 1.0) / 2 + 0.01:
+		block(parent, Vector3(0.08, 2.05, 0.1), Vector3(x, 1.12, front + 0.05), Color("5e6670"))
+		x += (w - 1.0) / maxf(1.0, roundf((w - 1.0) / 2.0))
+	block(parent, Vector3(w - 1.0, 0.1, 0.1), Vector3(cx, 0.05, front + 0.05), Color("5e6670"))
+	for k in 2:  # the stripes run round the corner like the cutaway's side wall
+		var y := 2.62 - k * 0.2
+		block(parent, Vector3(w + 0.04, 0.18, 0.06), Vector3(cx, y, front + 0.03), LAYOUT.stripe[k])
+		block(parent, Vector3(0.06, 0.18, 9.34), Vector3(o.x + 6.63, y, o.y), LAYOUT.stripe[k])
+	block(parent, Vector3(w - 0.4, 0.05, 8.9), Vector3(cx, 3.12, o.y), Color("a3a29e"))
+	for e in [[Vector3(w, 0.3, 0.2), Vector3(cx, 3.25, front - 0.1)], [Vector3(w, 0.3, 0.2), Vector3(cx, 3.25, o.y - 4.55)],
+			[Vector3(0.2, 0.3, 9.3), Vector3(o.x + zl + 0.1, 3.25, o.y)], [Vector3(0.2, 0.3, 9.3), Vector3(o.x + 6.5, 3.25, o.y)]]:
+		block(parent, e[0], e[1], Color("e6e2d8"))
+	block(parent, Vector3(1.05, 0.6, 0.85), Vector3(cx - w / 4, 3.45, o.y - 2.4), Color("dcddd8"))
+	spill(parent, cx, w + 1.6, front)
+	pole_sign(parent)
 
 
 ## Your shop as a cutaway (shop-local frame, 1:1): floor, back and side walls, counter and registers, a fixture per
@@ -2828,12 +2874,12 @@ func _gui_input(e: InputEvent) -> void:
 		accept_event()
 		return
 	if mode == "city" and e is InputEventMouseMotion and e.button_mask & MOUSE_BUTTON_MASK_RIGHT:
-		# turns in quarter steps: the landmarks and storefronts are drawn for the diagonal views only
+		# turns in quarter steps: the landmarks are drawn for the diagonal views only
 		yaw_drag -= e.relative.x * 0.006
 		var snapped_ := PI / 4 + roundf(yaw_drag / (PI / 2)) * PI / 2
 		if not is_equal_approx(snapped_, yaw):
 			yaw = snapped_
-			for s in lm_sprites + lot_sprites:
+			for s in lm_sprites:
 				anchor(s)
 			update_camera()
 		accept_event()
