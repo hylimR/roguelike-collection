@@ -886,16 +886,90 @@ func close_modal() -> void:
 
 func show_intro() -> void:
 	var b: Dictionary = sim.branches[0]
+	var rv: Dictionary = Sim.RIVALS[b.rival.id]
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 6)
-	v.add_child(para("Your first konbini opens in %s. %s is next door and wants your customers. Every sale you make hits its takings; drive it out of business and a bigger chain moves in." % [b.name, Sim.RIVALS[b.rival.id].name], INK, 520))
-	v.add_child(para("Click the till when a customer is waiting (fast ring-ups build combos), click threats the rival sends (flyers, trash, mascots, thieves...), click a shelf to restock it. Hire staff, buy expansions, pick a card at every level, open more branches across Tokyo. Rent and wages are due every midnight; run out of cash and it's over.", MUTED, 520))
-	v.add_child(para("Keys: Space pause, F speed, R ring up, 1-5 abilities, P pick, S staff, G expand, N new store, M map, Tab next store, V sound.", MUTED, 520))
+	v.add_theme_constant_override("separation", 10)
+	var vs := HBoxContainer.new()
+	vs.add_theme_constant_override("separation", 8)
+	vs.add_child(chip([label(b.name, Color.WHITE, 15), label(Sim.DISTRICTS[b.district].name, Color(1, 1, 1, 0.85), 11)], DISTRICT_COLOR[b.district]))
+	vs.add_child(label("vs", MUTED, 15))
+	vs.add_child(chip([label(rv.name, Color.WHITE, 15), label("next door", Color(1, 1, 1, 0.85), 11)], Color(rv.color).darkened(0.1)))
+	v.add_child(vs)
+	v.add_child(para("Your first konbini opens in %s, and %s wants your customers. Every sale you make hits its takings; drive it out of business and a bigger chain moves in." % [b.name, rv.name], INK, 560))
+	var g := GridContainer.new()
+	g.columns = 3
+	g.add_theme_constant_override("h_separation", 8)
+	g.add_theme_constant_override("v_separation", 8)
+	for t in [
+		[picture("perks", 10, 80, Vector2(40, 40)), "Ring up", "Click the till when someone waits. Fast ring-ups build a combo."],
+		[picture("perks", 1, 80, Vector2(40, 40)), "Chase off", "Click the flyers, trash, mascots and thieves the rival sends."],
+		[icon("onigiri", 40), "Restock", "Click a shelf before it runs dry."],
+		[picture("perks", 0, 80, Vector2(40, 40)), "Grow", "Hire staff, buy expansions, pick a card at every level."],
+		[intro_shop(), "Branch out", "Open more stores on lots across Tokyo."],
+		[picture("perks", 11, 80, Vector2(40, 40)), "Pay the bills", "Rent and wages are due at midnight. Run dry and it's over."],
+	]:
+		g.add_child(intro_tile(t[0], t[1], t[2]))
+	v.add_child(g)
+	var keys := HFlowContainer.new()
+	keys.custom_minimum_size.x = 560
+	keys.add_theme_constant_override("h_separation", 12)
+	keys.add_theme_constant_override("v_separation", 6)
+	for k in [["Space", "pause"], ["F", "speed"], ["R", "ring up"], ["1-5", "abilities"], ["P", "pick"], ["S", "staff"], ["G", "expand"], ["N", "new store"], ["M", "map"], ["Tab", "next store"], ["V", "sound"]]:
+		var cap := PanelContainer.new()
+		var s := box(Color.WHITE, 7, 0, 2)
+		s.border_color = LINE
+		s.content_margin_left = 7
+		s.content_margin_right = 7
+		cap.add_theme_stylebox_override("panel", s)
+		var kl := label(k[0], INK, 11)
+		kl.add_theme_font_override("font", bold)
+		cap.add_child(kl)
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 4)
+		h.add_child(cap)
+		h.add_child(label(k[1], MUTED, 12))
+		keys.add_child(h)
+	v.add_child(keys)
 	var go := func():
 		close_modal()
 		sim.act({"type": "start"})
 	v.add_child(button("Open the shop!  [Space]", go))
 	open_modal("Konbini Empire", v, {KEY_SPACE: go, KEY_ENTER: go}, "intro")
+
+
+func intro_shop() -> TextureRect:
+	var r := picture("storefronts", 0, 256, Vector2(40, 40))
+	r.texture.region = Rect2(58, 66, 132, 124)  # your konbini in the first storefront frame
+	return r
+
+
+## One way to play on a sunken tile: its picture on a mint plate, a name and a line.
+func intro_tile(pic: Control, what: String, line: String) -> PanelContainer:
+	var plate := PanelContainer.new()
+	var ps := box(MINT.lerp(PAPER, 0.75), 12, 4)
+	ps.border_width_bottom = 2
+	ps.border_color = MINT.lerp(PAPER, 0.5)
+	plate.add_theme_stylebox_override("panel", ps)
+	plate.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	plate.add_child(pic)
+	var c := VBoxContainer.new()
+	c.add_theme_constant_override("separation", 0)
+	c.add_child(label(what, INK, 15))
+	var l := para(line, MUTED, 124)
+	l.add_theme_font_size_override("font_size", 11)
+	l.add_theme_constant_override("line_spacing", -2)
+	c.add_child(l)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 8)
+	h.add_child(plate)
+	h.add_child(c)
+	var p := sunken(h)
+	var st: StyleBoxFlat = p.get_theme_stylebox("panel")
+	st.content_margin_left = 8
+	st.content_margin_right = 10
+	st.content_margin_top = 8
+	st.content_margin_bottom = 8
+	return p
 
 
 ## Whatever pick card the sim has open: level-up skills, rewards, expansions or new-store listings.
