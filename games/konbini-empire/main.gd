@@ -1146,8 +1146,20 @@ func show_staff() -> void:
 		rows.add_child(role_tag(m.role))
 		member_cells(rows, m, 100)
 		rows.add_child(small_button("Fire", staff_act.bind("fire", m.id)))
-	crew.add_child(rows)
-	crew.add_child(para("Cashiers run a till each. Stock clerks refill low shelves but keep tonight's bills in the till. Cleaners mop spills and bag trash. A guard sees off flyers, mascots, thieves, suits and blackouts. A promoter pulls in walkers.", MUTED, 250))
+	crew.add_child(staff_well(rows if st.crew.size() > 0 else label("No crew yet: you ring up alone.", MUTED, 12)))
+	crew.add_child(label("Who does what", INK, 15))
+	var roles := GridContainer.new()
+	roles.columns = 2
+	roles.add_theme_constant_override("h_separation", 10)
+	roles.add_theme_constant_override("v_separation", 6)
+	for r in [["cashier", "Runs a till of their own."], ["stocker", "Refills low shelves, but keeps tonight's bills in the till."],
+			["cleaner", "Mops spills and bags trash."], ["guard", "Sees off flyers, mascots, thieves, suits and blackouts."], ["promoter", "Pulls walkers in off the street."]]:
+		roles.add_child(role_tag(r[0]))
+		var l := para(r[1], MUTED, 196)
+		l.add_theme_font_size_override("font_size", 11)
+		l.add_theme_constant_override("line_spacing", -2)
+		roles.add_child(l)
+	crew.add_child(staff_well(roles))
 	cols.add_child(crew)
 	var apps := staff_grid()
 	for role in Sim.ROLES:
@@ -1164,13 +1176,18 @@ func show_staff() -> void:
 			apps.add_child(lead)
 			member_cells(apps, a, 200)
 			var fee := Sim.rnd(a.wage * sim.mods().wage)
-			var hb := small_button("Full" if have >= cap else "Hire %s" % yen(fee), staff_act.bind("hire", a.id))
-			hb.disabled = have >= cap or sim.player.cash < fee
+			if have >= cap:
+				var full := label("Full", MUTED, 11)
+				full.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				apps.add_child(full)
+				continue
+			var hb := small_button("Hire %s" % yen(fee), staff_act.bind("hire", a.id))
+			hb.disabled = sim.player.cash < fee
 			apps.add_child(hb)
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 4)
 	right.add_child(label("Applicants today", INK, 15))
-	right.add_child(apps)
+	right.add_child(staff_well(apps))
 	cols.add_child(right)
 	v.add_child(button("Close  [Esc]", close_staff))
 	open_modal("Staff  ·  %s" % b.name, v, {KEY_ESCAPE: close_staff, KEY_S: close_staff}, "staff")
@@ -1182,6 +1199,17 @@ func staff_grid() -> GridContainer:
 	g.add_theme_constant_override("h_separation", 10)
 	g.add_theme_constant_override("v_separation", 3)
 	return g
+
+
+## A sunken well for one of the staff panel's lists.
+func staff_well(c: Control) -> PanelContainer:
+	var p := sunken(c)
+	var s: StyleBoxFlat = p.get_theme_stylebox("panel")
+	s.content_margin_left = 10
+	s.content_margin_right = 10
+	s.content_margin_top = 8
+	s.content_margin_bottom = 8
+	return p
 
 
 ## A role's short name on a pill in its color.
