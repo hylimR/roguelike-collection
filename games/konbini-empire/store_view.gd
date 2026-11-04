@@ -2988,15 +2988,22 @@ func draw_street() -> void:
 		elif rv.telegraph != "":
 			var blink := floori(Time.get_ticks_msec() / 250.0) % 2 == 0
 			pill(sign_at + Vector2(0, 44), "! %s in %ds" % [Sim.ATTACKS[rv.telegraph].name, ceili(maxf(0.0, rv.attack_timer))], 12, Color("e05a4e") if blink else Color("b8372d"))
-	# shelves: stock bars, red when low
+	# shelves once they've sold some: a shelf tag with the product and its stock bar, red when low
 	for pid in st.products:
 		var p: Dictionary = st.products[pid]
 		var sp: Vector2 = Sim.SLOTS[Sim.PRODUCTS[pid].slot].pos
 		var at := screen_room(Vector3(sp.x, 0.05, sp.y + 0.5))
 		var frac: float = float(p.stock) / p.capacity
-		bar(Rect2(at + Vector2(-16, 2), Vector2(32, 5)), frac, Color("e05a4e") if frac < Sim.LOW_STOCK else Color("4fc4ab"))
+		if frac < 1.0:
+			var tag := Rect2(at + Vector2(-25, -6), Vector2(50, 18))
+			overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.3), 9), Rect2(tag.position + Vector2(0, 2), tag.size))
+			overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.97), 9), tag)
+			var ic: Array = Sim.PRODUCTS[pid].icon
+			var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
+			overlay.draw_texture_rect_region(tex[ic[0]], Rect2(tag.position + Vector2(3, 1), Vector2(16, 16)), Rect2(ic[1] * cell, 0, cell, cell))
+			bar(Rect2(tag.position + Vector2(22, 7), Vector2(23, 4)), frac, Color("e05a4e") if frac < Sim.LOW_STOCK else Color("3fb59a"), Color(0.42, 0.3, 0.15, 0.28))
 		if p.stock == 0:
-			pill(at + Vector2(0, 22), "Empty", 11, Color("e05a4e"))
+			pill(at + Vector2(0, 30), "Empty", 11, Color("e05a4e"))
 	# registers: who's at the till, how far the checkout is; a waiting customer with no cashier needs you
 	for reg in st.registers:
 		if not reg.active:
