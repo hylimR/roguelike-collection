@@ -2965,8 +2965,14 @@ func build_room() -> void:
 	block(room, Vector3(0.35, 0.14, 9.6), Vector3(zl - 0.125, wall_h + 0.07, 0.0), Color("5b4632"))
 	# low stubs where the cut-away right wall and glass front stand, the door gap left open
 	block(room, Vector3(0.2, 0.35, 9.25), Vector3(6.6, 0.175, 0.0), Color("efe6d2"))
-	block(room, Vector3(Sim.DOOR_IN.x - 0.8 - zl, 0.35, 0.2), Vector3((zl + Sim.DOOR_IN.x - 0.8) / 2, 0.175, 4.6), Color("cfd9de"))
-	block(room, Vector3(6.6 - Sim.DOOR_IN.x - 0.8, 0.35, 0.2), Vector3((6.6 + Sim.DOOR_IN.x + 0.8) / 2, 0.175, 4.6), Color("cfd9de"))
+	glass_front(zl, Sim.DOOR_IN.x - 0.8)
+	glass_front(Sim.DOOR_IN.x + 0.8, 6.6)
+	# the sliding door's floor track between its jambs, and the entrance mat inside it
+	block(room, Vector3(1.6, 0.02, 0.14), Vector3(Sim.DOOR_IN.x, 0.01, 4.6), Color("8b96a1"))
+	block(room, Vector3(1.5, 0.02, 0.95), Vector3(Sim.DOOR_IN.x, 0.01, 3.95), Color("3d434b"))
+	block(room, Vector3(1.26, 0.025, 0.71), Vector3(Sim.DOOR_IN.x, 0.012, 3.95), Color("525a64"))
+	block(room, Vector3(1.26, 0.03, 0.08), Vector3(Sim.DOOR_IN.x, 0.012, 3.75), L.stripe[0])
+	block(room, Vector3(1.26, 0.03, 0.08), Vector3(Sim.DOOR_IN.x, 0.012, 3.87), L.stripe[1])
 	# counter and registers
 	block(room, Vector3(0.85, COUNTER_H, 5.3), Vector3(4.5, COUNTER_H / 2, -0.75), Color("f3ecdc"))
 	block(room, Vector3(0.87, 0.08, 5.32), Vector3(4.5, 0.47, -0.75), L.stripe[0])
@@ -3014,6 +3020,21 @@ func build_room() -> void:
 			var s := sprite(e[0], Rect2(e[1] * cell, 0, cell, cell), px)
 			s.position = e[2] + Vector3(0, cell / 2.0 * px, 0)
 			room.add_child(s)
+
+
+## The glass front cut away at knee height from x0 to x1 (shop-local, z = 4.6): an aluminium sill, the glass's
+## section with its cut edge catching the light, and mullion stubs every bay and at each end.
+func glass_front(x0: float, x1: float) -> void:
+	var w := x1 - x0
+	if w <= 0.1:
+		return
+	var cx := (x0 + x1) / 2
+	block(room, Vector3(w, 0.12, 0.26), Vector3(cx, 0.06, 4.6), Color("5e6670"))
+	block(room, Vector3(w, 0.3, 0.06), Vector3(cx, 0.27, 4.6), Color(0.78, 0.89, 0.96, 0.6))
+	block(room, Vector3(w, 0.025, 0.07), Vector3(cx, 0.43, 4.6), Color("f2f9fc"))
+	var bays := maxi(1, roundi(w / 1.6))
+	for k in bays + 1:
+		block(room, Vector3(0.09, 0.48, 0.14), Vector3(x0 + 0.045 + (w - 0.09) * k / bays, 0.24, 4.6), Color("6d7680"))
 
 
 ## The left wall's face (at x = zl, facing +x): a skirting board, the staff door in the aisle by the fridges under a
