@@ -271,6 +271,8 @@ var pool_mat: StandardMaterial3D
 var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after dark
 var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
 var spill_mat: StandardMaterial3D  # shop light falling out of a glass front across the sidewalk
+var flood_mat: StandardMaterial3D  # your car park's floodlight on the bays
+var sign_glow_mat: StandardMaterial3D  # the glow round your lit pole sign
 var snow_tex: ImageTexture  # patchy settled snow, tiled 8 m
 var snow_cover: MeshInstance3D  # the set's snowy ground, shown on a cold snap
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
@@ -328,6 +330,8 @@ func _ready() -> void:
 	halo_mat = pool_mat.duplicate()
 	halo_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	spill_mat = pool_mat.duplicate()
+	flood_mat = pool_mat.duplicate()
+	sign_glow_mat = halo_mat.duplicate()
 	var fall := Image.create(64, 32, false, Image.FORMAT_RGBA8)
 	for y in 32:
 		for x in 64:
@@ -522,6 +526,8 @@ func update_light() -> void:
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
+	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night)
+	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night)
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
 	if car_glass:
 		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
@@ -2700,7 +2706,8 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		spill(parent, cx, w + 1.6, -7.05)
 
 
-## Your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark (street frame).
+## Your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark (street frame),
+## with a glow round its lightbox and a pair of floodlights under it washing the bays in shop light.
 func pole_sign(parent: Node3D) -> void:
 	var ps := Vector3(3.0, 0, -16.5)
 	block(parent, Vector3(0.22, 6.2, 0.22), ps + Vector3(0, 3.1, 0), Color("9aa0a6"))
@@ -2717,6 +2724,26 @@ func pole_sign(parent: Node3D) -> void:
 		lf.position = ps + Vector3(0, 6.7, 0.175 * side)
 		lf.rotation.y = 0.0 if side > 0 else PI
 		parent.add_child(lf)
+	var glow := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(4.2, 3.2)
+	glow.mesh = q
+	glow.material_override = sign_glow_mat
+	glow.position = ps + Vector3(0, 6.45, 0.4)
+	parent.add_child(glow)
+	for arm in [Vector3(-0.55, 0, 0), Vector3(0, 0, 0.55)]:  # floodlights aimed into the bays
+		block(parent, Vector3(0.08, 0.08, 0.08) + arm.abs(), ps + Vector3(0, 4.9, 0) + arm / 2, Color("9aa0a6"))
+		var head := MeshInstance3D.new()
+		head.mesh = shaded_box()
+		head.scale = Vector3(0.3, 0.14, 0.3)
+		head.position = ps + Vector3(0, 4.82, 0) + arm * 1.2
+		head.material_override = lamp_mat
+		parent.add_child(head)
+	var lot := ps + Vector3(-2.8, 0, 4.2)
+	plane(parent, Vector2(10.5, 10.5), Vector3(lot.x, -0.032, lot.z), flood_mat)
+	if parent == set_node:
+		var w := parent.global_position + lot
+		pools.append(Vector3(w.x, w.z, 4.4))
 	blob(parent, Vector2(ps.x, ps.z), 0.3)
 
 
