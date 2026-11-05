@@ -232,6 +232,8 @@ var walkers: Array = []
 var cars: Array = []
 var next_walker := 0.0
 var next_car := 0.0
+var set_cars: Array = []  # traffic on the set's own street, which city movers keep off
+var next_set_car := 0.0
 var mode := "store"  # store | city
 var city_sig := ""
 var lm_ground := {}  # "water" / "grass" -> [material, uv per metre]: the city's ground, for landmarks' own pools and lawns
@@ -2057,6 +2059,54 @@ func street_life(delta: float) -> void:
 	run_trains()
 
 
+## Cars on the set's street, keeping left: each waits behind the one ahead and stops at the crossing on amber and
+## red, headlights washing the road ahead after dark.
+func street_traffic(delta: float) -> void:
+	delta = minf(delta, 0.5)
+	var lt: Array = sim.lights()
+	var held: bool = lt[0] or lt[2]
+	next_set_car -= delta * (Sim.band(sim.hour()).traffic / 1.2 if sim.phase == "playing" else 1.0)
+	if next_set_car <= 0.0:
+		next_set_car = randf_range(1.5, 4.0)
+		var dir := 1.0 if randf() < 0.5 else -1.0
+		var x0 := SET.position.x if dir > 0.0 else SET.end.x
+		if not set_cars.any(func(o): return o.dir == dir and absf(o.x - x0) < 8.0):
+			var kv := randi() % 4
+			var node := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
+			var y := VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
+			node.add_child(shadow(y, 1.5))
+			var beam := MeshInstance3D.new()
+			var pm := PlaneMesh.new()
+			pm.size = Vector2(3.2, 2.2)
+			beam.mesh = pm
+			beam.material_override = pool_mat
+			beam.position = Vector3(3.2 * dir, 0.03 - y, 0)
+			node.add_child(beam)
+			node.position = Vector3(x0, y, -1.7 * dir)
+			set_node.add_child(node)
+			facing(node, Vector3(dir, 0, 0), kv * 2, VEHICLE_CELL)
+			var cruise := randf_range(5.0, 8.0) * (0.6 if kv == 3 else 1.0)
+			set_cars.append({"node": node, "x": x0, "v": cruise, "dir": dir, "cruise": cruise})
+	var gone := []
+	for o in set_cars:
+		var room_ := INF
+		for q in set_cars:
+			if q != o and q.dir == o.dir and (q.x - o.x) * o.dir > 0.0:
+				room_ = minf(room_, (q.x - o.x) * o.dir - 5.5)
+		var line: float = (Sim.CROSS_X - 4.0 * o.dir - o.x) * o.dir  # the car's centre to its stop line
+		if held and line > -0.2:
+			room_ = minf(room_, line)
+		o.v = minf(move_toward(o.v, o.cruise, 4.0 * delta), maxf(room_, 0.0) * 1.2)
+		o.x += o.dir * o.v * delta
+		o.node.position.x = o.x
+		shine(o.node)
+		if o.x > SET.end.x or o.x < SET.position.x:
+			gone.append(o)
+	for o in gone:
+		o.node.queue_free()
+	set_cars = set_cars.filter(func(o): return not gone.has(o))
+
+
 ## Settled snow for an 8 m repeat: drifts at three scales on wrapping value noise, in whole pixels like the pavers.
 func snow_patches() -> ImageTexture:
 	var r := RandomNumberGenerator.new()
@@ -2163,6 +2213,7 @@ func build_set() -> void:
 	slot_icons.clear()
 	slot_goods.clear()
 	pools.clear()
+	set_cars.clear()
 	var b := branch
 	var st: Dictionary = b.store
 	var type: String = sim.districts[sim.lots[b.lot].block].type
@@ -3335,6 +3386,7 @@ func _process(delta: float) -> void:
 			snow_cover.visible = branch.event != null and branch.event.id == "coldSnap"
 		refresh_stock()
 		sync_actors(delta)
+		street_traffic(delta)
 		for f in floaters:
 			f.at.y += 0.6 * delta
 			f.life -= delta
