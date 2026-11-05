@@ -38,9 +38,6 @@ const COUNTER_H := 0.75  # the counter top, at the staff's elbows
 const LANDMARK := 256
 const Models := preload("res://landmark_models.gd")  # landmarks traced from their drawings into boxes
 const LANDMARK_H := {"landmarks": 256, "tokyo": 384}  # the Tokyo sheet has tall cells for the towers
-const TRAIN := Vector2i(320, 192)
-const TRAIN_PX := 0.05
-const TRAIN_SPEED := 14.0
 const LANDMARK_SPAN := 29.5  # screen width of a landmark: most of the 22 m square the city reserves for it
 const WALK_NEAR := 1.2  # customers' sidewalk line in front of the shop
 const MAX_WALKERS := 70
@@ -241,9 +238,11 @@ var site: Node3D
 var city: Node3D
 var lots_node: Node3D
 var C: Dictionary  # the City map
-var trains: Array = []  # movers on the Yamanote
+var trains: Array = []  # on the Yamanote: {dir, k, cars: [MeshInstance3D]}
+var rail_t := 0.0  # the trains' clock, seconds
+var rail_parts: Array = []  # [s from, s to, deck piece]: which piece of the viaduct carries a train at s
+var car_glass: StandardMaterial3D  # train windows: dark by day, lit after dark
 var paths: Array = []  # every road as a path for movers: {pts, cum, w, kind, closed, box}
-var rail_path: Dictionary
 var set_feet: Array = []  # world footprints of what the street set builds behind its street, where the city gives way
 var pillar_deck: Array = []  # per pillar: the deck piece it holds up
 var elevated: Array = []  # [MeshInstance3D, a, b]: deck pieces, hidden when they would cover the focused shop
@@ -517,6 +516,8 @@ func update_light() -> void:
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
+	if car_glass:
+		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
 	soft_mat.albedo_color.a = 0.34 - 0.14 * night
 	ao_mat.albedo_color.a = 0.3 - 0.1 * night
 	lit_sprites = lit_sprites.filter(func(s): return is_instance_valid(s))
@@ -987,16 +988,13 @@ func build_elevated() -> void:
 	var lines := mat(Color("e8e2c8"))
 	var dm := mat(Color.WHITE, stripes(Color("4f5158"), Color("e8e2c8"), 8, 1, 3))
 	dm.texture_repeat = true
-	var ballast := mat(Color("8a8174"))
-	var steel := mat(Color("4a4440"))
-	var green := mat(Color("7fc241"))
-	var pillars: Array = []
+	var pillars: Array = []  # [transform, the deck piece it holds up]
+	var decks: Array = []  # per route: per point, its deck piece
 	var routes: Array = []
 	for sh in C.shuto:
 		routes.append([sh.pts, sh.closed, Sim.City.EXPRESS_W, "shuto"])
 	for rp in C.ramps:
 		routes.append([rp.pts, false, Sim.City.RAMP_W, "ramp"])
-	routes.append([flat3(C.rail, Sim.City.RAIL_DECK), true, 3.6, "rail"])
 	for rt in routes:
 		var pts: PackedVector3Array = rt[0].duplicate()
 		if rt[1]:
@@ -1012,49 +1010,133 @@ func build_elevated() -> void:
 			var part := pts.slice(lo, mini(j + 2, pts.size()))
 			var f := i - lo
 			var l := j - lo
-			var top := surface(ballast if rt[3] == "rail" else deck)
+			var top := surface(deck)
 			var side := surface(fascia)
-			var mark := surface(steel if rt[3] == "rail" else lines)
-			var extra := surface(green if rt[3] == "rail" else dm)
+			var mark := surface(lines)
+			var extra := surface(dm)
 			ribbon(top, part, half, -half, 0.3, 0.0, f, l)
 			for s in [half, -half]:
 				wall(side, part, s, -0.6, 0.9, f, l)
-			if rt[3] == "rail":
-				for s in [0.75, -0.75]:
-					ribbon(mark, part, s + 0.08, s - 0.08, 0.34, 0.0, f, l)
-				for s in [half + 0.01, -half - 0.01]:
-					wall(extra, part, s, 0.25, 0.45, f, l)
-			else:
-				for s in [half - 0.5, 0.5 - half]:
-					ribbon(mark, part, s + 0.07, s - 0.07, 0.32, 0.0, f, l)
-				if rt[3] == "shuto":
-					wall(side, part, 0.0, 0.3, 0.8, f, l)  # median barrier
-					for s in [half / 2, -half / 2]:
-						ribbon(extra, part, s + 0.07, s - 0.07, 0.32, 0.5, f, l)
+			for s in [half - 0.5, 0.5 - half]:
+				ribbon(mark, part, s + 0.07, s - 0.07, 0.32, 0.0, f, l)
+			if rt[3] == "shuto":
+				wall(side, part, 0.0, 0.3, 0.8, f, l)  # median barrier
+				for s in [half / 2, -half / 2]:
+					ribbon(extra, part, s + 0.07, s - 0.07, 0.32, 0.5, f, l)
 			var mi := commit([top, side, mark, extra], city)
 			elevated.append([mi, Vector2(pts[i].x, pts[i].z), Vector2(pts[j].x, pts[j].z)])
 			for k in range(i, j + 1):
 				deck_at[k] = mi
 			i = j
-		# pillars every so often where the deck is high enough to need one
-		var gap := 10.0 if rt[3] == "rail" else 14.0
-		var walked := gap
-		for k in range(1, pts.size()):
-			walked += pts[k - 1].distance_to(pts[k])
-			if walked >= gap and pts[k].y > 1.5:
-				walked = 0.0
-				pillars.append([pts[k], 0.7 if rt[3] == "rail" else (1.0 if rt[3] == "ramp" else 1.5), deck_at[k]])
+		decks.append(deck_at)
+	for dp in Sim.City.deck_pillars(C):  # where the city put the pillars: off the Yamanote's viaduct
+		var p: Vector3 = dp[2]
+		pillars.append([Transform3D(Basis.from_scale(Vector3(dp[3], p.y, dp[3])), Vector3(p.x, p.y / 2.0, p.z)), decks[dp[0]][dp[1]]])
+	build_rail(pillars)
 	var pm := BoxMesh.new()
 	pillar_mm = multimesh(pm, pillars.size())
 	pillar_base.clear()
 	pillar_deck.clear()
 	for k in pillars.size():
-		pillar_deck.append(pillars[k][2])
-		var p: Vector3 = pillars[k][0]
-		var tf := Transform3D(Basis.from_scale(Vector3(pillars[k][1], p.y, pillars[k][1])), Vector3(p.x, p.y / 2.0, p.z))
-		pillar_mm.set_instance_transform(k, tf)
-		pillar_base.append(tf)
+		pillar_deck.append(pillars[k][1])
+		pillar_mm.set_instance_transform(k, pillars[k][0])
+		pillar_base.append(pillars[k][0])
 	mm_node(pillar_mm, mat(Color("aaa59b")), city)
+
+
+## The Yamanote viaduct: two tracks on a ballasted deck with parapets and the line's green stripe, an island platform
+## under a canopy at each station, in pieces the shop view can hide (rail_parts keeps each piece's stretch of the
+## line, so a train on a hidden piece hides too); a column and cap beam under it at each pier.
+func build_rail(pillars: Array) -> void:
+	var CT := Sim.City
+	var ballast := mat(Color("8a8174"))
+	var bed := mat(Color("6f675d"))
+	var steel := mat(Color("4a4440"))
+	var fascia := mat(Color("c3bfb6"))
+	var green := mat(Color("7fc241"))
+	var slab := mat(Color("d6d2c6"))
+	var edge := mat(Color("e8c84a"))
+	var roof := mat(Color("8f979b"))
+	var post := mat(Color("6d7378"))
+	var half: float = CT.RAIL_W / 2
+	var y: float = CT.RAIL_DECK
+	var loop: PackedVector3Array = flat3(C.rail_loop, y)
+	rail_parts.clear()
+	var piece := {}  # rail point -> its deck piece, for the piers
+	var i := 0
+	while i < loop.size() - 1:
+		var j := mini(i + 8, loop.size() - 1)
+		var part := PackedVector3Array()
+		for k in range(i - 1, j + 2):  # one point either side, so the strip's edges turn with the line
+			part.append(loop[posmod(k, loop.size() - 1)])
+		var top := surface(ballast)
+		var beds := surface(bed)
+		var rails := surface(steel)
+		var side := surface(fascia)
+		var stripe := surface(green)
+		var f := 1
+		var l := part.size() - 2
+		ribbon(top, part, half, -half, 0.3, 0.0, f, l)
+		for t in [CT.TRACK, -CT.TRACK]:
+			ribbon(beds, part, t + 1.0, t - 1.0, 0.31, 0.0, f, l)
+			for g in [0.6, -0.6]:
+				ribbon(rails, part, t + g + 0.07, t + g - 0.07, 0.36, 0.0, f, l)
+		for s in [half, -half]:
+			wall(side, part, s, -0.6, 0.9, f, l)
+		for s in [half + 0.01, -half - 0.01]:
+			wall(stripe, part, s, 0.25, 0.45, f, l)
+		var mi := commit([top, beds, rails, side, stripe], city)
+		elevated.append([mi, Vector2(loop[i].x, loop[i].z), Vector2(loop[j].x, loop[j].z)])
+		rail_parts.append([C.rail_cum[i], C.rail_cum[j], mi])
+		for k in range(i, j + 1):
+			piece[k] = mi
+		i = j
+	# stations: an island platform between the tracks, its yellow edges, a canopy on posts
+	for st in C.stations:
+		var pts := PackedVector3Array()
+		for k in int(CT.PLATFORM_L / 2.0) + 3:
+			var pt: Array = CT.rail_at(C, st.s - CT.PLATFORM_L / 2 + (k - 1) * 2.0)
+			pts.append(Vector3(pt[0].x, y, pt[0].y))
+		var pw: float = CT.PLATFORM_W / 2
+		var deckp := surface(slab)
+		var lines := surface(edge)
+		var sides := surface(fascia)
+		var canopy := surface(roof)
+		var posts := surface(post)
+		var f := 1
+		var l := pts.size() - 2
+		ribbon(deckp, pts, pw, -pw, 1.1, 0.0, f, l)
+		for s in [pw, -pw]:
+			wall(sides, pts, s, 0.3, 1.1, f, l)
+			ribbon(lines, pts, s * 0.8 + 0.08, s * 0.8 - 0.08, 1.12, 0.0, f, l)
+		ribbon(canopy, pts, pw + 0.25, -pw - 0.25, 3.6, 0.0, f, l)  # over the platform, just above the cars' roofs
+		for s in [pw + 0.25, -pw - 0.25]:
+			wall(canopy, pts, s, 3.45, 3.6, f, l)
+		for k in range(f, l + 1, 3):
+			var d := pts[mini(k + 1, pts.size() - 1)] - pts[k - 1]
+			block_into(posts, pts[k] + Vector3(0, 2.3, 0), Vector3(0.22, 2.4, 0.22), atan2(d.x, d.z))
+		var mi := commit([deckp, lines, sides, canopy, posts], city)
+		elevated.append([mi, Vector2(pts[0].x, pts[0].z), Vector2(pts[-1].x, pts[-1].z)])
+		rail_parts.append([st.s - CT.PLATFORM_L / 2, st.s + CT.PLATFORM_L / 2, mi])
+	# piers: a column where the city found room for one, under a cap beam across the deck
+	for pr in C.piers:
+		var at_: Vector2 = pr[1]
+		var on: Array = CT.rail_at(C, pr[0])
+		var k := clampi(C.rail_cum.bsearch(pr[0]), 0, C.rail.size() - 1)
+		var turn := atan2(on[1].x, on[1].y)
+		pillars.append([Transform3D(Basis.from_scale(Vector3(1.2, y - 0.6, 1.2)), Vector3(at_.x, (y - 0.6) / 2.0, at_.y)), piece.get(k)])
+		pillars.append([Transform3D(Basis(Vector3.UP, turn) * Basis.from_scale(Vector3(CT.RAIL_W - 0.6, 0.7, 1.1)), Vector3(on[0].x, y - 0.6, on[0].y)), piece.get(k)])
+
+
+## A box into a surface: centre c, size, turned `turn` about y (unshaded flat colour, as the walls round it).
+func block_into(st: SurfaceTool, c: Vector3, size_: Vector3, turn: float) -> void:
+	var b := Basis(Vector3.UP, turn)
+	var h := size_ / 2
+	for n: Vector3 in [Vector3.RIGHT, Vector3.LEFT, Vector3.BACK, Vector3.FORWARD, Vector3.UP]:
+		var u := Vector3.UP if absf(n.y) < 0.5 else Vector3.RIGHT
+		var v := n.cross(u)
+		var q := [n + u + v, n - u + v, n - u - v, n + u - v].map(func(o): return c + b * (o * h))
+		add_quad(st, q, [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
 
 
 ## Every building as a box with a facade shader (one MultiMesh), gable roofs on houses and kit on flat roofs.
@@ -1677,15 +1759,97 @@ func build_paths() -> void:
 		pa.ground = paths.filter(func(q): return q.kind == "avenue" and q.name == av.name)[0]
 		pa.deck = decks[av.shuto]
 		paths.append(pa)
-	rail_path = make_path(flat3(C.rail, Sim.City.RAIL_DECK + 0.3), 3.6, "rail", true)
 	for trn in trains:
-		trn.node.queue_free()
+		for car in trn.cars:
+			car.queue_free()
 	trains.clear()
-	for k in 2:
-		var node := sprite("train", Rect2(0, 0, TRAIN.x, TRAIN.y), TRAIN_PX)
-		street.add_child(node)
-		lit_sprites.append(node)
-		trains.append({"path": rail_path, "s": rail_path.cum[-1] * k / 2.0, "v": TRAIN_SPEED * (1 if k == 0 else -1), "lat": 0.0, "node": node, "y": TRAIN.y / 2.0 * TRAIN_PX * 0.55 - 0.1})
+	var mesh := car_mesh()
+	for dir in [1, -1]:
+		for k in Sim.City.TRAINS:
+			var set_ := []
+			for j in Sim.City.CARS:
+				var car := MeshInstance3D.new()
+				car.mesh = mesh
+				street.add_child(car)
+				set_.append(car)
+			trains.append({"dir": dir, "k": k, "cars": set_})
+
+
+## A Yamanote car: stainless body on its bogies, green door panels and stripes, a window band that lights up after
+## dark, a roof with its air-conditioning unit. Length along x, across z, y up from the rail; walls shaded as boxes.
+func car_mesh() -> ArrayMesh:
+	var L: float = Sim.City.CAR_L / 2
+	var W: float = Sim.City.CAR_W / 2
+	var H: float = Sim.City.CAR_H
+	var body := mat(Color.WHITE)
+	body.vertex_color_use_as_albedo = true
+	body.vertex_color_is_srgb = true
+	if not car_glass:
+		car_glass = StandardMaterial3D.new()
+		car_glass.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		car_glass.cull_mode = BaseMaterial3D.CULL_DISABLED
+		car_glass.albedo_color = Color("33424c") * light
+	var sb := surface(body)
+	var sg := surface(car_glass)
+	var boxes := [  # [from, to, colour, the surface]
+		[Vector3(-L + 1.0, 0.0, -W + 0.45), Vector3(-L + 2.2, 0.55, W - 0.45), "2b2b2e", sb],
+		[Vector3(L - 2.2, 0.0, -W + 0.45), Vector3(L - 1.0, 0.55, W - 0.45), "2b2b2e", sb],
+		[Vector3(-L + 0.3, 0.3, -W + 0.25), Vector3(L - 0.3, 0.7, W - 0.25), "3d3e42", sb],
+		[Vector3(-L, 0.7, -W), Vector3(L, H - 0.2, W), "c9cdd0", sb],
+		[Vector3(-L + 0.1, H - 0.2, -W + 0.1), Vector3(L - 0.1, H - 0.05, W - 0.1), "a8aeb2", sb],
+		[Vector3(-1.3, H - 0.05, -0.8), Vector3(1.3, H + 0.2, 0.8), "8d9397", sb],
+		[Vector3(-L + 0.35, 1.45, -W - 0.02), Vector3(L - 0.35, 2.1, W + 0.02), "", sg],
+		[Vector3(-L, 0.9, -W - 0.03), Vector3(L, 1.12, W + 0.03), "7fc241", sb],
+		[Vector3(-L, 2.2, -W - 0.03), Vector3(L, 2.34, W + 0.03), "7fc241", sb],
+	]
+	for x in [-L * 0.55, L * 0.55]:  # a door each way, green, with its window
+		boxes.append([Vector3(x - 0.5, 0.8, -W - 0.05), Vector3(x + 0.5, 2.45, W + 0.05), "5fa83a", sb])
+		boxes.append([Vector3(x - 0.3, 1.55, -W - 0.07), Vector3(x + 0.3, 2.1, W + 0.07), "", sg])
+	for bx in boxes:
+		var a: Vector3 = bx[0]
+		var b: Vector3 = bx[1]
+		var st: SurfaceTool = bx[3]
+		var c := Color(bx[2]) if bx[2] != "" else Color.WHITE
+		for fc in [[Vector3.UP, 1.0], [Vector3.BACK, 0.9], [Vector3.FORWARD, 0.75], [Vector3.RIGHT, 0.85], [Vector3.LEFT, 0.8]]:
+			var n: Vector3 = fc[0]
+			var u := Vector3.UP if absf(n.y) < 0.5 else Vector3.RIGHT
+			var v := n.cross(u)
+			var mid := (a + b) / 2
+			var h := (b - a) / 2
+			st.set_color(Color(c.r * fc[1], c.g * fc[1], c.b * fc[1]))
+			add_quad(st, [n + u + v, n - u + v, n - u - v, n + u - v].map(func(o): return mid + o * h), [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	var mesh := ArrayMesh.new()
+	sb.commit(mesh)
+	sg.commit(mesh)
+	return mesh
+
+
+## Every train where the timetable has it: each car between its two bogies on its own track (keeping left), so a
+## train bends round the curves; a car on a piece of viaduct the shop view hides hides with it.
+func run_trains() -> void:
+	var CT := Sim.City
+	var pitch: float = CT.CAR_L + CT.CAR_GAP
+	var y: float = CT.RAIL_DECK + 0.36
+	for trn in trains:
+		var s: float = CT.train_s(C, trn.dir, trn.k, rail_t)
+		for j in trn.cars.size():
+			var car: MeshInstance3D = trn.cars[j]
+			var c: float = s + trn.dir * ((CT.CARS - 1) / 2.0 - j) * pitch
+			var ends := []
+			for e in [1.0, -1.0]:
+				var pt: Array = CT.rail_at(C, c + trn.dir * e * (CT.CAR_L / 2 - 1.6))
+				ends.append(pt[0] + Vector2(pt[1].y, -pt[1].x) * CT.TRACK * trn.dir)
+			var fw: Vector2 = (ends[0] - ends[1]).normalized()
+			var m: Vector2 = (ends[0] + ends[1]) / 2
+			var x3 := Vector3(fw.x, 0, fw.y)
+			car.transform = Transform3D(Basis(x3, Vector3.UP, x3.cross(Vector3.UP)), Vector3(m.x, y, m.y))
+			var at := fposmod(c, C.rail_cum[-1])
+			var shown := true
+			for rp in rail_parts:
+				if at >= rp[0] and at <= rp[1] and not rp[2].visible:
+					shown = false
+					break
+			car.visible = shown
 
 
 func make_path(pts: PackedVector3Array, w: float, kind_: String, closed: bool) -> Dictionary:
@@ -1886,11 +2050,8 @@ func street_life(delta: float) -> void:
 		o.node.queue_free()
 	walkers = walkers.filter(func(o): return not gone.has(o))
 	cars = cars.filter(func(o): return not gone.has(o))
-	for trn in trains:
-		trn.s = fposmod(trn.s + trn.v * delta, trn.path.cum[-1])
-		place(trn)
-		facing(trn.node, trn.dir, 0, TRAIN)
-		trn.node.visible = not area.grow(10.0).has_point(Vector2(trn.node.position.x, trn.node.position.z))
+	rail_t += delta
+	run_trains()
 
 
 func speckle(colors: Array) -> ImageTexture:

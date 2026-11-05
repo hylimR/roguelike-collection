@@ -2,9 +2,11 @@ extends RefCounted
 ## Tokyo as a city-builder map. Districts sit at their real relative places; the bay, the Sumida and the parks
 ## are carved out; blocks come from splitting the city again and again (so side streets meet in T-junctions and
 ## never line up into one grid), bridging the river, stopping at quays on the bay and ending on a road round every
-## park; curved avenues, the elevated Shuto expressway over some of them (with ramps down to the avenue below) and
-## the Yamanote loop cut across. Every road ends on another road, at a quay or off the map. Built once and cached:
-## Tokyo never changes, only who holds which lot. Node-free; buildings() is only for the view.
+## park; curved avenues and the elevated Shuto expressway over some of them (with ramps down to the avenue below) cut
+## across. Every road ends on another road, at a quay or off the map. The Yamanote's viaduct is laid last, through the
+## landmarks and lots, on curves no tighter than RAIL_R and clear of the parks, with a station by each of its
+## districts; what it cannot keep off is placed again round it. Built once and cached: Tokyo never changes, only who
+## holds which lot. Node-free; buildings() is only for the view.
 
 const ROAD := 9.2  # sidewalk, two lanes, sidewalk: the street the shop view draws
 const SIDEWALK := 2.2
@@ -12,16 +14,38 @@ const AVENUE := 13.0
 const CARRIER := 17.0  # an avenue with the expressway above it
 const EXPRESS_W := 9.0
 const RAMP_W := 4.0
-const DECK := 6.0
 const RAIL_DECK := 3.4
+const CAR_H := 2.8  # a train car, rail to roof
+const DECK := RAIL_DECK + 0.3 + CAR_H + 0.5 + 0.6  # the expressway's slab clears a train on the viaduct under it
 const FLOOR := 3.0
 const LOT_W := 22.0
 const LOT_D := 10.0
 const URBAN := 92.0  # built-up land reaches this far from the nearest district centre
 const MOAT := 6.0
 const RIVER_W := 16.0
-const RAMP_L := 46.0
+const RAMP_L := 46.0 * DECK / 6.0  # a 1:7.7 grade up to the deck
 const BRIDGE := 30.0  # the longest water a side street bridges (the Sumida at a slant); longer, it stops at a quay
+# the Yamanote: a double-track viaduct, straight between its stations and round every corner on a RAIL_R curve; one
+# width all the way, the tracks spaced for an island platform between them at each station
+const RAIL_R := 30.0  # the tightest curve: a car's middle sits CAR_L^2 / 8 R = 0.2 m off the track
+const CAR_L := 7.0
+const CAR_W := 2.6
+const PLATFORM_W := 1.8
+const TRACK := PLATFORM_W / 2 + CAR_W / 2  # each track's offset from the viaduct's centre line
+const RAIL_W := 2.0 * (TRACK + CAR_W / 2 + 0.3)
+const RAIL_CLEAR := RAIL_W / 2 + 1.2  # what buildings, lots and landmarks keep off its centre line
+const PLATFORM_L := 34.0
+const STATION_OFF := 11.0 + RAIL_CLEAR + 0.5  # a 22 m landmark square at the district centre stays clear of it
+const STATION_OFFS := [STATION_OFF, STATION_OFF + 4.0, STATION_OFF + 8.0]  # further out where that runs clearer
+const PIER_GAP := 12.0  # a pier about this often, slid off the roads under the viaduct
+const MAX_SPAN := 42.0  # the longest girder between piers: over an avenue it crosses at a slant, or an expressway junction
+const DECK_SPAN := 45.0  # the expressway's longest, where its pillars step aside for the viaduct under it
+const CAR_GAP := 0.6
+const CARS := 4  # a train
+const TRAINS := 3  # a track
+const TRAIN_V := 14.0
+const TRAIN_A := 2.5
+const DWELL := 5.0
 
 # [name, profile, x, z, landmark sheet, frame (-1: none), shop lots]. x east, z south; ~40 units a kilometre.
 const DISTRICTS := [
@@ -147,13 +171,18 @@ static func cumulative(pts: PackedVector2Array, closed := false) -> PackedFloat3
 
 ## [point, unit tangent] at arc length s along an open polyline.
 static func at(pts: PackedVector2Array, cum: PackedFloat32Array, s: float) -> Array:
+	if pts.size() < 2:
+		return [pts[0], Vector2.RIGHT]
 	s = clampf(s, 0.0, cum[-1])
-	for i in range(1, pts.size()):
-		if cum[i] >= s or i == pts.size() - 1:
-			var seg := cum[i] - cum[i - 1]
-			var t := (s - cum[i - 1]) / seg if seg > 0.0 else 0.0
-			return [pts[i - 1].lerp(pts[i], t), (pts[i] - pts[i - 1]).normalized()]
-	return [pts[0], Vector2.RIGHT]
+	var i := clampi(cum.bsearch(s), 1, pts.size() - 1)
+	var seg := cum[i] - cum[i - 1]
+	var t := (s - cum[i - 1]) / seg if seg > 0.0 else 0.0
+	return [pts[i - 1].lerp(pts[i], t), (pts[i] - pts[i - 1]).normalized()]
+
+
+## [point, unit tangent] at s along the Yamanote, any s (it is a loop).
+static func rail_at(C: Dictionary, s: float) -> Array:
+	return at(C.rail_loop, C.rail_cum, fposmod(s, C.rail_cum[-1]))
 
 
 static func in_ellipse(p: Vector2, c: Vector2, r: Vector2) -> bool:
@@ -254,6 +283,37 @@ static func reserve(C: Dictionary, r: Rect2) -> void:
 		C.reserved[k].append(r)
 
 
+static func unreserve(C: Dictionary, r: Rect2) -> void:
+	for k in _bucket_keys(r):
+		C.reserved.get(k, []).erase(r)
+
+
+## Distance from p to the Yamanote's centre line (INF beyond 24 m).
+static func rail_dist(C: Dictionary, p: Vector2) -> float:
+	if not C.has("rail_buckets"):
+		C.rail_buckets = {}
+		for i in C.rail.size():
+			var a: Vector2 = C.rail[i]
+			var b: Vector2 = C.rail[(i + 1) % C.rail.size()]
+			for key in _bucket_keys(Rect2(a, Vector2.ZERO).expand(b).grow(24.0)):
+				if not C.rail_buckets.has(key):
+					C.rail_buckets[key] = []
+				C.rail_buckets[key].append([a, b])
+	var d := INF
+	for sg in C.rail_buckets.get(Vector2i(floori(p.x / 24.0), floori(p.y / 24.0)), []):
+		d = minf(d, Geometry2D.get_closest_point_to_segment(p, sg[0], sg[1]).distance_to(p))
+	return d
+
+
+## True when a footprint comes within RAIL_CLEAR of the Yamanote's centre line.
+static func _on_rail(C: Dictionary, r: Rect2) -> bool:
+	var reach := r.size.length() / 2 + RAIL_CLEAR + 4.0
+	for i in C.rail.size():
+		if C.rail[i].distance_to(r.get_center()) < reach and seg_rect_dist(C.rail[i], C.rail[(i + 1) % C.rail.size()], r) < RAIL_CLEAR:
+			return true
+	return false
+
+
 ## True when a footprint would sit on a road corridor, water (unless `wet`), a park, or a reserved lot or landmark.
 static func blocked(C: Dictionary, r: Rect2, wet := false) -> bool:
 	for k in _bucket_keys(r):
@@ -285,40 +345,22 @@ static func _build() -> Dictionary:
 	# avenues, the expressway above the carriers, ramps from the deck down to the avenue
 	C.avenues = []
 	C.shuto = [{"name": "C1", "pts": _deck(smooth(C1, true), DECK), "closed": true}]
-	C.ramps = []  # {pts, av: the avenue below, s0: where along it the ramp starts, side: +1 left of its direction}
 	for av in AVENUES:
 		var pts := smooth(av.pts)
 		C.avenues.append({"name": av.name, "w": av.w, "pts": pts, "shuto": av.get("shuto", "")})
 		if av.has("shuto"):
 			C.shuto.append({"name": av.shuto, "pts": _deck(pts, DECK), "closed": false})
-			var cum := cumulative(pts)
-			var s0: float = cum[-1] * 0.42
-			for side in [1.0, -1.0]:
-				for s in [s0, s0 + RAMP_L + 24.0]:
-					var down: bool = (side > 0) == (s == s0)  # off-ramps first, on-ramps after, for traffic keeping left
-					C.ramps.append({"pts": _ramp(pts, cum, s, side, down), "av": C.avenues.size() - 1, "s0": s, "side": side})
 	var rainbow := smooth(RAINBOW)
 	var rb := _deck(rainbow, DECK)
 	var rcum := cumulative(rainbow)
 	for i in rb.size():
 		var p := rb[i]
-		p.y = DECK * clampf((rcum[-1] - rcum[i]) / 40.0, 0.0, 1.0)  # comes down onto Odaiba
+		p.y = DECK * clampf((rcum[-1] - rcum[i]) / (40.0 * DECK / 6.0), 0.0, 1.0)  # comes down onto Odaiba
 		rb[i] = p
 	C.shuto.append({"name": "11", "pts": rb, "closed": false})
 	for sh in C.shuto:
 		if sh.name in ["C1", "11"]:
 			_add_corridor(C, _flat(sh.pts), EXPRESS_W / 2 + 1.5, sh.closed)
-	for rp in C.ramps:
-		_add_corridor(C, _flat(rp.pts), RAMP_W / 2 + 1.0)
-	# the Yamanote loop, pulled a little inside its stations so it skirts their landmarks
-	var stations := []
-	for stn in YAMANOTE:
-		for d in C.districts:
-			if d.name == stn:
-				stations.append(d.center)
-	var mid: Vector2 = stations.reduce(func(a, b): return a + b, Vector2.ZERO) / stations.size()
-	C.rail = smooth(stations.map(func(p): return p + (mid - p).normalized() * 14.0), true)
-	_add_corridor(C, C.rail, 3.0, true)
 	# blocks and side streets
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1964
@@ -342,6 +384,30 @@ static func _build() -> Dictionary:
 	_place_landmarks(C)
 	_place_lots(C)
 	_place_landmarks_late(C)
+	_yamanote(C)
+	_ramps(C)
+	C.piers = _piers(C)
+	# what the line could not keep off is placed again, by its own rule, round it
+	for L in C.landmarks.duplicate():
+		var sq := Rect2(L.pos - Vector2.ONE * L.size / 2, Vector2.ONE * L.size)
+		if not in_park(C, L.pos) and _on_rail(C, sq):
+			C.landmarks.erase(L)
+			unreserve(C, sq)
+	var lost := {}  # district -> lots the line took
+	for L in C.lots.duplicate():
+		var r := Rect2(L.x0, L.front - LOT_D, LOT_W, LOT_D)
+		if _on_rail(C, r):
+			C.lots.erase(L)
+			unreserve(C, r)
+			lost[L.block] = lost.get(L.block, 0) + 1
+	var short := {}
+	for di in lost:
+		short[di] = C.lots.filter(func(L): return L.block == di).size() + lost[di]
+	_place_lots(C, lost.keys())
+	C.lots_lost = 0  # lots the line took that found no new place (the rules test wants none)
+	for di in short:
+		C.lots_lost += maxi(0, short[di] - C.lots.filter(func(L): return L.block == di).size())
+	_place_landmarks_late(C)
 	return C
 
 
@@ -359,6 +425,35 @@ static func _flat(pts: PackedVector3Array) -> PackedVector2Array:
 	return out
 
 
+## The ramps between each expressway and the avenue under it, both ways: an off-ramp and an on-ramp each side, from
+## 42% of the way along, or the nearest spot to that where all four keep clear of the Yamanote's viaduct (they rise
+## through its height). They stay inside the avenue's width.
+static func _ramps(C: Dictionary) -> void:
+	C.ramps = []  # {pts, av: the avenue below, s0: where along it the ramp starts, side: +1 left of its direction}
+	for ai in C.avenues.size():
+		var av: Dictionary = C.avenues[ai]
+		if av.shuto == "":
+			continue
+		var pts: PackedVector2Array = av.pts
+		var cum := cumulative(pts)
+		var span := RAMP_L * 2.0 + 24.0
+		var set_ := []
+		for k in 80:  # 42%, then 4 m further each way in turn
+			var s0: float = cum[-1] * 0.42 + 4.0 * ceili(k / 2.0) * (1 if k % 2 == 0 else -1)
+			if s0 < 0.0 or s0 + span > cum[-1]:
+				continue
+			set_ = []
+			for side in [1.0, -1.0]:
+				for s in [s0, s0 + RAMP_L + 24.0]:
+					var down: bool = (side > 0) == (s == s0)  # off-ramps first, on-ramps after, for traffic keeping left
+					set_.append({"pts": _ramp(pts, cum, s, side, down), "av": ai, "s0": s, "side": side})
+			if set_.all(func(rp): return Array(_flat(rp.pts)).all(func(p): return rail_dist(C, p) > RAIL_W / 2 + RAMP_W / 2 + 0.5)):
+				break
+		C.ramps.append_array(set_)
+	for rp in C.ramps:
+		_add_corridor(C, _flat(rp.pts), RAMP_W / 2 + 1.0)
+
+
 ## A ramp beside the deck between s0 and s0 + RAMP_L: on `side` (+1 left of the avenue's direction), coming down
 ## (or going up) between the deck's edge and the avenue's outer lane.
 static func _ramp(pts: PackedVector2Array, cum: PackedFloat32Array, s0: float, side: float, down: bool) -> PackedVector3Array:
@@ -372,6 +467,326 @@ static func _ramp(pts: PackedVector2Array, cum: PackedFloat32Array, s0: float, s
 		var p: Vector2 = pt[0] + left * side * lerpf(CARRIER / 2 - SIDEWALK - RAMP_W / 2, EXPRESS_W / 2 + RAMP_W / 2 + 0.4, y / DECK)
 		out.append(Vector3(p.x, y, p.y))
 	return out
+
+
+## The Yamanote, laid through the city's landmarks and lots: a loop past its stations, straight between
+## them and round each corner on a RAIL_R curve, so no curve is tighter. It passes STATION_OFF to one side of each
+## station's district centre (a station on a corner has its corner set out so the curve does), which leaves the
+## centre's 22 m square to the district's landmark beside the station: each station takes the side, toward the
+## loop's middle or away, where the straights either side of it run least over parks and landmarks. Where the
+## viaduct, its full width, would still run over a park, its ring road or the palace moat, a corner is added on the
+## far side of that margin (or the one added for it moved further out) until it runs clear. Each station stands on
+## the line where it passes nearest its district centre: C.stations [{d, s, pos}], s along C.rail, the loop's points
+## (C.rail_loop repeats the first at the end).
+static func _yamanote(C: Dictionary) -> void:
+	var cs := []
+	var di_of := []
+	for stn in YAMANOTE:
+		for di in C.districts.size():
+			if C.districts[di].name == stn:
+				cs.append(C.districts[di].center)
+				di_of.append(di)
+	var keep := []  # [centre, radii]
+	for pk in C.parks:
+		var m: float = (MOAT if pk.name == "Imperial Palace" else ROAD) + RAIL_W / 2 + 1.0
+		keep.append([pk.center, pk.radii + Vector2(m, m)])
+	# [footprint grown by RAIL_CLEAR, weight]: the landmarks, the lots, and each district's centre square
+	var squares: Array = C.landmarks.map(func(L): return [Rect2(L.pos - Vector2.ONE * L.size / 2, Vector2.ONE * L.size).grow(RAIL_CLEAR), 10.0])
+	squares.append_array(C.lots.map(func(L): return [Rect2(L.x0, L.front - LOT_D, LOT_W, LOT_D).grow(RAIL_CLEAR), 10.0]))
+	for d in C.districts:
+		if not in_park(C, d.center):
+			squares.append([Rect2(d.center - Vector2(11, 11), Vector2(22, 22)).grow(RAIL_CLEAR), 1.0])
+	var sq_at := {}  # bucket -> the squares over it
+	for q in squares:
+		for key in _bucket_keys(q[0]):
+			if not sq_at.has(key):
+				sq_at[key] = []
+			sq_at[key].append(q)
+	var decks := {}  # bucket -> expressway segments: the viaduct may pass under one, not run along under it
+	for sh in C.shuto:
+		var fl := _flat(sh.pts)
+		for k in fl.size() - (0 if sh.closed else 1):
+			var sg := [fl[k], fl[(k + 1) % fl.size()]]
+			for key in _bucket_keys(Rect2(sg[0], Vector2.ZERO).expand(sg[1]).grow(EXPRESS_W + RAIL_W)):
+				if not decks.has(key):
+					decks[key] = []
+				decks[key].append(sg)
+	var over := func(p: Vector2) -> float:  # how far p runs into parks' margins and footprints, metres by weight
+		var d := 0.0
+		for e in keep:
+			d += maxf(0.0, 1.0 - ((p - e[0]) / e[1]).length()) * minf(e[1].x, e[1].y) * 10.0
+		var under := 0.0
+		for sg in decks.get(Vector2i(floori(p.x / 24.0), floori(p.y / 24.0)), []):
+			under = maxf(under, EXPRESS_W / 2 + RAIL_W / 2 + 0.5 - Geometry2D.get_closest_point_to_segment(p, sg[0], sg[1]).distance_to(p))
+		d += under * 4.0
+		for q in sq_at.get(Vector2i(floori(p.x / 24.0), floori(p.y / 24.0)), []):
+			var r: Rect2 = q[0]
+			if r.has_point(p):
+				d += minf(minf(p.x - r.position.x, r.end.x - p.x), minf(p.y - r.position.y, r.end.y - p.y)) * q[1]
+		return d
+	var sides := {}  # station -> its two corners: the line passing STATION_OFF to the left of its centre, or right
+	for i in cs.size():
+		var d0: Vector2 = (cs[i] - cs[i - 1]).normalized()
+		var d1: Vector2 = (cs[(i + 1) % cs.size()] - cs[i]).normalized()
+		var th := d0.angle_to(d1)
+		var cut := RAIL_R * (1.0 / cos(th / 2.0) - 1.0)  # how far the curve passes inside its corner
+		var inside: Vector2 = (d0 + d1).normalized().rotated(signf(th) * PI / 2.0) if absf(th) > 0.01 else d0.orthogonal()
+		var left: Vector2 = (d0 + d1).normalized().orthogonal()
+		sides[i] = []
+		for off in STATION_OFFS:
+			for n in [left, -left]:
+				sides[i].append([cs[i] + n * off - inside * cut, off])
+	var V: Array = cs.map(func(c): return c)
+	for i in cs.size():
+		V[i] = sides[i][0][0]
+	for sweep in 3:
+		for i in cs.size():
+			var best := INF
+			var pick: Vector2 = V[i]
+			for cand in sides[i]:
+				V[i] = cand[0]
+				var f: Array = _fillet(V)
+				var score: float = (cand[1] - STATION_OFF) * 2.0  # nearer its centre is better
+				for k in f[0].size():
+					if f[2][k] == i or f[2][k] == (i - 1 + cs.size()) % cs.size():
+						score += over.call(f[0][k])
+				for e in range(i - 2, i + 2):  # curves that overlap kink the line: never, if there is a choice
+					score += 1e6 * f[3][posmod(e, cs.size())]
+				if score < best - 0.01:
+					best = score
+					pick = cand[0]
+			V[i] = pick
+	var own := []  # per corner: -1 a station, else the margin it was added to clear
+	own.resize(V.size())
+	own.fill(-1)
+	var line: Array = []
+	for pass_ in 32:
+		line = _fillet(V)
+		var worst := 0.0
+		var at_ := -1
+		var o_ := -1
+		for i in line[0].size():
+			for o in keep.size():
+				var k: float = ((line[0][i] - keep[o][0]) / keep[o][1]).length()
+				if 1.0 - k > worst:
+					worst = 1.0 - k
+					at_ = i
+					o_ = o
+		if at_ < 0:
+			break
+		var c: Vector2 = keep[o_][0]
+		var v: int = line[1][at_]
+		var e: int = line[2][at_]
+		if v < 0 or own[v] != o_:  # on a straight: either end's corner, if it was added for this park
+			v = e if own[e] == o_ else ((e + 1) % V.size() if own[(e + 1) % V.size()] == o_ else -1)
+		if v >= 0:
+			V[v] = c + (V[v] - c) * (1.0 + worst + 0.02)
+		else:  # a corner on the park's margin, where (of a dozen places round it) the whole line runs clearest
+			var out: Vector2 = (line[0][at_] - c) / (1.0 - worst) * 1.02
+			var r: Vector2 = keep[o_][1] * 1.02
+			var best := INF
+			var pick := Vector2.ZERO
+			var round_ := [c + out, c - out]
+			for a in 12:
+				round_.append(c + Vector2(cos(TAU * a / 12.0), sin(TAU * a / 12.0)) * r)
+			for w in round_:
+				V.insert(e + 1, w)
+				var f: Array = _fillet(V)
+				var score := 0.0
+				for k in f[0].size():
+					score += over.call(f[0][k])
+				for lap in f[3]:
+					score += 1e6 * lap
+				if score < best:
+					best = score
+					pick = w
+				V.remove_at(e + 1)
+			V.insert(e + 1, pick)
+			own.insert(e + 1, o_)
+	C.rail = line[0]
+	C.rail_loop = C.rail.duplicate()
+	C.rail_loop.append(C.rail[0])
+	C.rail_cum = cumulative(C.rail_loop)
+	C.stations = []  # each where the line passes nearest its district centre with its platform out from under the expressway
+	var covered := func(i: int) -> bool:  # rail point i's platform would be under an expressway deck
+		for k in range(-int(PLATFORM_L / 4.0) - 1, int(PLATFORM_L / 4.0) + 2):
+			var p: Vector2 = C.rail[posmod(i + k, C.rail.size())]
+			for sg in decks.get(Vector2i(floori(p.x / 24.0), floori(p.y / 24.0)), []):
+				if Geometry2D.get_closest_point_to_segment(p, sg[0], sg[1]).distance_to(p) < EXPRESS_W / 2 + RAIL_W / 2 + 1.0:
+					return true
+		return false
+	for di in di_of:
+		var c: Vector2 = C.districts[di].center
+		var order := range(C.rail.size())
+		order.sort_custom(func(a, b): return C.rail[a].distance_squared_to(c) < C.rail[b].distance_squared_to(c))
+		var best: int = order[0]
+		for i in order:
+			if not covered.call(i):
+				best = i
+				break
+		C.stations.append({"d": di, "s": C.rail_cum[best], "pos": C.rail[best]})
+	_add_corridor(C, C.rail, RAIL_CLEAR, true)
+	C.timetable = [_timetable(C, 1), _timetable(C, -1)]
+
+
+## A closed railway alignment through corners V: straight between them, an arc of RAIL_R round each. Returns [the
+## points, about every 2 m; per point the corner whose arc it is on (-1 on a straight); per point the straight it is
+## on or nearest, from corner e to e + 1; per straight how far its two curves overlap]. Two curves too close to fit
+## (a straight shorter than nothing) show as a kink, which the rules test catches as a curve tighter than RAIL_R.
+static func _fillet(V: Array) -> Array:
+	var n := V.size()
+	var arcs := []
+	for i in n:
+		var d0: Vector2 = (V[i] - V[(i - 1 + n) % n]).normalized()
+		var d1: Vector2 = (V[(i + 1) % n] - V[i]).normalized()
+		var th := d0.angle_to(d1)
+		var t := RAIL_R * tan(absf(th) / 2.0)
+		var p0: Vector2 = V[i] - d0 * t
+		arcs.append({"p0": p0, "p1": V[i] + d1 * t, "th": th, "c": p0 + d0.rotated(signf(th) * PI / 2.0) * RAIL_R})
+	var pts := PackedVector2Array()
+	var vx := PackedInt32Array()
+	var ed := PackedInt32Array()
+	var lap := PackedFloat32Array()
+	for i in n:
+		lap.append(maxf(0.0, arcs[i].p1.distance_to(V[i]) + arcs[(i + 1) % n].p0.distance_to(V[(i + 1) % n]) - V[i].distance_to(V[(i + 1) % n])))
+	for i in n:
+		var A: Dictionary = arcs[i]
+		var m := maxi(1, ceili(absf(A.th) * RAIL_R / 2.0))
+		for j in m:
+			pts.append(A.c + (A.p0 - A.c).rotated(A.th * j / m))
+			vx.append(i)
+			ed.append((i - 1 + n) % n if j * 2 < m else i)
+		var B: Dictionary = arcs[(i + 1) % n]
+		var m2 := maxi(1, ceili(A.p1.distance_to(B.p0) / 2.0))
+		for j in m2:
+			pts.append(A.p1.lerp(B.p0, float(j) / m2))
+			vx.append(-1)
+			ed.append(i)
+	return [pts, vx, ed, lap]
+
+
+## Where the viaduct's piers stand: about every PIER_GAP along it, each one column under the deck, slid (up to half a
+## gap along, or out under either side) to the nearest spot off every carriageway (a sidewalk will do) and the water,
+## or onto an avenue's median as the expressway's are. [s, column point, unit tangent] each.
+static func _piers(C: Dictionary) -> Array:
+	var L: float = C.rail_cum[-1]
+	var n := floori(L / PIER_GAP)
+	var out := []
+	for k in n:
+		var hit := false
+		for dd in range(0, int(PIER_GAP / 2) + 1):
+			for sgn in ([1.0] if dd == 0 else [1.0, -1.0]):
+				var s := fposmod(L * k / n + dd * sgn, L)
+				var pt := rail_at(C, s)
+				for f in [0.0, 1.0, -1.0, 2.0, -2.0]:
+					var p: Vector2 = pt[0] + Vector2(pt[1].y, -pt[1].x) * f * (RAIL_W / 2 - 0.8) / 2.0
+					if pier_ok(C, p):
+						out.append([s, p, pt[1]])
+						hit = true
+						break
+				if hit:
+					break
+			if hit:
+				break
+	return out
+
+
+## Where the expressway's and its ramps' pillars stand, as [route (C.shuto, then C.ramps), point index]: about every
+## 14 m where the deck is high enough to need one, each slid along its deck (up to two points either way) off the
+## Yamanote's viaduct where that passes under. A loop's points run on past its start, as the view draws it.
+static func deck_pillars(C: Dictionary) -> Array:
+	var out := []
+	var routes: Array = C.shuto.map(func(sh): return [sh.pts, sh.closed, 1.5]) + C.ramps.map(func(rp): return [rp.pts, false, 1.0])
+	for ri in routes.size():
+		var pts: PackedVector3Array = routes[ri][0].duplicate()
+		if routes[ri][1]:
+			pts.append(pts[0])
+			pts.append(pts[1])
+		var walked := 14.0
+		for k in range(1, pts.size()):
+			walked += pts[k - 1].distance_to(pts[k])
+			if walked >= 14.0 and pts[k].y > 1.5:
+				walked = 0.0
+				for dk in [0, 1, -1, 2, -2]:
+					var q: int = k + dk
+					if q >= 0 and q < pts.size() and pts[q].y > 1.5 and rail_dist(C, Vector2(pts[q].x, pts[q].z)) > RAIL_W / 2 + routes[ri][2] / 2 + 0.4:
+						out.append([ri, q, pts[q], routes[ri][2]])
+						break
+	return out
+
+
+## True where a 1.2 m column can stand: not in water, nor in any road's lanes, unless on the median of an avenue that
+## carries no expressway.
+static func pier_ok(C: Dictionary, p: Vector2) -> bool:
+	if not C.has("ground"):
+		var roads := {}  # bucket -> [a, b, half the lanes, median]: every street and avenue at ground level
+		var segs := []
+		for st in C.streets:
+			var c: float = st.line + st.w / 2
+			segs.append([Vector2(st.from, c), Vector2(st.to, c), st.w / 2 - SIDEWALK, false] if st.axis == "h" else [Vector2(c, st.from), Vector2(c, st.to), st.w / 2 - SIDEWALK, false])
+		for av in C.avenues:
+			for k in av.pts.size() - 1:
+				segs.append([av.pts[k], av.pts[k + 1], av.w / 2 - SIDEWALK, av.w >= AVENUE and av.shuto == ""])  # a carrier's median is the expressway's
+		for sg in segs:
+			for key in _bucket_keys(Rect2(sg[0], Vector2.ZERO).expand(sg[1]).grow(sg[2] + 1.0)):
+				if not roads.has(key):
+					roads[key] = []
+				roads[key].append(sg)
+		C.ground = roads
+	if is_water(C, p):
+		return false
+	var on_median := false
+	var in_lanes := false
+	for sg in C.ground.get(Vector2i(floori(p.x / 24.0), floori(p.y / 24.0)), []):
+		var d := Geometry2D.get_closest_point_to_segment(p, sg[0], sg[1]).distance_to(p)
+		if sg[3] and d < 0.8:
+			on_median = true
+		elif d < sg[2] + 0.6:
+			in_lanes = true
+	return on_median or not in_lanes
+
+
+## The timetable of the trains running the loop forward (dir 1) or back (-1): {period, legs [[u, length, run
+## seconds]]}, u measured along the way they run. A leg is DWELL at a station, then a run at TRAIN_A up to TRAIN_V
+## (if it has room) and down to the next.
+static func _timetable(C: Dictionary, dir: int) -> Dictionary:
+	var L: float = C.rail_cum[-1]
+	var us: Array = C.stations.map(func(st): return st.s if dir > 0 else fposmod(L - st.s, L))
+	us.sort()
+	var legs := []
+	var period := 0.0
+	for i in us.size():
+		var D: float = fposmod(us[(i + 1) % us.size()] - us[i], L)
+		var T := 2.0 * sqrt(D / TRAIN_A) if D < TRAIN_V * TRAIN_V / TRAIN_A else D / TRAIN_V + TRAIN_V / TRAIN_A
+		legs.append([us[i], D, T])
+		period += DWELL + T
+	return {"period": period, "legs": legs}
+
+
+## Where along C.rail (s) the middle of train k on track `dir` is at time t (seconds): the trains on a track keep one
+## timetable a third of its period apart, so they never close up.
+static func train_s(C: Dictionary, dir: int, k: int, t: float) -> float:
+	var tt: Dictionary = C.timetable[0 if dir > 0 else 1]
+	var L: float = C.rail_cum[-1]
+	t = fposmod(t + tt.period * k / TRAINS, tt.period)
+	for leg in tt.legs:
+		if t < DWELL + leg[2]:
+			var tau := maxf(t - DWELL, 0.0)
+			var D: float = leg[1]
+			var T: float = leg[2]
+			var ta := minf(TRAIN_V / TRAIN_A, T / 2.0)
+			var v := TRAIN_A * ta
+			var u: float
+			if tau < ta:
+				u = 0.5 * TRAIN_A * tau * tau
+			elif tau > T - ta:
+				u = D - 0.5 * TRAIN_A * (T - tau) * (T - tau)
+			else:
+				u = 0.5 * v * ta + v * (tau - ta)
+			u += leg[0]
+			return fposmod(u if dir > 0 else L - u, L)
+		t -= DWELL + leg[2]
+	return fposmod(tt.legs[0][0] if dir > 0 else L - tt.legs[0][0], L)
 
 
 ## kd-style split: cut the rectangle with a street across it until blocks are about the local block size.
@@ -661,40 +1076,58 @@ static func _place_landmarks_late(C: Dictionary) -> void:
 	var placed := {}
 	for L in C.landmarks:
 		placed[L.d] = true
-	for pass_ in ["own", "near", "shore"]:  # every district's own blocks first, so one's fallback doesn't take another's spot
-		var fallback: bool = pass_ == "near"
-		for di in C.districts.size():
-			var d: Dictionary = C.districts[di]
-			if d.lm[1] < 0 or placed.has(di):
-				continue
-			var near: Array = C.blocks.filter(func(b): return b.rect.get_center().distance_to(d.center) < 60.0 if fallback else b.d == di)
-			for size in ([18.0, 14.0] if pass_ != "own" else [22.0, 18.0, 14.0]):
-				var best := Rect2()
-				var best_d := INF
-				for b in near:
-					var r: Rect2 = b.rect
-					var x := r.position.x
-					while x + size <= r.end.x:
-						var z := r.position.y
-						while z + size <= r.end.y:
-							var sq := Rect2(x, z, size, size)
-							var dd := sq.get_center().distance_to(d.center)
-							if dd < best_d and (not blocked(C, sq) if pass_ != "shore" else not is_water(C, sq.get_center()) and not blocked(C, sq, true)):
-								best = sq
-								best_d = dd
-							z += 2.0
-						x += 2.0
-				if best_d < INF:
-					reserve(C, best)
-					C.landmarks.append({"d": di, "pos": best.get_center(), "size": size})
-					placed[di] = true
-					break
+	# every district's own blocks first, so one's fallback doesn't take another's spot; within a pass, the district
+	# with the fewest squares to choose from goes first
+	for pass_ in ["own", "near", "shore"]:
+		while true:
+			var pick := []  # [how many squares it had, district, the nearest, its size]
+			for di in C.districts.size():
+				if C.districts[di].lm[1] >= 0 and not placed.has(di):
+					var found := _late_squares(C, di, pass_)
+					if found[0] > 0 and (pick.is_empty() or found[0] < pick[0]):
+						pick = [found[0], di, found[1], found[2]]
+			if pick.is_empty():
+				break
+			reserve(C, pick[2])
+			C.landmarks.append({"d": pick[1], "pos": pick[2].get_center(), "size": pick[3]})
+			placed[pick[1]] = true
 
 
-## Shop lots: 22 x 10 on the north side of an east-west street, as near each district centre as they fit. The
-## district's shoppers set out from its first lot (`origin`): round the hubs the nearest free frontage can be a
-## block or two from the station itself.
-static func _place_lots(C: Dictionary) -> void:
+## [how many free squares of any size, the one nearest the district centre of the biggest size that has one, its
+## size].
+static func _late_squares(C: Dictionary, di: int, pass_: String) -> Array:
+	var d: Dictionary = C.districts[di]
+	var near: Array = C.blocks.filter(func(b): return b.rect.get_center().distance_to(d.center) < 60.0 if pass_ == "near" else b.d == di)
+	var out := [0, Rect2(), 0.0]
+	for size in ([18.0, 14.0] if pass_ != "own" else [22.0, 18.0, 14.0]):
+		var best := Rect2()
+		var best_d := INF
+		var n := 0
+		for b in near:
+			var r: Rect2 = b.rect
+			var x := r.position.x
+			while x + size <= r.end.x:
+				var z := r.position.y
+				while z + size <= r.end.y:
+					var sq := Rect2(x, z, size, size)
+					if not blocked(C, sq) if pass_ != "shore" else not is_water(C, sq.get_center()) and not blocked(C, sq, true):
+						n += 1
+						var dd := sq.get_center().distance_to(d.center)
+						if dd < best_d:
+							best = sq
+							best_d = dd
+					z += 2.0
+				x += 2.0
+		if n > 0 and out[0] == 0:
+			out = [0, best, size]
+		out[0] += n
+	return out
+
+
+## Shop lots: 22 x 10 on the north side of an east-west street, as near each district centre as they fit (a
+## district short of its lots gets the rest; only those in `only`, if given). The district's shoppers set out from
+## its first lot (`origin`): round the hubs the nearest free frontage can be a block or two from the station itself.
+static func _place_lots(C: Dictionary, only: Array = []) -> void:
 	var south := {}  # side streets by the z of their top edge
 	for s in C.streets:
 		if s.axis == "h":
@@ -702,9 +1135,13 @@ static func _place_lots(C: Dictionary) -> void:
 			if not south.has(k):
 				south[k] = []
 			south[k].append(s)
-	C.lots = []
+	if not C.has("lots"):
+		C.lots = []
 	for di in C.districts.size():
 		var d: Dictionary = C.districts[di]
+		var placed: int = C.lots.filter(func(L): return L.block == di).size()
+		if placed >= d.lots or (not only.is_empty() and not only.has(di)):
+			continue
 		var cands := []
 		for b in C.blocks:
 			var r: Rect2 = b.rect
@@ -718,8 +1155,6 @@ static func _place_lots(C: Dictionary) -> void:
 					cands.append([lot.get_center().distance_to(d.center), lot])
 				x0 += 3.0
 		cands.sort_custom(func(a, b): return a[0] < b[0])
-		var placed := 0
-		d.origin = d.center
 		for c in cands:
 			if placed >= d.lots:
 				break
@@ -728,9 +1163,13 @@ static func _place_lots(C: Dictionary) -> void:
 				continue
 			C.lots.append({"block": di, "x0": lot.position.x, "front": lot.end.y})
 			reserve(C, lot)
-			if placed == 0:
-				d.origin = lot.get_center() - Vector2(0, LOT_D)
 			placed += 1
+	var by := []  # district by district, each in the order its lots were placed
+	for di in C.districts.size():
+		var own: Array = C.lots.filter(func(L): return L.block == di)
+		by.append_array(own)
+		C.districts[di].origin = Vector2(own[0].x0 + LOT_W / 2, own[0].front - LOT_D * 1.5) if not own.is_empty() else C.districts[di].center
+	C.lots = by
 
 
 # ---------- buildings (view only) ----------

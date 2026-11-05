@@ -35,7 +35,7 @@ WHAT = {
     "tokyo_0": "Tokyo Tower: a red and white lattice tower on four splayed legs with two observation decks, over a low white building",
     "tokyo_1": "Tokyo Skytree: a very tall white lattice tower, round and tapering, with two ring-shaped observation decks and a mast",
     "tokyo_10": "Odaiba: a big Ferris wheel on the waterfront with a low glass mall beside it",
-    "landmarks_0": "a commuter railway station: station building, platform canopy, a train at the platform, tracks",
+    "landmarks_0": "a commuter railway station: station building, platform canopy; leave out the tracks and the train at the platform (the city's own viaduct runs past the station)",
     "landmarks_2": "a university/school: classroom blocks, a sports ground, trees round the edge",
     "landmarks_3": "a Shinto shrine: hall with a curved tiled roof, torii gate, stone lanterns, trees",
     "landmarks_4": "a city park: a pond, paths, benches, lamps, many trees",

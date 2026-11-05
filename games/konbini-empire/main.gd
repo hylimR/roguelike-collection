@@ -86,7 +86,7 @@ var dev_js: JavaScriptObject  # keeps the web build's dev hook alive
 
 
 func _ready() -> void:
-	for n in ["products", "perks", "decor", "outdoor", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "train", "bg_konbini", "props"]:
+	for n in ["products", "perks", "decor", "outdoor", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "bg_konbini", "props"]:
 		tex[n] = load("res://art/%s.png" % n)
 	theme = make_theme()
 	best.load("user://best.cfg")

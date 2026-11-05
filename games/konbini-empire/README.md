@@ -40,7 +40,7 @@ It's drawn like a city builder:
 
 - Blocks split into side streets that meet in T-junctions and corners, and curved avenues cut across them. Every road ends on another road: a street runs exactly along the blocks it serves, bridges the Sumida, stops at a railed quay on the bay or the palace moat, and meets the ring road round each park; an avenue runs on to the next road. `tests/balance.gd` checks every end.
 - The elevated Shuto expressway rings the palace and runs out along the radial avenues, with ramps down to the street.
-- The Rainbow Bridge crosses to Odaiba, and Yamanote trains circle on their viaduct.
+- The Rainbow Bridge crosses to Odaiba. The Yamanote loop runs on a double-track viaduct, straight between its twelve stations and round every corner on a curve of at least 30 m, clear of the parks and the moat, under the expressway (raised to clear a train) and never through its pillars. Four-car trains run both ways, keeping left, and stop at an island platform under a canopy at every station; their windows light up after dark. `tests/balance.gd` checks the line, its piers, its stations and the trains' spacing.
 - Every block is packed with 3D buildings drawn by a pixel facade shader: glass towers at the hubs, neon in the nightlife districts, wooden machiya in the old town, gable-roofed houses in the suburbs. Flat roofs sit inside a parapet whose shadow falls across the roof on its sunny sides, laid in membrane strips with a stair hatch.
 - Open ground between buildings is paved in slabs, or fine gravel in the leafy districts, so a station plaza reads as a square rather than bare ground.
 - Beyond the built-up edge, homes thin out into fields and woods, and the bay opens to the south.

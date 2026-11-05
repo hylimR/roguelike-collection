@@ -25,6 +25,7 @@ func _init() -> void:
 	curves()
 	start_state()
 	roads()
+	railway()
 	var t0 := Time.get_ticks_msec()
 	var a := {}
 	for s in SEEDS:
@@ -72,6 +73,111 @@ func roads() -> void:
 			if not (not C.bounds.has_point(p) or on_street or ring_in_water or on_avenue.call(p, k) or City._poly_dist(c1, p) < City.EXPRESS_W / 2 + 1.0):
 				dead.append(p)
 	check(dead.is_empty(), "every road ends on another road, at a quay or off the map (%d don't, e.g. %s)" % [dead.size(), dead.slice(0, 4)])
+
+
+## The Yamanote: no curve tighter than RAIL_R; its viaduct off every park, ring road, moat and the water; every station
+## on it near its district; nothing built on it; piers off the roads' lanes and never too far apart; the expressway
+## high enough over it, its pillars never through it and its ramps never in it; the trains on each track never closing up, and stopping at
+## every station.
+func railway() -> void:
+	var City = Sim.City
+	var C: Dictionary = City.get_city()
+	var pts: PackedVector2Array = C.rail
+	var n := pts.size()
+	var tight := []
+	var off := []
+	for i in n:
+		var a: Vector2 = pts[i - 1]
+		var b: Vector2 = pts[i]
+		var c: Vector2 = pts[(i + 1) % n]
+		var area := absf((b - a).cross(c - a)) / 2.0
+		if (b - a).dot(c - b) <= 0.0 or (area > 1e-6 and a.distance_to(b) * b.distance_to(c) * a.distance_to(c) / (4.0 * area) < City.RAIL_R - 0.5):
+			tight.append(b)
+		var t: Vector2 = (c - a).normalized()
+		for e in [0.0, 1.0, -1.0]:
+			var p: Vector2 = b + Vector2(t.y, -t.x) * e * City.RAIL_W / 2
+			if City.in_park(C, p) or City.is_water(C, p) or City.park_dist(C, p) < City.ROAD:
+				off.append(p)
+	check(tight.is_empty(), "no Yamanote curve tighter than %d m (%d points are, e.g. %s)" % [City.RAIL_R, tight.size(), tight.slice(0, 3)])
+	check(off.is_empty(), "the viaduct keeps off parks, their ring roads, the moat and the water (%d points don't, e.g. %s)" % [off.size(), off.slice(0, 3)])
+	var far := []
+	for stn in City.YAMANOTE:
+		var st: Array = C.stations.filter(func(q): return C.districts[q.d].name == stn)
+		var c: Vector2 = C.districts[st[0].d].center if st.size() == 1 else Vector2.INF
+		if st.size() != 1 or st[0].pos.distance_to(c) > 45.0 or C.stations.any(func(q): return q != st[0] and q.pos.distance_to(c) < st[0].pos.distance_to(c)):
+			far.append(stn)
+	check(far.is_empty() and C.stations.size() == City.YAMANOTE.size(), "every Yamanote station is on the line, its district's nearest and within 45 m (not: %s)" % [far])
+	var roofed := []
+	for st in C.stations:
+		for k in range(-int(City.PLATFORM_L / 2), int(City.PLATFORM_L / 2) + 1, 2):
+			var p: Vector2 = City.rail_at(C, st.s + k)[0]
+			for sh in C.shuto:
+				if City._poly_dist(City._flat(sh.pts), p) < City.EXPRESS_W / 2 + City.RAIL_W / 2 and not roofed.has(C.districts[st.d].name):
+					roofed.append(C.districts[st.d].name)
+	check(roofed.is_empty(), "no station platform is under the expressway (%s)" % [roofed])
+	var on := []
+	for L in C.landmarks:
+		if not City.in_park(C, L.pos) and City._on_rail(C, Rect2(L.pos - Vector2.ONE * L.size / 2, Vector2.ONE * L.size)):
+			on.append(C.districts[L.d].name)
+	for L in C.lots:
+		if City._on_rail(C, Rect2(L.x0, L.front - City.LOT_D, City.LOT_W, City.LOT_D)):
+			on.append("a lot of " + C.districts[L.block].name)
+	for bd in City.buildings():
+		if City.rail_dist(C, bd.center) < City.RAIL_W / 2 + maxf(bd.size.x, bd.size.y) * 0.5 and City._on_rail(C, bd.rect.grow(-1.2)):
+			on.append("a building at %s" % bd.center)
+	check(on.is_empty(), "no landmark, lot or building stands on the viaduct (%s)" % [on.slice(0, 4)])
+	var wanted: int = C.districts.filter(func(d): return d.lm[1] >= 0).size()
+	check(C.landmarks.size() == wanted and C.lots_lost == 0, "all %d landmarks stand, and no lot is lost to the line (%d are)" % [wanted, C.lots_lost])
+	var bad := []
+	var ss: Array = C.piers.map(func(q): return q[0])
+	ss.sort()
+	var span := 0.0
+	for i in ss.size():
+		span = maxf(span, fposmod(ss[(i + 1) % ss.size()] - ss[i], C.rail_cum[-1]))
+	for q in C.piers:
+		if not City.pier_ok(C, q[1]) or City.rail_dist(C, q[1]) > City.RAIL_W / 2:
+			bad.append(q[1])
+	check(bad.is_empty() and span <= City.MAX_SPAN, "the viaduct's piers stand off the lanes, under it, at most %d m apart (longest %.1f, %d misplaced)" % [City.MAX_SPAN, span, bad.size()])
+	var low := []
+	for sh in C.shuto:
+		for p3 in sh.pts:
+			if City.rail_dist(C, Vector2(p3.x, p3.z)) < City.EXPRESS_W / 2 + City.RAIL_W / 2 and p3.y - 0.6 < City.RAIL_DECK + 0.3 + City.CAR_H + 0.3:
+				low.append(Vector2(p3.x, p3.z))
+	for rp in C.ramps:
+		for p3 in rp.pts:
+			if City.rail_dist(C, Vector2(p3.x, p3.z)) < City.RAIL_W / 2 + City.RAMP_W / 2 and p3.y > 0.8:
+				low.append(Vector2(p3.x, p3.z))
+	check(low.is_empty(), "the expressway clears a train on the viaduct and its ramps keep out of it (%s)" % [low.slice(0, 3)])
+	var pierced := []
+	var gap := 0.0
+	var last := {}
+	for dp in City.deck_pillars(C):
+		if City.rail_dist(C, Vector2(dp[2].x, dp[2].z)) < City.RAIL_W / 2 + dp[3] / 2:
+			pierced.append(dp[2])
+		if last.has(dp[0]):
+			gap = maxf(gap, Vector2(dp[2].x, dp[2].z).distance_to(last[dp[0]]))
+		last[dp[0]] = Vector2(dp[2].x, dp[2].z)
+	check(pierced.is_empty() and gap <= City.DECK_SPAN, "no expressway pillar stands in the viaduct, and none are more than %d m apart (%d do, widest %.1f)" % [City.DECK_SPAN, pierced.size(), gap])
+	var train: float = City.CARS * City.CAR_L + (City.CARS - 1) * City.CAR_GAP
+	var close := INF
+	var stops := {}
+	for dir in [1, -1]:
+		var period: float = C.timetable[0 if dir > 0 else 1].period
+		var prev: float = City.train_s(C, dir, 0, -0.25)
+		var t := 0.0
+		while t < period:
+			var s0: float = City.train_s(C, dir, 0, t)
+			for k in range(1, City.TRAINS):
+				close = minf(close, fposmod((s0 - City.train_s(C, dir, k, t)) * dir, C.rail_cum[-1]))
+			if absf(s0 - prev) < 0.001:
+				for st in C.stations:
+					if absf(st.s - s0) < 0.01:
+						stops[[dir, st.d]] = true
+			prev = s0
+			t += 0.25
+	check(close >= train + 4.0, "the trains on a track stay a train and more apart (closest %.1f m)" % close)
+	check(stops.size() == 2 * C.stations.size(), "every train stops at every station both ways (%d of %d)" % [stops.size(), 2 * C.stations.size()])
+	check(2.0 * City.TRACK >= City.CAR_W + 1.0 and City.TRACK - City.CAR_W / 2 >= City.PLATFORM_W / 2, "trains pass each other and the platform")
 
 
 func vectors() -> void:
