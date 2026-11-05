@@ -1463,16 +1463,29 @@ func show_new_run() -> void:
 	if modal_kind in ["report", "over"]:
 		return
 	var v := VBoxContainer.new()
-	v.add_child(label("Same seed, same street, same rivals and cards. Leave blank for a random run.", MUTED))
+	v.add_theme_constant_override("separation", 10)
+	v.add_child(para("Same seed, same street, same rivals and cards. Leave it blank for a random run.", INK, 440))
 	var edit := LineEdit.new()
-	edit.placeholder_text = "seed"
-	edit.custom_minimum_size.x = 300
-	v.add_child(edit)
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 8)
+	edit.placeholder_text = "random"
+	edit.max_length = 24
+	edit.add_theme_font_override("font", bold)
+	edit.add_theme_font_size_override("font_size", 18)
+	edit.add_theme_color_override("font_placeholder_color", LINE.darkened(0.12))
 	var start := func(): new_run(edit.text)
 	edit.text_submitted.connect(func(_t): start.call())
-	h.add_child(button("Start", start))
+	var go := button("Start  [Enter]", start)
+	for k in ["normal", "hover", "pressed"]:
+		go.add_theme_stylebox_override(k, pill_box(MINT.lightened(0.12) if k == "hover" else MINT, 1 if k == "pressed" else 3, 1 if k == "pressed" else 2))
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+		go.add_theme_color_override(k, Color.WHITE)
+	var seed_now := label(sim.seed_text, INK, 22)
+	seed_now.custom_minimum_size.y = edit.get_minimum_size().y
+	seed_now.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var tiles := HBoxContainer.new()
+	tiles.add_theme_constant_override("separation", 8)
+	tiles.add_child(seed_tile("This run", seed_now, "Day %d  ·  Level %d" % [sim.day, sim.player.level], button("Replay", func(): new_run(sim.seed_text))))
+	tiles.add_child(seed_tile("New run", edit, "Type a seed to share a street", go))
+	v.add_child(tiles)
 	var prev := modal_kind
 	var cancel := func():
 		close_modal()
@@ -1480,10 +1493,33 @@ func show_new_run() -> void:
 			show_intro()
 		elif sim.phase == "choice":
 			show_choice()
-	h.add_child(button("Cancel", cancel))
-	v.add_child(h)
+	v.add_child(button("Cancel  [Esc]", cancel))
+	edit.gui_input.connect(func(e):  # the field would only drop focus on the first Esc
+		if e is InputEventKey and e.pressed and e.keycode == KEY_ESCAPE:
+			edit.accept_event()
+			cancel.call())
 	open_modal("New run", v, {KEY_ESCAPE: cancel}, "seed")
 	edit.grab_focus.call_deferred()
+
+
+## A seed on its own sunken tile: caption, the seed (or a field for one), a note and the button that starts it.
+func seed_tile(what: String, value: Control, note: String, b: Button) -> PanelContainer:
+	var c := VBoxContainer.new()
+	c.add_theme_constant_override("separation", 4)
+	c.custom_minimum_size.x = 208
+	var w := label(what.to_upper(), MUTED, 10)
+	w.add_theme_font_override("font", bold)
+	c.add_child(w)
+	c.add_child(value)
+	c.add_child(label(note, MUTED, 11))
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	c.add_child(b)
+	var p := sunken(c)
+	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var st: StyleBoxFlat = p.get_theme_stylebox("panel")
+	st.content_margin_top = 10
+	st.content_margin_bottom = 12
+	return p
 
 
 func _unhandled_input(e: InputEvent) -> void:
