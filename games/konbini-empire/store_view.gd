@@ -149,6 +149,8 @@ void fragment() {
 	float shade = n.y > 0.95 ? 1.0 : (n.y > 0.5 ? (sun >= 0.0 ? 1.0 : 0.85) : (sun > 0.0 ? 0.9 : 0.75));
 	vec3 col = tint.rgb;
 	vec3 glow = vec3(0.0);
+	float inside = 0.0;  // a lit shop seen through its window: its own colours under warm light, not dimmed by the dark
+	vec3 lit_in = vec3(0.0);
 	if (info.w > -0.5) {
 		float style = floor(info.w);
 		float seed = fract(info.w) * 2.0;
@@ -197,12 +199,13 @@ void fragment() {
 			vec4 m = textureGrad(accents, uv, gx, gy);
 			col = mix(mix(t.rgb, t.rgb * tint.rgb, t.a), ACCENT[pick] * t.r, m.r);
 			// after dark about half the windows light up, each its own, switching on one by one through dusk (shops and
-			// signs first) and off again at first light; shop windows and signs keep shining
+			// signs first) and off again at first light; every shop lights up and signs keep shining
 			vec2 cell = floor(cont) + vec2(lnrm.x * 7.0 + lnrm.z * 3.0, seed * 91.0);
 			float r = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
 			vec3 lamp = r > 0.85 ? vec3(0.78, 0.86, 1.0) : vec3(1.0, 0.8, 0.48);
-			float on = switched(fract(r * 29.0) * mix(1.0, 0.3, m.b), night);
-			glow = m.g * max(step(0.6, r), m.b) * lamp * on + m.r * ACCENT[pick] * 0.9 * switched(0.1 * fract(r * 17.0), night);
+			glow = m.g * (1.0 - m.b) * step(0.6, r) * lamp * switched(fract(r * 29.0), night) + m.r * ACCENT[pick] * 0.9 * switched(0.1 * fract(r * 17.0), night);
+			inside = m.b * switched(0.3 * fract(r * 29.0), night);
+			lit_in = mix(t.rgb * vec3(1.06, 0.96, 0.8), vec3(1.0, 0.9, 0.68), m.g);  // goods and shelves on a warm glow
 		}
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
 	} else if (info.x == 0.0 && tint.a < 0.99) {  // a landmark face packed with alpha under 1 is floodlit after dark
@@ -212,7 +215,7 @@ void fragment() {
 	vec3 grade = mix(vec3(0.8, 0.84, 1.04), vec3(1.2, 1.02, 0.78), low_sun);
 	float east = max(dot(n, normalize(vec3(0.8, 0.3, 0.5))), 0.0);
 	vec3 rose = mix(vec3(0.84, 0.84, 1.06), vec3(1.2, 0.94, 0.92), east);
-	ALBEDO = col * shade * light * mix(vec3(1.0), grade, golden) * mix(vec3(1.0), rose, dawn) + glow;
+	ALBEDO = mix(col * shade * light * mix(vec3(1.0), grade, golden) * mix(vec3(1.0), rose, dawn), lit_in * mix(1.0, shade, 0.5), inside) + glow;
 }
 """
 # the back wall's art: a crop of the side-view background, tiled along the wall
@@ -1373,8 +1376,7 @@ func facade_atlas() -> Array:
 				var box := Rect2i(s * 32 + x, row * 32 + y, w, h)
 				img.fill_rect(box, Color(c.r, c.g, c.b, 0.0) if c.a == 0.5 else c)
 				var lit := c.a == 0.0 and c.to_html(false) in WINDOWS
-				var open := c.a == 0.0 and c.to_html(false) == SHOP_GLASS
-				mask.fill_rect(box, Color(1, 0, 0) if c.a == 0.5 else (Color(0, 1, 1) if open else (Color(0, 1, 0) if lit else Color.BLACK)))
+				mask.fill_rect(box, Color(1, 0, 0) if c.a == 0.5 else (Color(0, 1, 0) if lit else Color.BLACK))
 			var up := row == 1
 			match s:
 				0:  # glass curtain wall
@@ -1437,6 +1439,13 @@ func facade_atlas() -> Array:
 						r.call(24, 12, 6, 3, accent(0.9))
 						r.call(25, 21, 1, 3, fixed("d8d8d0"))
 						r.call(23, 31, 8, 1, fixed("8a8a84"))
+						# the shop inside the glass (shelves, goods, the door's pane) lights up after dark in its own colours
+						for win in [Rect2i(2, 12, 19, 16), Rect2i(24, 15, 6, 16)]:
+							for y in range(win.position.y, win.end.y):
+								for x in range(win.position.x, win.end.x):
+									var px := img.get_pixel(s * 32 + x, y).to_html(false)
+									if px != "4a525a":
+										mask.set_pixel(s * 32 + x, y, Color(0, 1 if px == SHOP_GLASS else 0, 1))
 				4:  # neon-sign buildings
 					if up:
 						r.call(2, 8, 15, 13, fixed("2c3644"))
@@ -1503,7 +1512,7 @@ func facade_atlas() -> Array:
 	return [ImageTexture.create_from_image(img), ImageTexture.create_from_image(mask)]
 
 
-const SHOP_GLASS := "a9cdd6"  # shop windows: every one lit after dark
+const SHOP_GLASS := "a9cdd6"  # a shop window's pane: the back of the shop, glowing after dark
 const WINDOWS := ["3d5a78", "4f6f8c", "26313e", "5d7f9c", "2c3644", "e8d9a0", "8fb3c0", "ece6d2", "e8e0c8", "c9b98a", "39475a", "e8dcb0"]
 
 
