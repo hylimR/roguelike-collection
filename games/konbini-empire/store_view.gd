@@ -136,6 +136,11 @@ void vertex() {
 	sunl = vec2(dot(normalize(MODEL_MATRIX[0].xz), vec2(-0.35, 0.6)), dot(normalize(MODEL_MATRIX[2].xz), vec2(-0.35, 0.6)));
 }
 
+// a light whose own threshold (0-1) the falling dark has passed: full on (a little dimmer until full night), not faded in
+float switched(float at, float dark) {
+	return smoothstep(0.08 + 0.6 * at, 0.12 + 0.6 * at, dark) * mix(0.8, 1.0, dark);
+}
+
 void fragment() {
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	// the house's three tones, shared with shaded_box: roofs full, walls turned to the sun 0.9, walls away 0.75 (the
@@ -161,7 +166,7 @@ void fragment() {
 				float seam = min(k == 0 ? 1.0 : min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)) < 0.05 ? 0.86 : 1.0;
 				vec3 fl = FLOOR[k] * seam * mix(0.72, 1.0, smoothstep(0.0, 0.5, wall));
 				col = wall < 0.0 ? tint.rgb * 1.08 : fl;
-				glow = wall < 0.0 ? vec3(0.0) : fl * vec3(1.0, 0.86, 0.62) * step(0.5, fract(r * 13.0)) * 0.45 * night;
+				glow = wall < 0.0 ? vec3(0.0) : fl * vec3(1.0, 0.86, 0.62) * step(0.5, fract(r * 13.0)) * 0.45 * switched(fract(r * 29.0), night);
 			} else {  // a flat roof: coping round a parapet that shades the roof on its sunny sides, membrane in strips, a hatch
 				vec2 q = lpos.xz;
 				float fine = 1.0 - smoothstep(0.1, 0.3, fwidth(q.x) + fwidth(q.y));
@@ -191,11 +196,13 @@ void fragment() {
 			vec4 t = textureGrad(facades, uv, gx, gy);
 			vec4 m = textureGrad(accents, uv, gx, gy);
 			col = mix(mix(t.rgb, t.rgb * tint.rgb, t.a), ACCENT[pick] * t.r, m.r);
-			// after dark about half the windows light up, each its own; shop windows and signs keep shining
+			// after dark about half the windows light up, each its own, switching on one by one through dusk (shops and
+			// signs first) and off again at first light; shop windows and signs keep shining
 			vec2 cell = floor(cont) + vec2(lnrm.x * 7.0 + lnrm.z * 3.0, seed * 91.0);
 			float r = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
 			vec3 lamp = r > 0.85 ? vec3(0.78, 0.86, 1.0) : vec3(1.0, 0.8, 0.48);
-			glow = (m.g * max(step(0.6, r), m.b) * lamp + m.r * ACCENT[pick] * 0.9) * night;
+			float on = switched(fract(r * 29.0) * mix(1.0, 0.3, m.b), night);
+			glow = m.g * max(step(0.6, r), m.b) * lamp * on + m.r * ACCENT[pick] * 0.9 * switched(0.1 * fract(r * 17.0), night);
 		}
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
 	} else if (info.x == 0.0 && tint.a < 0.99) {  // a landmark face packed with alpha under 1 is floodlit after dark
