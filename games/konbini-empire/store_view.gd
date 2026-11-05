@@ -271,6 +271,8 @@ var pool_mat: StandardMaterial3D
 var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after dark
 var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
 var spill_mat: StandardMaterial3D  # shop light falling out of a glass front across the sidewalk
+var snow_tex: ImageTexture  # patchy settled snow, tiled 8 m
+var snow_cover: MeshInstance3D  # the set's snowy ground, shown on a cold snap
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
@@ -332,6 +334,7 @@ func _ready() -> void:
 			var u := x / 63.0
 			fall.set_pixel(x, y, Color(1, 1, 1, (exp(-2.2 * y / 31.0) - exp(-2.2)) / (1.0 - exp(-2.2)) * smoothstep(0.0, 0.2, u) * smoothstep(0.0, 0.2, 1.0 - u)))
 	spill_mat.albedo_texture = ImageTexture.create_from_image(fall)
+	snow_tex = snow_patches()
 	lamp_mat = StandardMaterial3D.new()
 	lamp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	lamp_mat.vertex_color_use_as_albedo = true
@@ -2048,6 +2051,54 @@ func street_life(delta: float) -> void:
 	run_trains()
 
 
+## Settled snow for an 8 m repeat: drifts at three scales on wrapping value noise, in whole pixels like the pavers.
+func snow_patches() -> ImageTexture:
+	var r := RandomNumberGenerator.new()
+	r.seed = 23
+	var grids := []
+	for n in [4, 8, 16]:
+		var g := PackedFloat32Array()
+		for i in n * n:
+			g.append(r.randf())
+		grids.append([n, g])
+	var img := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	for y in 64:
+		for x in 64:
+			var v := 0.0
+			for k in grids.size():
+				var n: int = grids[k][0]
+				var g: PackedFloat32Array = grids[k][1]
+				var fx := x * n / 64.0
+				var fy := y * n / 64.0
+				var ix := int(fx)
+				var iy := int(fy)
+				var tx := smoothstep(0.0, 1.0, fx - ix)
+				var ty := smoothstep(0.0, 1.0, fy - iy)
+				var a := lerpf(g[iy * n + ix], g[iy * n + (ix + 1) % n], tx)
+				var b := lerpf(g[(iy + 1) % n * n + ix], g[(iy + 1) % n * n + (ix + 1) % n], tx)
+				v += lerpf(a, b, ty) * [0.5, 0.3, 0.2][k]
+			v += r.randf_range(-0.03, 0.03)
+			var c := Color(0.94, 0.96, 1.0, 0.92) if v > 0.42 else (Color(0.86, 0.9, 0.98, 0.62) if v > 0.3 else Color(1, 1, 1, 0))
+			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
+
+
+## Snow lying on the set: drifts over the sidewalks and the car park, and on the road a dusting along the kerbs and
+## between the wheel tracks, which stay dark. Hidden until a cold snap.
+func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
+	var deep := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
+	var thin := surface(mat(Color(1, 1, 1, 0.6), snow_tex))
+	for sd in [[far_gaps, -7.2], [near_gaps, 3.7]]:
+		for o in open_spans(sd[0]):
+			rect_quad(deep, Rect2(o.x, sd[1], o.y - o.x, 3.5), -0.034, 0.0, false, 0.125)
+	rect_quad(deep, Rect2(-3.4, -16.0, 7.1, 8.8), -0.034, 0.0, false, 0.125)
+	for band in [Vector2(-3.7, -3.05), Vector2(-2.25, -1.55), Vector2(-0.45, 0.45), Vector2(1.55, 2.25), Vector2(3.05, 3.7)]:
+		rect_quad(thin, Rect2(SET.position.x, band.x, SET.size.x, band.y - band.x), -0.034, 0.0, false, 0.125)
+	var mi := commit([deep, thin], set_node)
+	mi.visible = false
+	return mi
+
+
 func speckle(colors: Array) -> ImageTexture:
 	var r := RandomNumberGenerator.new()
 	r.seed = 7
@@ -2179,6 +2230,7 @@ func build_set() -> void:
 	rect_quad(paint, Rect2(0.95, -9.6, 0.24, 1.5), -0.038)
 	poly_fill(paint, PackedVector2Array([Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55)]), -0.038)
 	commit([made, walk, tar, kerb, bay, paint, hatch, tactile], set_node)
+	snow_cover = settled_snow(far_gaps, near_gaps)
 	for cx in [-1.0, 1.4]:  # wheel stops
 		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("d8d2c4"))
 	# a low planter along the back of the car park, below the till's sight line
@@ -3252,6 +3304,8 @@ func _process(delta: float) -> void:
 	if mode == "store" and not branch.is_empty():
 		if scene_signature() != set_sig:
 			build_set()
+		if snow_cover:
+			snow_cover.visible = branch.event != null and branch.event.id == "coldSnap"
 		refresh_stock()
 		sync_actors(delta)
 		for f in floaters:
@@ -3285,13 +3339,17 @@ func draw_weather() -> void:
 	var span := size.y + 40.0
 	var lines := PackedVector2Array()
 	for i in look[1]:
-		var y := fposmod(r.randf() * span + now * look[3] * r.randf_range(0.8, 1.2), span) - 20.0
+		var d := r.randf()  # snow falls at three depths: near flakes bigger, faster and swaying wider
+		var y := fposmod(r.randf() * span + now * look[3] * r.randf_range(0.8, 1.2) * (lerpf(0.5, 1.7, d) if look[4] == 0.0 else 1.0), span) - 20.0
 		var x := fposmod(r.randf() * size.x + y * look[2], size.x)
-		var p := Vector2(x + (sin(now * 1.4 + i) * 6.0 if look[4] == 0.0 else 0.0), y)
+		var p := Vector2(x + (sin(now * 1.4 + i) * lerpf(3.0, 10.0, d) if look[4] == 0.0 else 0.0), y)
 		if inside.size() > 2 and Geometry2D.is_point_in_polygon(p, inside):
 			continue
 		if look[4] == 0.0:
-			overlay.draw_rect(Rect2(p, Vector2(3, 3)), Color(1, 1, 1, 0.9))
+			var px := 2.0 if d < 0.45 else (3.0 if d < 0.85 else 4.0)
+			if px == 4.0:
+				overlay.draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), Color(1, 1, 1, 0.2))
+			overlay.draw_rect(Rect2(p - Vector2(px, px) / 2, Vector2(px, px)), Color(1, 1, 1, lerpf(0.5, 0.95, d)))
 		else:
 			lines.append_array([p, p + Vector2(look[2], 1.0).normalized() * look[4]])
 	if not lines.is_empty():
