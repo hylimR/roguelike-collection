@@ -2847,6 +2847,7 @@ func build_room() -> void:
 	block(room, Vector3(0.25, wall_h, 9.25), Vector3(zl - 0.125, wall_h / 2, 0.0), Color("efe6d2"))
 	block(room, Vector3(0.02, 0.15, 9.0), Vector3(zl + 0.01, wall_h * 0.927, 0.0), L.stripe[0])  # level with the back wall art's stripes
 	block(room, Vector3(0.02, 0.15, 9.0), Vector3(zl + 0.01, wall_h * 0.866, 0.0), L.stripe[1])
+	left_wall(zl, st.products.keys())
 	block(room, Vector3(w + 0.6, 0.14, 0.35), Vector3(cx, wall_h + 0.07, -4.62), Color("5b4632"))
 	block(room, Vector3(0.35, 0.14, 9.6), Vector3(zl - 0.125, wall_h + 0.07, 0.0), Color("5b4632"))
 	# low stubs where the cut-away right wall and glass front stand, the door gap left open
@@ -2900,6 +2901,34 @@ func build_room() -> void:
 			var s := sprite(e[0], Rect2(e[1] * cell, 0, cell, cell), px)
 			s.position = e[2] + Vector3(0, cell / 2.0 * px, 0)
 			room.add_child(s)
+
+
+## The left wall's face (at x = zl, facing +x): a skirting board, the staff door in the aisle by the fridges under a
+## green exit sign, and promo posters of the shop's own lines over the fixtures, clear of the fridge's height.
+func left_wall(zl: float, products: Array) -> void:
+	var f := zl + 0.01
+	block(room, Vector3(0.03, 0.12, 9.0), Vector3(f + 0.005, 0.06, 0.0), Color("a08a68"))
+	var dz := -2.25
+	block(room, Vector3(0.04, 2.15, 1.0), Vector3(f + 0.01, 1.075, dz), Color("6b7078"))
+	block(room, Vector3(0.03, 2.05, 0.84), Vector3(f + 0.03, 1.025, dz), Color("c9d0d6"))
+	block(room, Vector3(0.02, 0.42, 0.3), Vector3(f + 0.05, 1.55, dz + 0.12), Color("9fc3d6"))  # the door's wired-glass light
+	block(room, Vector3(0.02, 0.24, 0.84), Vector3(f + 0.05, 0.13, dz), Color("9aa2aa"))  # kick plate
+	block(room, Vector3(0.04, 0.05, 0.16), Vector3(f + 0.06, 1.02, dz - 0.28), Color("5e6670"))
+	block(room, Vector3(0.04, 0.2, 0.46), Vector3(f + 0.02, 2.34, dz), Color("1f9d55"))
+	block(room, Vector3(0.02, 0.1, 0.12), Vector3(f + 0.05, 2.34, dz - 0.1), Color("f4fbf6"))
+	block(room, Vector3(0.02, 0.04, 0.16), Vector3(f + 0.05, 2.34, dz + 0.1), Color("f4fbf6"))
+	var spots := [-0.55, 1.85, 3.5]
+	for k in mini(products.size(), spots.size()):
+		var z: float = spots[k]
+		var ic: Array = Sim.PRODUCTS[products[k]].icon
+		block(room, Vector3(0.02, 0.88, 0.86), Vector3(f + 0.01, 1.99, z), LAYOUT.stripe[k % 2])
+		block(room, Vector3(0.02, 0.62, 0.74), Vector3(f + 0.03, 2.09, z), Color("fffaf0"))
+		block(room, Vector3(0.02, 0.09, 0.42), Vector3(f + 0.03, 1.67, z), Color("fff3c4"))  # the price flash
+		var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
+		var s := sprite(ic[0], Rect2(ic[1] * cell, 0, cell, cell), 0.58 / cell, false)
+		s.rotation.y = PI / 2
+		s.position = Vector3(f + 0.05, 2.09, z)
+		room.add_child(s)
 
 
 ## A fixture's shell round the boards its FIXTURES rows stand on: a gondola's or low shelf's end panels, back and cap
