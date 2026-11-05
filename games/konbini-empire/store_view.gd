@@ -279,6 +279,7 @@ var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the s
 var pool_mat: StandardMaterial3D
 var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after dark
 var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
+var beam_mat: StandardMaterial3D  # the cone of light falling from a lit lamp head to its pool
 var spill_mat: StandardMaterial3D  # shop light falling out of a glass front across the sidewalk
 var flood_mat: StandardMaterial3D  # your car park's floodlight on the bays
 var sign_glow_mat: StandardMaterial3D  # the glow round your lit pole sign
@@ -347,6 +348,16 @@ func _ready() -> void:
 			var u := x / 63.0
 			fall.set_pixel(x, y, Color(1, 1, 1, (exp(-2.2 * y / 31.0) - exp(-2.2)) / (1.0 - exp(-2.2)) * smoothstep(0.0, 0.2, u) * smoothstep(0.0, 0.2, 1.0 - u)))
 	spill_mat.albedo_texture = ImageTexture.create_from_image(fall)
+	beam_mat = halo_mat.duplicate()
+	beam_mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
+	var cone := Image.create(32, 64, false, Image.FORMAT_RGBA8)
+	for y in 64:
+		var v := y / 63.0
+		var hw := lerpf(0.1, 0.5, v)
+		for x in 32:
+			var d := absf(x / 31.0 - 0.5)
+			cone.set_pixel(x, y, Color(1, 1, 1, smoothstep(hw, hw * 0.4, d) * pow(1.0 - v, 1.1) * smoothstep(0.0, 0.04, v)))
+	beam_mat.albedo_texture = ImageTexture.create_from_image(cone)
 	snow_tex = snow_patches()
 	lamp_mat = StandardMaterial3D.new()
 	lamp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -534,6 +545,7 @@ func update_light() -> void:
 	env.background_color = SEA * light
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
+	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
 	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night)
 	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night)
@@ -2517,7 +2529,7 @@ func build_set() -> void:
 ## A row of district buildings fronting z = zf (northwards into the block), shoulder to shoulder from x0 to x1.
 ## Gaps are left wherever a city road crosses the row, so the road runs on between the buildings.
 ## A street lamp at the kerb: a tapered pole on a base, an arm reaching out over the road and a head that lights after
-## dark, with a halo round it and a pool on the ground below.
+## dark, with a halo round it, a cone of light under it and a pool on the ground below.
 func street_lamp(at: Vector3) -> void:
 	var out := 1.0 if at.z < 0.0 else -1.0
 	block(set_node, Vector3(0.26, 0.4, 0.26), at + Vector3(0, 0.2, 0), Color("5c616b"))
@@ -2535,8 +2547,15 @@ func street_lamp(at: Vector3) -> void:
 	q.size = Vector2(1.6, 1.6)
 	halo.mesh = q
 	halo.material_override = halo_mat
-	halo.position = at + Vector3(0, 4.0, 1.0 * out)
+	halo.position = at + Vector3(0, 3.8, 1.0 * out)  # below the head, so its housing doesn't hide the bright core
 	set_node.add_child(halo)
+	var beam := MeshInstance3D.new()
+	var bq := QuadMesh.new()
+	bq.size = Vector2(3.0, 4.0)
+	beam.mesh = bq
+	beam.material_override = beam_mat
+	beam.position = at + Vector3(0, 2.0, 1.0 * out)
+	set_node.add_child(beam)
 	blob(set_node, Vector2(at.x, at.z), 0.25)
 	pool(set_node, at + Vector3(0, 0, 0.9 * out), Vector2(7.0, 7.0))
 
