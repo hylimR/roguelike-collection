@@ -127,7 +127,68 @@ func railway() -> void:
 			on.append("a building at %s" % bd.center)
 	check(on.is_empty(), "no landmark, lot or building stands on the viaduct (%s)" % [on.slice(0, 4)])
 	var wanted: int = C.districts.filter(func(d): return d.lm[1] >= 0).size()
-	check(C.landmarks.size() == wanted and C.lots_lost == 0, "all %d landmarks stand, and no lot is lost to the line (%d are)" % [wanted, C.lots_lost])
+	check(C.landmarks.size() == wanted, "all %d landmarks stand (%d do)" % [wanted, C.landmarks.size()])
+	# the shop view's set round every lot stands clear of the decks: none over its parts lower than they stand, no pier
+	# or pillar in them, and (drawn as the shop view sees it) no deck's parapet in front of your shop
+	var covered := []
+	var decks: Array = C.shuto.map(func(sh): return [sh.pts, sh.closed, City.EXPRESS_W]) + C.ramps.map(func(rp): return [rp.pts, false, City.RAMP_W])
+	var rail3 := PackedVector3Array()
+	for p in C.rail_loop:
+		rail3.append(Vector3(p.x, City.RAIL_DECK, p.y))
+	decks.append([rail3, false, City.RAIL_W])
+	var iso := func(p: Vector3) -> Vector2: return Vector2((p.x - p.z) * 0.7071, (p.x + p.z) * 0.3536 - p.y * 0.866)
+	var pil: Array = City.deck_pillars(C).map(func(dp): return Vector2(dp[2].x, dp[2].z)) + C.piers.map(func(q): return q[1])
+	for L in C.lots:
+		var at := Vector2(L.x0, L.front)
+		var name: String = C.districts[L.block].name
+		var parts: Array = City.SET_PARTS.map(func(pt): return [Rect2(at + pt[0].position, pt[0].size), pt[1]])
+		if pil.any(func(q): return parts.any(func(pt): return pt[0].has_point(q))):
+			covered.append(name + " (a pier or pillar in it)")
+			continue
+		var seen := Rect2(at + City.SET_SEEN.position, City.SET_SEEN.size)
+		var qs := []
+		for gx in 17:
+			for gz in 14:
+				qs.append(Vector3(seen.position.x + gx * seen.size.x / 16, 0.0, seen.position.y + gz * seen.size.y / 13))
+		var hid := 0
+		var through := []
+		for dk in decks:
+			var dp: PackedVector3Array = dk[0]
+			for k in range(1, dp.size()):
+				var a: Vector3 = dp[k - 1]
+				var b: Vector3 = dp[k]
+				if maxf(a.y, b.y) <= 1.5 or Vector2(a.x, a.z).distance_to(seen.get_center()) > 60.0:
+					continue
+				for pt in parts:  # the deck's slab, its full width, down into a part of the set
+					if minf(a.y, b.y) - 0.6 < pt[1] and City.seg_rect_dist(Vector2(a.x, a.z), Vector2(b.x, b.z), pt[0]) < dk[2] / 2 and not through.has(pt[1]):
+						through.append(pt[1])
+				var nrm: Vector3 = Vector3(b.z - a.z, 0, a.x - b.x).normalized() * dk[2] / 2
+				var corners := PackedVector2Array()
+				for e in [a, b]:
+					for sd in [nrm, -nrm]:
+						for y in [-0.6, 0.9]:
+							corners.append(iso.call(e + sd + Vector3(0, y, 0)))
+				var hull := Geometry2D.convex_hull(corners)
+				for q in qs:
+					if (a.x + a.z + b.x + b.z) / 2 > q.x + q.z + 1.0 and Geometry2D.is_point_in_polygon(iso.call(q), hull):
+						hid += 1
+		if hid > 0 or not through.is_empty():
+			covered.append("%s (%d of %d points hidden, a deck through parts %s m tall)" % [name, hid, qs.size(), through])
+	check(covered.is_empty(), "every shop's street set stands clear of the decks and in view (%s)" % [covered])
+	var short := []
+	for d in C.districts:
+		if C.lots.filter(func(L): return C.districts[L.block] == d).size() < d.lots:
+			short.append(d.name)
+	# map-forced: Nihonbashi's and Azabu's only lots have the viaduct through the rival next door, Tsukiji's the
+	# Rainbow Bridge approach; the others never had room
+	check(C.lots.size() == 44, "the city has 44 shop lots (%d; short: %s)" % [C.lots.size(), short])
+	var SV = load("res://store_view.gd")
+	var fit: bool = Sim.ZONE_LEFT.all(func(zl): return City.SET_PARTS[1][0].position.x <= 21.0 + Sim.ORIGIN.x + zl) and City.SET_PARTS[3][0].has_point(Vector2(24.0, -9.3))
+	for id in Sim.RIVALS:
+		var sp: Vector2 = SV.rival_span({"x": Sim.RIVALS[id].door, "width": Sim.RIVALS[id].width})
+		fit = fit and City.SET_PARTS[4][0].position.x <= 21.0 + sp.x and City.SET_PARTS[4][0].end.x >= 21.0 + sp.y
+	fit = fit and [Sim.VENDING_X, Sim.GACHA_X].all(func(x): return City.SET_PARTS[0][0].has_point(Vector2(21.0 + x, 0.4)))
+	check(fit, "City.SET_PARTS covers the shop view's shop at every size, every rival, the pole sign and vending machines")
 	var bad := []
 	var ss: Array = C.piers.map(func(q): return q[0])
 	ss.sort()

@@ -240,12 +240,10 @@ var lots_node: Node3D
 var C: Dictionary  # the City map
 var trains: Array = []  # on the Yamanote: {dir, k, cars: [MeshInstance3D]}
 var rail_t := 0.0  # the trains' clock, seconds
-var rail_parts: Array = []  # [s from, s to, deck piece]: which piece of the viaduct carries a train at s
 var car_glass: StandardMaterial3D  # train windows: dark by day, lit after dark
 var paths: Array = []  # every road as a path for movers: {pts, cum, w, kind, closed, box}
 var set_feet: Array = []  # world footprints of what the street set builds behind its street, where the city gives way
-var pillar_deck: Array = []  # per pillar: the deck piece it holds up
-var elevated: Array = []  # [MeshInstance3D, a, b]: deck pieces, hidden when they would cover the focused shop
+var elevated: Array = []  # deck pieces (MeshInstance3D), drawn again into the shadow mask
 var brecs: Array = []  # per building: {foot, h, box: [instance], roof: instance or -1, hidden}
 var box_mm: MultiMesh
 var box_base: Array = []
@@ -253,7 +251,6 @@ var building_mat: ShaderMaterial
 var roof_mm: MultiMesh
 var roof_base: Array = []
 var pillar_mm: MultiMesh
-var pillar_base: Array = []
 var tree_mms: Array = []  # [MultiMesh, base transforms, height]
 var mask_vp: SubViewport  # the city seen from the sun, for ground shadows
 var shadow_mat: ShaderMaterial
@@ -981,15 +978,14 @@ func srect(s: Dictionary, a0: float, a1: float, c0: float, c1: float) -> Rect2:
 	return Rect2(a0, s.line + c0, a1 - a0, c1 - c0) if s.axis == "h" else Rect2(s.line + c0, a0, c1 - c0, a1 - a0)
 
 
-## The Shuto expressway, its ramps and the Yamanote viaduct, in short pieces the shop view can hide; pillars below.
+## The Shuto expressway, its ramps and the Yamanote viaduct, in short pieces; pillars below.
 func build_elevated() -> void:
 	var deck := mat(Color("4f5158"))
 	var fascia := mat(Color("c3bfb6"))
 	var lines := mat(Color("e8e2c8"))
 	var dm := mat(Color.WHITE, stripes(Color("4f5158"), Color("e8e2c8"), 8, 1, 3))
 	dm.texture_repeat = true
-	var pillars: Array = []  # [transform, the deck piece it holds up]
-	var decks: Array = []  # per route: per point, its deck piece
+	var pillars: Array = []  # transforms
 	var routes: Array = []
 	for sh in C.shuto:
 		routes.append([sh.pts, sh.closed, Sim.City.EXPRESS_W, "shuto"])
@@ -1001,8 +997,6 @@ func build_elevated() -> void:
 			pts.append(pts[0])
 			pts.append(pts[1])
 		var half: float = rt[2] / 2
-		var deck_at := []  # per point: the deck piece over it, so its pillar can go with it
-		deck_at.resize(pts.size())
 		var i := 0
 		while i < pts.size() - 1 - (1 if rt[1] else 0):
 			var j := mini(i + 8, pts.size() - 1 - (1 if rt[1] else 0))
@@ -1023,30 +1017,20 @@ func build_elevated() -> void:
 				wall(side, part, 0.0, 0.3, 0.8, f, l)  # median barrier
 				for s in [half / 2, -half / 2]:
 					ribbon(extra, part, s + 0.07, s - 0.07, 0.32, 0.5, f, l)
-			var mi := commit([top, side, mark, extra], city)
-			elevated.append([mi, Vector2(pts[i].x, pts[i].z), Vector2(pts[j].x, pts[j].z)])
-			for k in range(i, j + 1):
-				deck_at[k] = mi
+			elevated.append(commit([top, side, mark, extra], city))
 			i = j
-		decks.append(deck_at)
-	for dp in Sim.City.deck_pillars(C):  # where the city put the pillars: off the Yamanote's viaduct
+	for dp in Sim.City.deck_pillars(C):  # where the city put the pillars: off the Yamanote's viaduct and the shop sets
 		var p: Vector3 = dp[2]
-		pillars.append([Transform3D(Basis.from_scale(Vector3(dp[3], p.y, dp[3])), Vector3(p.x, p.y / 2.0, p.z)), decks[dp[0]][dp[1]]])
+		pillars.append(Transform3D(Basis.from_scale(Vector3(dp[3], p.y, dp[3])), Vector3(p.x, p.y / 2.0, p.z)))
 	build_rail(pillars)
-	var pm := BoxMesh.new()
-	pillar_mm = multimesh(pm, pillars.size())
-	pillar_base.clear()
-	pillar_deck.clear()
+	pillar_mm = multimesh(BoxMesh.new(), pillars.size())
 	for k in pillars.size():
-		pillar_deck.append(pillars[k][1])
-		pillar_mm.set_instance_transform(k, pillars[k][0])
-		pillar_base.append(pillars[k][0])
+		pillar_mm.set_instance_transform(k, pillars[k])
 	mm_node(pillar_mm, mat(Color("aaa59b")), city)
 
 
 ## The Yamanote viaduct: two tracks on a ballasted deck with parapets and the line's green stripe, an island platform
-## under a canopy at each station, in pieces the shop view can hide (rail_parts keeps each piece's stretch of the
-## line, so a train on a hidden piece hides too); a column and cap beam under it at each pier.
+## under a canopy at each station; a column and cap beam under it at each pier.
 func build_rail(pillars: Array) -> void:
 	var CT := Sim.City
 	var ballast := mat(Color("8a8174"))
@@ -1061,8 +1045,6 @@ func build_rail(pillars: Array) -> void:
 	var half: float = CT.RAIL_W / 2
 	var y: float = CT.RAIL_DECK
 	var loop: PackedVector3Array = flat3(C.rail_loop, y)
-	rail_parts.clear()
-	var piece := {}  # rail point -> its deck piece, for the piers
 	var i := 0
 	while i < loop.size() - 1:
 		var j := mini(i + 8, loop.size() - 1)
@@ -1085,11 +1067,7 @@ func build_rail(pillars: Array) -> void:
 			wall(side, part, s, -0.6, 0.9, f, l)
 		for s in [half + 0.01, -half - 0.01]:
 			wall(stripe, part, s, 0.25, 0.45, f, l)
-		var mi := commit([top, beds, rails, side, stripe], city)
-		elevated.append([mi, Vector2(loop[i].x, loop[i].z), Vector2(loop[j].x, loop[j].z)])
-		rail_parts.append([C.rail_cum[i], C.rail_cum[j], mi])
-		for k in range(i, j + 1):
-			piece[k] = mi
+		elevated.append(commit([top, beds, rails, side, stripe], city))
 		i = j
 	# stations: an island platform between the tracks, its yellow edges, a canopy on posts
 	for st in C.stations:
@@ -1115,17 +1093,14 @@ func build_rail(pillars: Array) -> void:
 		for k in range(f, l + 1, 3):
 			var d := pts[mini(k + 1, pts.size() - 1)] - pts[k - 1]
 			block_into(posts, pts[k] + Vector3(0, 2.3, 0), Vector3(0.22, 2.4, 0.22), atan2(d.x, d.z))
-		var mi := commit([deckp, lines, sides, canopy, posts], city)
-		elevated.append([mi, Vector2(pts[0].x, pts[0].z), Vector2(pts[-1].x, pts[-1].z)])
-		rail_parts.append([st.s - CT.PLATFORM_L / 2, st.s + CT.PLATFORM_L / 2, mi])
+		elevated.append(commit([deckp, lines, sides, canopy, posts], city))
 	# piers: a column where the city found room for one, under a cap beam across the deck
 	for pr in C.piers:
 		var at_: Vector2 = pr[1]
 		var on: Array = CT.rail_at(C, pr[0])
-		var k := clampi(C.rail_cum.bsearch(pr[0]), 0, C.rail.size() - 1)
 		var turn := atan2(on[1].x, on[1].y)
-		pillars.append([Transform3D(Basis.from_scale(Vector3(1.2, y - 0.6, 1.2)), Vector3(at_.x, (y - 0.6) / 2.0, at_.y)), piece.get(k)])
-		pillars.append([Transform3D(Basis(Vector3.UP, turn) * Basis.from_scale(Vector3(CT.RAIL_W - 0.6, 0.7, 1.1)), Vector3(on[0].x, y - 0.6, on[0].y)), piece.get(k)])
+		pillars.append(Transform3D(Basis.from_scale(Vector3(1.2, y - 0.6, 1.2)), Vector3(at_.x, (y - 0.6) / 2.0, at_.y)))
+		pillars.append(Transform3D(Basis(Vector3.UP, turn) * Basis.from_scale(Vector3(CT.RAIL_W - 0.6, 0.7, 1.1)), Vector3(on[0].x, y - 0.6, on[0].y)))
 
 
 ## A box into a surface: centre c, size, turned `turn` about y (unshaded flat colour, as the walls round it).
@@ -1287,10 +1262,9 @@ func build_shadows() -> void:
 				rec.shapes.append(mm_node(n.multimesh, white, mask_vp))
 	for part in elevated:
 		var mi := MeshInstance3D.new()
-		mi.mesh = part[0].mesh
+		mi.mesh = part.mesh
 		mi.material_override = white
 		mask_vp.add_child(mi)
-		part.append(mi)
 	var b: Rect2 = C.bounds
 	var mid := Vector3(b.get_center().x, 0, b.get_center().y)
 	var sun := Camera3D.new()
@@ -1672,19 +1646,8 @@ func update_fade() -> void:
 			if tm[0].get_instance_transform(k) != (away if cut else tm[1][k]):
 				tm[0].set_instance_transform(k, away if cut else tm[1][k])
 				dirty[tm[0]] = true
-	# a deck 6 m up hides the ground about 10 m behind it, so decks go only over the street and in front of it
-	var over := Rect2(front.position.x - 4.0, front.position.y - 1.3, front.size.x + 8.0, 28.0)
-	for part in elevated:
-		part[0].visible = not on or not seg_hits(over, part[1], part[2])
-		if part.size() > 3:
-			part[3].visible = part[0].visible
-	for k in pillar_base.size():  # a pillar goes with its deck
-		var p: Vector3 = pillar_base[k].origin
-		var deck: MeshInstance3D = pillar_deck[k]
-		var cut: bool = taken.call(Rect2(p.x - 1.0, p.z - 1.0, 2, 2)) or (deck != null and not deck.visible)
-		if pillar_mm.get_instance_transform(k) != (away if cut else pillar_base[k]):
-			pillar_mm.set_instance_transform(k, away if cut else pillar_base[k])
-			dirty[pillar_mm] = true
+	# the decks overhead, their pillars and the trains always stay: the city keeps them off the set (City.under_deck)
+	# and the set's own buildings and street furniture keep out from under them (decks_near)
 	# the Compatibility renderer can keep drawing a MultiMesh's old instances after it has been drawn and then edited
 	# in place, so an edited one is swapped for a fresh copy, which uploads whole
 	for mm in dirty:
@@ -1696,8 +1659,6 @@ func update_fade() -> void:
 			box_mm = fresh
 		elif mm == roof_mm:
 			roof_mm = fresh
-		elif mm == pillar_mm:
-			pillar_mm = fresh
 		else:
 			for tm in tree_mms:
 				if tm[0] == mm:
@@ -1825,7 +1786,7 @@ func car_mesh() -> ArrayMesh:
 
 
 ## Every train where the timetable has it: each car between its two bogies on its own track (keeping left), so a
-## train bends round the curves; a car on a piece of viaduct the shop view hides hides with it.
+## train bends round the curves.
 func run_trains() -> void:
 	var CT := Sim.City
 	var pitch: float = CT.CAR_L + CT.CAR_GAP
@@ -1843,13 +1804,6 @@ func run_trains() -> void:
 			var m: Vector2 = (ends[0] + ends[1]) / 2
 			var x3 := Vector3(fw.x, 0, fw.y)
 			car.transform = Transform3D(Basis(x3, Vector3.UP, x3.cross(Vector3.UP)), Vector3(m.x, y, m.y))
-			var at := fposmod(c, C.rail_cum[-1])
-			var shown := true
-			for rp in rail_parts:
-				if at >= rp[0] and at <= rp[1] and not rp[2].visible:
-					shown = false
-					break
-			car.visible = shown
 
 
 func make_path(pts: PackedVector3Array, w: float, kind_: String, closed: bool) -> Dictionary:
@@ -2131,6 +2085,8 @@ func build_set() -> void:
 		roads.append_array(water_runs(SET.position.y, -20.2) + water_runs(-20.2, -7.2, SET.position.x, -16.5) + water_runs(-20.2, -7.2, span.y, SET.end.x))
 	var far_gaps := mouths(-8.2, -3.6, side_roads, Vector2(-16.5, span.y))  # none between your shop and the rival
 	var near_gaps := mouths(3.6, 8.2, side_roads)
+	var overhead := decks_near()
+	var under := [mouths(-8.2, -3.6, overhead), mouths(3.6, 8.2, overhead)]  # where a deck crosses each sidewalk
 	var walk := surface(pavers())
 	var tar := surface(tiled(speckle([Color("5d5f66"), Color("585a61"), Color("63656c"), Color("55575d")]), Vector2.ONE))
 	rect_quad(tar, Rect2(SET.position.x, -3.7, SET.size.x, 7.4), -0.045, 0.0, false, 0.5)
@@ -2219,7 +2175,7 @@ func build_set() -> void:
 			set_node.add_child(disc)
 	# utility poles and their sagging wires along the far sidewalk
 	var wires := surface(mat(Color("34343a")))
-	var poles := [SET.position.x, -42.0, -19.0, 12.0, 36.0, SET.end.x].filter(func(px): return absf(px) == SET.end.x or not in_gaps(px, near_gaps))
+	var poles := [SET.position.x, -42.0, -19.0, 12.0, 36.0, SET.end.x].filter(func(px): return absf(px) == SET.end.x or not in_gaps(px, near_gaps + under[1]))
 	for k in poles.size():
 		var px: float = poles[k]
 		if k > 0 and k < poles.size() - 1:
@@ -2229,7 +2185,7 @@ func build_set() -> void:
 			if k % 2 == 0:
 				block(set_node, Vector3(0.5, 0.75, 0.5), Vector3(px, 5.5, 7.2), Color("8a979c"))
 			blob(set_node, Vector2(px, 6.85), 0.3)
-		if k == 0:
+		if k == 0 or under[1].any(func(g): return g.y > poles[k - 1] and g.x < px):  # no wire up through a deck
 			continue
 		var x0: float = poles[k - 1]
 		for dz in [-0.55, 0.0, 0.55]:
@@ -2247,9 +2203,9 @@ func build_set() -> void:
 	var roofs := []
 	var mine: float = -10.0 + Sim.ZONE_LEFT[st.size]
 	for seg in [[SET.position.x, -27.75], [-26.25, -16.5], [span.y, 29.75], [31.25, SET.end.x]]:
-		set_row(seg[0], seg[1], -7.2, 13.0, mix, r, boxes, roofs, 0.7, roads)
-	set_row(5.35, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 0.9, roads)  # one floor, so it hides neither your till nor the car park
-	set_row(SET.position.x, SET.end.x, -20.5, 11.0, mix, r, boxes, roofs, 1.0, roads)
+		set_row(seg[0], seg[1], -7.2, 13.0, mix, r, boxes, roofs, 0.7, roads + overhead)
+	set_row(5.35, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 0.9, roads + overhead)  # one floor, so it hides neither your till nor the car park
+	set_row(SET.position.x, SET.end.x, -20.5, 11.0, mix, r, boxes, roofs, 1.0, roads + overhead)
 	var bm := multimesh(BoxMesh.new(), boxes.size(), true, true)
 	for k in boxes.size():
 		var e: Array = boxes[k]
@@ -2347,7 +2303,7 @@ func build_set() -> void:
 	if b.quirk == "busStop":
 		props_at.append([11, Vector2(-24.5, -4.4)])
 	for p in props_at:
-		if in_gaps(p[1].x, far_gaps if p[1].y < 0.0 else near_gaps):
+		if in_gaps(p[1].x, far_gaps if p[1].y < 0.0 else near_gaps) or in_gaps(p[1].x, under[0] if p[1].y < 0.0 else under[1]):
 			continue
 		if p[0] == 6:
 			street_lamp(Vector3(p[1].x, 0, p[1].y))
@@ -2371,7 +2327,7 @@ func build_set() -> void:
 		for g in gaps:
 			if in_gaps(pole.x, [g]):
 				pole.x = g.x - 0.7 if absf(g.x - 0.7 - Sim.CROSS_X) < absf(g.y + 0.7 - Sim.CROSS_X) else g.y + 0.7
-		if in_gaps(pole.x, gaps):
+		if in_gaps(pole.x, gaps) or in_gaps(pole.x, under[0] if pole.z < 0.0 else under[1]):
 			continue
 		light_poles.append(pole + Vector3(0, 2.5, 0))
 		block(set_node, Vector3(0.12, 2.6, 0.12), pole + Vector3(0, 1.3, 0), Color("4a4d57"))
@@ -2469,6 +2425,33 @@ func roads_near() -> Array:
 		for i in range(1, av.pts.size()):
 			if seg_hits(area.grow(av.w / 2), av.pts[i - 1], av.pts[i]):
 				out.append([av.pts[i - 1] - o, av.pts[i] - o, av.w / 2])
+	return out
+
+
+## The decks overhead that cross the set, as [a, b, half width and a margin] in the street frame: the viaduct, the
+## expressway and its ramps where they are up off the road. Its own buildings and street furniture keep out from
+## under them, as from the roads.
+func decks_near() -> Array:
+	var o := Vector2(site.position.x, site.position.z)
+	var area := Rect2(o + SET.position, SET.size)
+	var lines := [[C.rail_loop, Sim.City.RAIL_W]]
+	for sh in C.shuto:
+		var pts := Sim.City._flat(sh.pts)
+		if sh.closed:
+			pts.append(pts[0])
+		lines.append([pts, Sim.City.EXPRESS_W])
+	for rp in C.ramps:
+		var pts := PackedVector2Array()
+		for p in rp.pts:
+			if p.y > 1.5:
+				pts.append(Vector2(p.x, p.z))
+		lines.append([pts, Sim.City.RAMP_W])
+	var out := []
+	for ln in lines:
+		var half: float = ln[1] / 2 + 1.0
+		for i in range(1, ln[0].size()):
+			if seg_hits(area.grow(half), ln[0][i - 1], ln[0][i]):
+				out.append([ln[0][i - 1] - o, ln[0][i] - o, half])
 	return out
 
 

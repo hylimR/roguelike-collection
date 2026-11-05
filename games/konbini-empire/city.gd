@@ -20,6 +20,14 @@ const DECK := RAIL_DECK + 0.3 + CAR_H + 0.5 + 0.6  # the expressway's slab clear
 const FLOOR := 3.0
 const LOT_W := 22.0
 const LOT_D := 10.0
+const SET_PARTS := [  # the shop view's set round a lot, from the lot's (x0, front): [footprint, how tall]
+	[Rect2(1.4, 0.0, 2.6, 0.8), 1.9],  # the vending machine and gacha row on the sidewalk
+	[Rect2(4.5, -9.2, 13.1, 9.4), 4.7],  # your shop's unit, the water tank on its roof
+	[Rect2(17.6, -9.05, 7.1, 9.05), 1.6],  # the car park, a car in its bay
+	[Rect2(23.8, -9.5, 0.4, 0.4), 7.15],  # the pole sign
+	[Rect2(33.05, -9.0, 16.7, 9.95), 5.6],  # the rival at MEGAMART's width, its stair hatch, its awning
+]
+const SET_SEEN := Rect2(1.4, -9.2, 16.2, 12.7)  # what the shop view looks at: your shop and the sidewalk at its door
 const URBAN := 92.0  # built-up land reaches this far from the nearest district centre
 const MOAT := 6.0
 const RIVER_W := 16.0
@@ -314,6 +322,82 @@ static func _on_rail(C: Dictionary, r: Rect2) -> bool:
 	return false
 
 
+## True when p is in a part of the shop view's set round any lot (a pier or pillar steps out of it).
+static func in_set(C: Dictionary, p: Vector2) -> bool:
+	for L in C.lots:
+		if p.distance_to(Vector2(L.x0, L.front)) < 60.0:
+			for pt in SET_PARTS:
+				if Rect2(Vector2(L.x0, L.front) + pt[0].position, pt[0].size).grow(1.0).has_point(p):
+					return true
+	return false
+
+
+## True when a deck comes down on the shop view's set round a lot: a part of it reaches the underside of the viaduct
+## (RAIL_CLEAR off its centre line) or of an expressway or ramp over it, or a pier of the viaduct stands in it, or a
+## deck stands in front of your shop where the shop view would see it over the shop (SET_SEEN).
+static func under_deck(C: Dictionary, x0: float, front: float) -> bool:
+	var lot := Vector2(x0, front)
+	var decks: Array = C.shuto.map(func(sh): return [sh.pts, sh.closed, EXPRESS_W]) + C.get("ramps", []).map(func(rp): return [rp.pts, false, RAMP_W])
+	if C.has("rail"):
+		if not C.has("rail3"):
+			C.rail3 = PackedVector3Array(Array(C.rail).map(func(p): return Vector3(p.x, RAIL_DECK, p.y)))
+		if _hides([C.rail3, true, RAIL_W], Rect2(lot + SET_SEEN.position, SET_SEEN.size)):
+			return true
+	for pt in SET_PARTS:
+		var q := Rect2(lot + pt[0].position, pt[0].size)
+		if C.has("rail") and ((pt[1] > RAIL_DECK - 0.6 and _on_rail(C, q)) or C.get("piers", []).any(func(pr): return q.grow(1.0).has_point(pr[1]))):
+			return true
+		for dk in decks:
+			if _deck_over(dk, q, pt[1]):
+				return true
+	return decks.any(func(dk): return _hides(dk, Rect2(lot + SET_SEEN.position, SET_SEEN.size)))
+
+
+## True when deck dk [pts (y its top), closed, width] stands in front of the ground r and hides some of it, slab to
+## parapet, as the shop view sees it: looking down 30 degrees from the south-east (x + z grows toward it), on a 1 m grid.
+static func _hides(dk: Array, r: Rect2) -> bool:
+	var iso := func(p: Vector3) -> Vector2: return Vector2((p.x - p.z) * 0.7071, (p.x + p.z) * 0.3536 - p.y * 0.866)
+	var box: Rect2 = Rect2(iso.call(Vector3(r.position.x, 0, r.end.y)), Vector2.ZERO).expand(iso.call(Vector3(r.end.x, 0, r.position.y))).expand(iso.call(Vector3(r.position.x, 0, r.position.y))).expand(iso.call(Vector3(r.end.x, 0, r.end.y)))
+	var pts: PackedVector3Array = dk[0]
+	var n := pts.size()
+	for i in range(1, n + (1 if dk[1] else 0)):
+		var a := pts[i - 1]
+		var b := pts[i % n]
+		if maxf(a.y, b.y) <= 1.5 or Vector2(a.x, a.z).distance_to(r.get_center()) > 40.0:
+			continue
+		var side: Vector3 = Vector3(b.z - a.z, 0, a.x - b.x).normalized() * dk[2] / 2
+		var hull := PackedVector2Array()
+		for e in [a, b]:
+			for sd in [side, -side]:
+				for y in [-0.6, 0.9]:
+					hull.append(iso.call(e + sd + Vector3(0, y, 0)))
+		hull = Geometry2D.convex_hull(hull)
+		var hb := Rect2(hull[0], Vector2.ZERO)
+		for h in hull:
+			hb = hb.expand(h)
+		if not hb.intersects(box):
+			continue
+		var depth := (a.x + a.z + b.x + b.z) / 2
+		for gx in ceili(r.size.x) + 1:
+			for gz in ceili(r.size.y) + 1:
+				var q := r.position + Vector2(minf(gx, r.size.x), minf(gz, r.size.y))
+				if depth > q.x + q.y + 1.0 and Geometry2D.is_point_in_polygon(iso.call(Vector3(q.x, 0, q.y)), hull):
+					return true
+	return false
+
+
+## True when deck dk [pts, closed, width] passes over r with its underside lower than `top`.
+static func _deck_over(dk: Array, r: Rect2, top: float) -> bool:
+	var pts: PackedVector3Array = dk[0]
+	var n := pts.size()
+	for i in range(1, n + (1 if dk[1] else 0)):
+		var a := pts[i - 1]
+		var b := pts[i % n]
+		if maxf(a.y, b.y) > 1.5 and minf(a.y, b.y) - 0.6 < top and seg_rect_dist(Vector2(a.x, a.z), Vector2(b.x, b.z), r) < dk[2] / 2 + 0.5:
+			return true  # (at 1.5 m or lower it is down on the avenue it runs on: road, not deck)
+	return false
+
+
 ## True when a footprint would sit on a road corridor, water (unless `wet`), a park, or a reserved lot or landmark.
 static func blocked(C: Dictionary, r: Rect2, wet := false) -> bool:
 	for k in _bucket_keys(r):
@@ -393,20 +477,14 @@ static func _build() -> Dictionary:
 		if not in_park(C, L.pos) and _on_rail(C, sq):
 			C.landmarks.erase(L)
 			unreserve(C, sq)
-	var lost := {}  # district -> lots the line took
+	var lost := {}  # districts whose lots the line, or a deck over the shop view's set, took
 	for L in C.lots.duplicate():
 		var r := Rect2(L.x0, L.front - LOT_D, LOT_W, LOT_D)
-		if _on_rail(C, r):
+		if _on_rail(C, r) or under_deck(C, L.x0, L.front):
 			C.lots.erase(L)
 			unreserve(C, r)
-			lost[L.block] = lost.get(L.block, 0) + 1
-	var short := {}
-	for di in lost:
-		short[di] = C.lots.filter(func(L): return L.block == di).size() + lost[di]
+			lost[L.block] = true
 	_place_lots(C, lost.keys())
-	C.lots_lost = 0  # lots the line took that found no new place (the rules test wants none)
-	for di in short:
-		C.lots_lost += maxi(0, short[di] - C.lots.filter(func(L): return L.block == di).size())
 	_place_landmarks_late(C)
 	return C
 
@@ -427,7 +505,7 @@ static func _flat(pts: PackedVector3Array) -> PackedVector2Array:
 
 ## The ramps between each expressway and the avenue under it, both ways: an off-ramp and an on-ramp each side, from
 ## 42% of the way along, or the nearest spot to that where all four keep clear of the Yamanote's viaduct (they rise
-## through its height). They stay inside the avenue's width.
+## through its height) and of the shop view's sets round the lots. They stay inside the avenue's width.
 static func _ramps(C: Dictionary) -> void:
 	C.ramps = []  # {pts, av: the avenue below, s0: where along it the ramp starts, side: +1 left of its direction}
 	for ai in C.avenues.size():
@@ -447,7 +525,7 @@ static func _ramps(C: Dictionary) -> void:
 				for s in [s0, s0 + RAMP_L + 24.0]:
 					var down: bool = (side > 0) == (s == s0)  # off-ramps first, on-ramps after, for traffic keeping left
 					set_.append({"pts": _ramp(pts, cum, s, side, down), "av": ai, "s0": s, "side": side})
-			if set_.all(func(rp): return Array(_flat(rp.pts)).all(func(p): return rail_dist(C, p) > RAIL_W / 2 + RAMP_W / 2 + 0.5)):
+			if set_.all(func(rp): return Array(_flat(rp.pts)).all(func(p): return rail_dist(C, p) > RAIL_W / 2 + RAMP_W / 2 + 0.5) and not C.lots.any(func(L): return SET_PARTS.any(func(pt): return _deck_over([rp.pts, false, RAMP_W], Rect2(Vector2(L.x0, L.front) + pt[0].position, pt[0].size), pt[1])))):
 				break
 		C.ramps.append_array(set_)
 	for rp in C.ramps:
@@ -680,7 +758,7 @@ static func _piers(C: Dictionary) -> Array:
 				var pt := rail_at(C, s)
 				for f in [0.0, 1.0, -1.0, 2.0, -2.0]:
 					var p: Vector2 = pt[0] + Vector2(pt[1].y, -pt[1].x) * f * (RAIL_W / 2 - 0.8) / 2.0
-					if pier_ok(C, p):
+					if pier_ok(C, p) and not in_set(C, p):
 						out.append([s, p, pt[1]])
 						hit = true
 						break
@@ -693,7 +771,8 @@ static func _piers(C: Dictionary) -> Array:
 
 ## Where the expressway's and its ramps' pillars stand, as [route (C.shuto, then C.ramps), point index]: about every
 ## 14 m where the deck is high enough to need one, each slid along its deck (up to two points either way) off the
-## Yamanote's viaduct where that passes under. A loop's points run on past its start, as the view draws it.
+## Yamanote's viaduct where that passes under, and out of the shop view's sets. A loop's points run on past its start,
+## as the view draws it.
 static func deck_pillars(C: Dictionary) -> Array:
 	var out := []
 	var routes: Array = C.shuto.map(func(sh): return [sh.pts, sh.closed, 1.5]) + C.ramps.map(func(rp): return [rp.pts, false, 1.0])
@@ -709,7 +788,8 @@ static func deck_pillars(C: Dictionary) -> Array:
 				walked = 0.0
 				for dk in [0, 1, -1, 2, -2]:
 					var q: int = k + dk
-					if q >= 0 and q < pts.size() and pts[q].y > 1.5 and rail_dist(C, Vector2(pts[q].x, pts[q].z)) > RAIL_W / 2 + routes[ri][2] / 2 + 0.4:
+					var foot := Vector2(pts[q].x, pts[q].z) if q >= 0 and q < pts.size() else Vector2.INF
+					if foot != Vector2.INF and pts[q].y > 1.5 and rail_dist(C, foot) > RAIL_W / 2 + routes[ri][2] / 2 + 0.4 and not in_set(C, foot):
 						out.append([ri, q, pts[q], routes[ri][2]])
 						break
 	return out
@@ -1159,7 +1239,7 @@ static func _place_lots(C: Dictionary, only: Array = []) -> void:
 			if placed >= d.lots:
 				break
 			var lot: Rect2 = c[1]
-			if C.lots.any(func(L): return Vector2(L.x0 + LOT_W / 2, L.front - LOT_D / 2).distance_to(lot.get_center()) < 26.0) or blocked(C, lot):
+			if C.lots.any(func(L): return Vector2(L.x0 + LOT_W / 2, L.front - LOT_D / 2).distance_to(lot.get_center()) < 26.0) or blocked(C, lot) or under_deck(C, lot.position.x, lot.end.y):
 				continue
 			C.lots.append({"block": di, "x0": lot.position.x, "front": lot.end.y})
 			reserve(C, lot)
