@@ -237,6 +237,7 @@ var hover := {}  # the action a click would take
 var drag := 0.0
 var bold: Font  # the HUD's heavy weight, for the clock and street tags
 var styles := {}  # rounded boxes for tags and bars, by color and radius
+var roof_texs := {}  # the rival's roof, by the width of its shop
 
 var walkers: Array = []
 var cars: Array = []
@@ -2734,7 +2735,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	for y in [7, 8, 9]:
 		band.set_pixel(0, y, c.darkened(0.25))
 	art_panel(parent, band, Vector2(w + 0.1, 0.8), Vector3(cx, 3.65, -7.095), Color.WHITE, 1.0, not rv.defeated)
-	block(parent, Vector3(w - 0.4, 0.05, 8.6), Vector3(cx, 4.22, -11.7), Color("a3a29e"))
+	plane(parent, Vector2(w - 0.4, 8.6), Vector3(cx, 4.245, -11.7), rival_roof(span))
 	for e in [[Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -7.3)], [Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -16.1)],
 			[Vector3(0.2, 0.34, 9.0), Vector3(span.x + 0.1, 4.37, -11.7)], [Vector3(0.2, 0.34, 9.0), Vector3(span.y - 0.1, 4.37, -11.7)]]:
 		block(parent, e[0], e[1], Color("e6e2d8"))
@@ -2790,6 +2791,66 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	block(parent, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
 	if not rv.defeated:
 		spill(parent, cx, w + 1.6, -7.05)
+
+
+## The rival's roof as the city's flat roofs are drawn: membrane in strips across its depth, each a shade off, the
+## parapets' shadow along its sunny sides, a dark seam round the hatch, skylights, AC units and walkway and each one's
+## shadow away from the sun, and a drain in the front corner with a damp stain round it. 10 px a metre, street frame.
+func rival_roof(span: Vector2) -> StandardMaterial3D:
+	var x0 := span.x + 0.2
+	var iw := roundi((span.y - span.x - 0.4) * 10.0)
+	if iw in roof_texs:
+		return roof_mat(roof_texs[iw])
+	var ih := 86
+	var r := RandomNumberGenerator.new()
+	r.seed = 41
+	var lanes := []
+	for k in 8:
+		lanes.append(r.randf_range(0.91, 1.04))
+	var casts := [[Rect2(span.x + 0.5, -15.7, 1.8, 1.6), Vector2(0.49, -0.84)]]  # footprint, shadow offset (street frame)
+	for k in 2:
+		casts.append([Rect2(span.x + 2.25 + k * 2.6, -10.65, 1.9, 1.3), Vector2(0.12, -0.2)])
+	for k in 3:
+		casts.append([Rect2(span.x + 3.575 + k * 1.6, -14.925, 1.25, 1.05), Vector2(0.25, -0.42)])
+	casts.append([Rect2(span.x + 1.6, -13.8, span.y - span.x - 2.2, 0.8), Vector2.ZERO])  # the walkway
+	var drain := Vector2(span.y - 0.8, -7.95)
+	var base := Color("a3a29e")
+	var img := Image.create(iw, ih, false, Image.FORMAT_RGB8)
+	for j in ih:
+		var z := -16.0 + (j + 0.5) / 10.0
+		var u := (j + 0.5) / 12.0
+		var lane: float = lanes[int(u) % lanes.size()] * (0.84 if j % 12 == 0 else 1.0)
+		for i in iw:
+			var x := x0 + (i + 0.5) / 10.0
+			var f := lane
+			if i < 3 or j >= ih - 4:
+				f *= 0.74
+			elif i >= iw - 2 or j < 2:
+				f *= 0.86
+			for c in casts:
+				var at: Rect2 = c[0]
+				var out := Vector2(maxf(maxf(at.position.x - x, x - at.end.x), 0.0), maxf(maxf(at.position.y - z, z - at.end.y), 0.0))
+				if at.grow(-0.05).has_point(Vector2(x, z) - c[1]):
+					f *= 0.7
+					break
+				elif out.length() < 0.25:  # a dark seam where each fitting meets the roof
+					f *= lerpf(0.78, 1.0, out.length() / 0.25)
+					break
+			var d := Vector2(x, z).distance_to(drain)
+			if d < 0.15:
+				f = 0.45
+			elif d < 1.1:
+				f *= lerpf(0.86, 1.0, d / 1.1)
+			img.set_pixel(i, j, Color(base.r * f, base.g * f, base.b * f))
+	img.generate_mipmaps()
+	roof_texs[iw] = ImageTexture.create_from_image(img)
+	return roof_mat(roof_texs[iw])
+
+
+func roof_mat(t: ImageTexture) -> StandardMaterial3D:
+	var m := mat(Color.WHITE, t)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	return m
 
 
 ## Your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark (street frame),
