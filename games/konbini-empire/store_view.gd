@@ -47,16 +47,23 @@ const SET := Rect2(-52, -32, 104, 52)  # the street set round your shop, in the 
 # Sim.RIVALS order
 const WALK_ROW := {"cashier": 7, "guard": 8, "cleaner": 9, "promoter": 10, "stocker": 11, "shoplifter": 12, "suit": 13, "review": 14, "flyer": 15, "mascot": 21}
 const MASCOT_SCALE := 1.35  # a 2 m costume over the 1.5 m adults
-const GOODS := {  # pack colors per product line, faced up on its fixture
-	"drink": [Color("4fae5a"), Color("e8873a"), Color("3f86c9"), Color("e9e2c8")],
-	"beer": [Color("d9a22c"), Color("c8d3dc"), Color("3d6fb4"), Color("e2574c")],
-	"bento": [Color("e9e1cf"), Color("d4553f"), Color("6f9a4a")],
-	"onigiri": [Color("d4553f"), Color("2f3a3c"), Color("4fae5a"), Color("2f3a3c"), Color("f2c53d")],
-	"noodle": [Color("e2574c"), Color("f3efe2"), Color("e9b33a"), Color("3f86c9")],
-	"daily": [Color("7fc4d8"), Color("f0f0ea"), Color("c58ad1"), Color("8cc56a")],
-	"snack": [Color("e2574c"), Color("f2c53d"), Color("e8873a"), Color("5a9bd6")],
-	"icecream": [Color("f4c9d6"), Color("8b5a3c"), Color("fff3d4"), Color("9bd3e8")],
+const FIXTURE_W := 2.3  # every fixture's face; each is 0.8 deep, open to +z, the aisle its shoppers stand in
+# Where each kind of fixture holds its stock, in its slot's frame: rows of [the board's top, the most a pack may reach
+# above it, how far toward the aisle the front packs stand], the lines of packs on each board (how far behind the front,
+# each one behind staggered half a pack), the spans across the face they fill (one per fridge door), the room inside
+# its shell, the biggest a pack is drawn, and how far packs lean back (a chest freezer's lie in its well).
+const FIXTURES := {
+	"shelf": {"h": 1.4, "rows": [[0.1, 0.49, 0.27], [0.52, 0.91, 0.27], [0.94, 1.4, 0.27]], "lines": [0.0, -0.14], "bays": [[-1.08, 1.08]],
+		"inner": Rect2(-1.11, 0.02, 2.22, 0.4), "pack": Vector2(0.3, 0.34), "lean": 0.0},
+	"low": {"h": 0.9, "rows": [[0.1, 0.47, 0.27], [0.5, 0.9, 0.27]], "lines": [0.0, -0.14], "bays": [[-1.08, 1.08]],
+		"inner": Rect2(-1.11, 0.02, 2.22, 0.4), "pack": Vector2(0.3, 0.33), "lean": 0.0},
+	"fridge": {"h": 2.0, "rows": [[0.12, 0.52, 0.14], [0.54, 0.94, 0.14], [0.96, 1.36, 0.14], [1.38, 1.75, 0.14]], "lines": [0.0, -0.18],
+		"bays": [[-1.06, -0.42], [-0.31, 0.31], [0.42, 1.06]], "inner": Rect2(-1.09, -0.34, 2.18, 0.72), "pack": Vector2(0.24, 0.34), "lean": 0.0},
+	"freezer": {"h": 0.9, "rows": [[0.62, 0.88, 0.2], [0.62, 0.88, 0.03], [0.62, 0.88, -0.13]], "lines": [0.0], "bays": [[-1.06, 1.06]],
+		"inner": Rect2(-1.09, -0.34, 2.18, 0.68), "pack": Vector2(0.26, 0.26), "lean": 60.0},
 }
+const PACK_STEP := 1.05  # a row's packs stand shoulder to shoulder, this many drawn widths apart
+const RACK_H := 1.05  # the magazine racks' drawn height, stood on the floor
 const FIELDS := ["9cb862", "b2c46e", "86a85a", "cdbb72", "a98f62", "79a05a", "bfc77e"]  # paddies, crops, tilled soil
 # the day's weather over the view: [tint, then for falling rain or snow: drops, slant, speed px/s, streak length]
 const WEATHER_LOOK := {
@@ -2691,54 +2698,29 @@ func build_room() -> void:
 		if reg.active:
 			var p: Vector2 = Sim.REGISTERS[reg.id].pos
 			prop(room, "till", Vector3(p.x, COUNTER_H, p.y))
-	# a fixture per product line, its stock as up to three product icons
+	# a fixture per product line, its stock stood on its own boards
 	for pid in st.products:
-		var slot: Dictionary = Sim.SLOTS[Sim.PRODUCTS[pid].slot]
-		var p: Vector2 = slot.pos
-		var h := 1.0
-		match Sim.PRODUCTS[pid].slot:
-			"fridgeA", "fridgeB", "fridgeC":
-				h = 2.0
-				block(room, Vector3(2.3, h, 0.8), Vector3(p.x, h / 2, p.y), Color("dfe9ef"))
-				block(room, Vector3(2.2, h - 0.3, 0.05), Vector3(p.x, h / 2, p.y + 0.41), Color("9fd3ea"))
-				for y in [0.55, 0.95, 1.35]:  # shelves seen through the glass doors
-					block(room, Vector3(2.2, 0.04, 0.02), Vector3(p.x, y, p.y + 0.44), Color("78b6d0"))
-				for dx in [-0.37, 0.37]:
-					block(room, Vector3(0.06, h - 0.3, 0.07), Vector3(p.x + dx, h / 2, p.y + 0.43), Color("c3ccd2"))
-				block(room, Vector3(2.3, 0.18, 0.06), Vector3(p.x, h - 0.09, p.y + 0.42), LAYOUT.stripe[1])
-			"shelfA", "shelfB", "shelfC":
-				h = 1.4
-				block(room, Vector3(2.3, h, 0.8), Vector3(p.x, h / 2, p.y), Color("e9e4d6"))
-				block(room, Vector3(2.4, 0.1, 0.9), Vector3(p.x, h + 0.05, p.y), Color("3b3f52"))
-				for y in [h / 3, h * 2 / 3]:
-					block(room, Vector3(2.34, 0.05, 0.84), Vector3(p.x, y, p.y), Color("cfc4ac"))
-			"frontA", "island":
-				h = 0.9
-				block(room, Vector3(2.3, h, 0.8), Vector3(p.x, h / 2, p.y), Color("eef3f6") if pid == "icecream" else Color("e9e4d6"))
-			"rack":
-				h = 0.45  # a low plinth: the magazine racks on it are the fixture
-				block(room, Vector3(2.0, h, 0.45), Vector3(p.x, h / 2, p.y), Color("b9a37f"))
-			_:
-				# a counter line is its own station (coffee machine, hot-snack case, oden pot), greyed when sold out
-				slot_icons[pid] = [prop(room, {"coffee": "coffee", "chicken": "karaage", "oden": "oden"}[pid], Vector3(p.x, COUNTER_H, p.y))]
-				continue
-		if pid == "icecream":  # the freezer's glass lid
-			block(room, Vector3(2.1, 0.03, 0.6), Vector3(p.x, h + 0.015, p.y), Color("bfe3f2"))
-		goods(pid, slot, h)
-		var icons := []
-		var ic: Array = Sim.PRODUCTS[pid].icon
-		var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
-		var region := Rect2(ic[1] * cell, 0, cell, cell)
-		var px: float = ITEM_PX * ITEM / cell * (1.6 if pid == "manga" else 1.0)
-		# each icon's drawn bottom rests on the fixture's top (a shelf's top board stands 0.1 above h)
-		var top := h + (0.1 if slot_kind(Sim.PRODUCTS[pid].slot) == "shelf" else 0.0)
-		var foot: int = cell - tex[ic[0]].get_image().get_region(Rect2i(region)).get_used_rect().end.y
-		for k in 3:
-			var s := sprite(ic[0], region, px)
-			s.position = Vector3(p.x - 0.6 + 0.6 * k, top + (cell / 2.0 - foot) * px, p.y + (0.0 if pid == "manga" else 0.2))
-			room.add_child(s)
-			icons.append(s)
-		slot_icons[pid] = icons
+		var p: Vector2 = Sim.SLOTS[Sim.PRODUCTS[pid].slot].pos
+		var kind := slot_kind(Sim.PRODUCTS[pid].slot)
+		if FIXTURES.has(kind):
+			fixture_shell(kind, p)
+			goods(pid, kind, p)
+		elif kind == "rack":
+			# the magazine racks' art is the fixture with its stock, three of them stood on the floor
+			var ic: Array = Sim.PRODUCTS[pid].icon
+			var region := Rect2(ic[1] * DECOR, 0, DECOR, DECOR)
+			var u: Rect2i = tex[ic[0]].get_image().get_region(Rect2i(region)).get_used_rect()
+			var px := RACK_H / u.size.y
+			var icons := []
+			for k in 3:
+				var s := sprite(ic[0], region, px)
+				s.position = Vector3(p.x - 0.62 + 0.62 * k, (u.end.y - DECOR / 2.0) * px, p.y)
+				room.add_child(s)
+				icons.append(s)
+			slot_icons[pid] = icons
+		else:
+			# a counter line is its own station (coffee machine, hot-snack case, oden pot), greyed when sold out
+			slot_icons[pid] = [prop(room, {"coffee": "coffee", "chicken": "karaage", "oden": "oden"}[pid], Vector3(p.x, COUNTER_H, p.y))]
 	# inside facilities
 	if st.facilities.has("atm"):  # in the front corner facing the door, its side to the right stub
 		prop(room, "atm", Vector3(6.1, 0, 3.95))
@@ -2757,48 +2739,103 @@ func build_room() -> void:
 			room.add_child(s)
 
 
-## Packs faced up on a fixture's street side, rows from the floor up, in the product's own colors.
-func goods(pid: String, slot: Dictionary, h: float) -> void:
-	var cols: Array = GOODS.get(pid, [])
-	if cols.is_empty():
-		return
-	var p: Vector2 = slot.pos
-	var rows: Array  # [y of the board, pack height, z of the pack's centre]
-	var pack := Vector3(0.22, 0.0, 0.1)
-	match slot_kind(Sim.PRODUCTS[pid].slot):
-		"fridge":  # bottles stood on the shelves just behind the glass, tinted by it
-			rows = [[0.2, 0.3, p.y + 0.47], [0.57, 0.3, p.y + 0.47], [0.97, 0.3, p.y + 0.47], [1.37, 0.24, p.y + 0.47]]
-			pack.x = 0.13
-		"shelf":
-			rows = [[0.06, 0.32, p.y + 0.4], [h / 3 + 0.03, 0.3, p.y + 0.43], [h * 2 / 3 + 0.03, 0.3, p.y + 0.43]]
-		"low":
-			rows = [[0.06, 0.32, p.y + 0.4], [0.47, 0.32, p.y + 0.4]]
-		_:
-			return
-	var xs := []
-	if pack.x < 0.2:  # three bottles to each door, clear of the mullions
-		for bay in [-0.735, 0.0, 0.735]:
-			xs.append_array([bay - 0.19, bay, bay + 0.19])
-	else:
-		for i in 8:
-			xs.append((i - 3.5) * 0.27)
-	var mm := multimesh(shaded_box(), rows.size() * xs.size(), true)
-	var k := 0
-	for j in rows.size():
-		var row: Array = rows[j]
-		for i in xs.size():
-			var c: Color = cols[(i + j) % cols.size()]
-			var sz := Vector3(pack.x, row[1] * (0.85 + 0.075 * ((i * 7 + k) % 3)), pack.z)
-			if pack.x < 0.2:
-				c = c.lerp(Color("bfe3f2"), 0.3)
-			mm.set_instance_transform(k, Transform3D(Basis.from_scale(sz), Vector3(p.x + xs[i], row[0] + sz.y / 2, row[2])))
-			mm.set_instance_color(k, c)
-			k += 1
-	var m := mat(Color.WHITE, null, true)
-	m.vertex_color_use_as_albedo = true
-	m.vertex_color_is_srgb = true
+## A fixture's shell round the boards its FIXTURES rows stand on: a gondola's or low shelf's end panels, back and cap
+## over open tiers; a fridge's lit cabinet behind glass doors; a chest freezer's well under glass lids.
+func fixture_shell(kind: String, p: Vector2) -> void:
+	var f: Dictionary = FIXTURES[kind]
+	var h: float = f.h
+	var w := FIXTURE_W
+	var deck: float = f.rows[0][0]
+	var trim := Color("c3ccd2")
+	match kind:
+		"shelf", "low":
+			var body := Color("e9e4d6")
+			var board := Color("cfc4ac")
+			block(room, Vector3(w, h, 0.42), Vector3(p.x, h / 2, p.y - 0.19), body)  # the back half: the far side's tiers
+			block(room, Vector3(w, deck, 0.4), Vector3(p.x, deck / 2, p.y + 0.2), board)
+			for dx in [-1, 1]:
+				block(room, Vector3(0.04, h, 0.8), Vector3(p.x + dx * (w / 2 - 0.02), h / 2, p.y), body)
+			for r in f.rows:
+				if r[0] > deck:
+					block(room, Vector3(w - 0.08, 0.03, 0.38), Vector3(p.x, r[0] - 0.015, p.y + 0.21), board)
+				block(room, Vector3(w - 0.08, 0.045, 0.015), Vector3(p.x, r[0] - 0.0225, p.y + 0.405), Color("fbf7ee"))  # price rail
+			block(room, Vector3(w + 0.1, 0.1, 0.9), Vector3(p.x, h + 0.05, p.y), Color("3b3f52"))
+		"fridge":
+			var body := Color("dfe9ef")
+			var top: float = f.rows[-1][1]  # the header's underside
+			block(room, Vector3(w, h, 0.06), Vector3(p.x, h / 2, p.y - 0.37), Color("eef6fa"))  # the lit back
+			for dx in [-1, 1]:
+				block(room, Vector3(0.06, h, 0.8), Vector3(p.x + dx * (w / 2 - 0.03), h / 2, p.y), body)
+			block(room, Vector3(w, deck, 0.8), Vector3(p.x, deck / 2, p.y), body)
+			block(room, Vector3(w, h - top, 0.8), Vector3(p.x, (h + top) / 2, p.y), body)
+			block(room, Vector3(w, 0.18, 0.02), Vector3(p.x, h - 0.12, p.y + 0.41), LAYOUT.stripe[1])
+			for r in f.rows.slice(1):  # wire shelves, a price strip on each
+				block(room, Vector3(w - 0.12, 0.02, 0.62), Vector3(p.x, r[0] - 0.01, p.y - 0.03), trim)
+				block(room, Vector3(w - 0.12, 0.03, 0.01), Vector3(p.x, r[0] - 0.015, p.y + 0.285), Color("fbf7ee"))
+			var gh: float = top - deck
+			for dx in [-0.365, 0.365]:  # the door mullions
+				block(room, Vector3(0.05, gh, 0.05), Vector3(p.x + dx, deck + gh / 2, p.y + 0.375), trim)
+			block(room, Vector3(w - 0.12, gh, 0.01), Vector3(p.x, deck + gh / 2, p.y + 0.39), Color(0.78, 0.9, 0.96, 0.12))
+		"freezer":
+			var body := Color("eef3f6")
+			block(room, Vector3(w, deck, 0.8), Vector3(p.x, deck / 2, p.y), body)
+			for dz in [-1, 1]:
+				block(room, Vector3(w, h - deck, 0.06), Vector3(p.x, (h + deck) / 2, p.y + dz * 0.37), body)
+			for dx in [-1, 1]:
+				block(room, Vector3(0.06, h - deck, 0.8), Vector3(p.x + dx * (w / 2 - 0.03), (h + deck) / 2, p.y), body)
+			block(room, Vector3(w + 0.02, 0.08, 0.82), Vector3(p.x, 0.04, p.y), trim)
+			block(room, Vector3(0.03, 0.025, 0.68), Vector3(p.x, h - 0.0125, p.y), trim)  # where the sliding lids meet
+			block(room, Vector3(w - 0.12, 0.02, 0.68), Vector3(p.x, h - 0.01, p.y), Color(0.78, 0.9, 0.96, 0.18))
+
+
+## A product line's stock on its fixture's boards: packs in its own art, upright to the locked store camera (laid back
+## in a freezer's well), as many facings as fit each row, as many showing as are in stock.
+func goods(pid: String, kind: String, p: Vector2) -> void:
+	var f: Dictionary = FIXTURES[kind]
+	var ic: Array = Sim.PRODUCTS[pid].icon
+	var sheet: Texture2D = tex[ic[0]]
+	var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
+	var region := Rect2i(ic[1] * cell, 0, cell, cell)
+	var u: Rect2i = sheet.get_image().get_region(region).get_used_rect()
+	var px: float = minf(f.pack.x / u.size.x, f.pack.y / u.size.y)
+	var q := QuadMesh.new()
+	q.size = Vector2(cell, cell) * px
+	q.center_offset = Vector3((cell / 2.0 - u.position.x - u.size.x / 2.0) * px, (u.end.y - cell / 2.0) * px, 0)  # the drawn pack's foot at the origin
+	var m := mat(Color.WHITE, sheet, true)
+	m.uv1_scale = Vector3(float(cell) / sheet.get_width(), float(cell) / sheet.get_height(), 1)
+	m.uv1_offset = Vector3(float(region.position.x) / sheet.get_width(), 0, 0)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	var at := facings(kind, p, Vector2(u.size) * px)
+	var mm := multimesh(q, at.size())
+	for k in at.size():
+		mm.set_instance_transform(k, at[k])
 	mm_node(mm, m, room)
 	slot_goods[pid] = mm
+
+
+## Where a line's packs stand on its fixture, each drawn `pack` wide and tall with its foot at its origin: shoulder to
+## shoulder along every row and door, turned to the locked store camera, in a scattered order so selling down thins
+## every row instead of emptying one end.
+static func facings(kind: String, p: Vector2, pack: Vector2) -> Array:
+	var f: Dictionary = FIXTURES[kind]
+	var lean := deg_to_rad(f.lean)
+	var step := pack.x * PACK_STEP
+	var back := sin(lean) * pack.y * 0.7071  # how far a leaning pack's top reaches back, along x and z alike
+	var reach := pack.x * 0.3536 + back  # how far a pack spans from its foot
+	var inner: Rect2 = f.inner
+	var at := []
+	for r in f.rows:
+		for j in f.lines.size():
+			var z := clampf(r[2] + f.lines[j], inner.position.y + reach, inner.end.y - pack.x * 0.3536)  # kept inside the shell
+			for bay in f.bays:
+				var n := floori((bay[1] - bay[0] - 2.0 * reach) / step) + (0 if j > 0 else 1)  # one fewer behind, in the gaps
+				for i in n:
+					at.append(Vector3(p.x + (bay[0] + bay[1]) / 2.0 + (i - (n - 1) / 2.0) * step, r[0], p.y + z))
+	var order := range(at.size())
+	order.sort_custom(func(a: int, b: int) -> bool: return fposmod(a * 0.618034, 1.0) < fposmod(b * 0.618034, 1.0))
+	var basis := Basis(Vector3.UP, PI / 4) * Basis(Vector3.RIGHT, -lean)
+	return order.map(func(k: int) -> Transform3D: return Transform3D(basis, at[k]))
 
 
 static func slot_kind(slot: String) -> String:
@@ -2806,7 +2843,7 @@ static func slot_kind(slot: String) -> String:
 		return "fridge"
 	if slot.begins_with("shelf"):
 		return "shelf"
-	return "low" if slot in ["frontA", "island"] else ""
+	return {"frontA": "low", "island": "freezer", "rack": "rack"}.get(slot, "")
 
 
 func refresh_stock() -> void:

@@ -26,6 +26,7 @@ func _init() -> void:
 	start_state()
 	roads()
 	railway()
+	shelves()
 	var t0 := Time.get_ticks_msec()
 	var a := {}
 	for s in SEEDS:
@@ -35,6 +36,88 @@ func _init() -> void:
 	print("bot runs took %.1f s" % ((Time.get_ticks_msec() - t0) / 1000.0))
 	print("RULES OK" if fails.is_empty() else "RULES FAIL (%d)" % fails.size())
 	quit(0 if fails.is_empty() else 1)
+
+
+## The shop as the shop view builds it with every line in: each fixture's packs, measured by the art they draw, stand
+## on its boards inside its shell and under the next board, every board holds some, and nothing stands on a
+## fixture's top; the magazine racks stand on the floor.
+func shelves() -> void:
+	var s := Sim.new()
+	s.create_run(42)
+	var st: Dictionary = s.branches[0].store
+	st.size = 3
+	for pid in Sim.PRODUCTS:
+		if not st.products.has(pid):
+			s.add_line(st, pid)
+	var SV = load("res://store_view.gd")
+	var v = SV.new()
+	for n in ["products", "perks", "decor", "bg_konbini", "props"]:
+		v.tex[n] = load("res://art/%s.png" % n)
+	v.room = Node3D.new()
+	v.branch = s.branches[0]
+	v.build_room()
+	var drawn := func(t: Texture2D, cell: Rect2i) -> Rect2i: return t.get_image().get_region(cell).get_used_rect()
+	var bad := []
+	var tops := {}  # a fixture's footprint -> the height nothing may stand above
+	for mmi in v.room.get_children().filter(func(c): return c is MultiMeshInstance3D):
+		var pid = v.slot_goods.find_key(mmi.multimesh)
+		if pid == null:
+			continue
+		var kind: String = SV.slot_kind(Sim.PRODUCTS[pid].slot)
+		var f: Dictionary = SV.FIXTURES[kind]
+		var p: Vector2 = Sim.SLOTS[Sim.PRODUCTS[pid].slot].pos
+		var q: QuadMesh = mmi.multimesh.mesh
+		var m: StandardMaterial3D = mmi.material_override
+		var t: Texture2D = m.albedo_texture
+		var cell := Rect2i(roundi(m.uv1_offset.x * t.get_width()), 0, roundi(m.uv1_scale.x * t.get_width()), roundi(m.uv1_scale.y * t.get_height()))
+		var u: Rect2i = drawn.call(t, cell)
+		var k := q.size.x / cell.size.x
+		var x0: float = -q.size.x / 2 + q.center_offset.x
+		var y0: float = q.size.y / 2 + q.center_offset.y
+		var used := {}
+		# a headless run keeps no instance data, so the packs' places come from the rule that fills the multimesh
+		var at: Array = SV.facings(kind, p, Vector2(u.size) * k)
+		if at.size() != mmi.multimesh.instance_count:
+			bad.append("%s has %d packs, its rule %d" % [pid, mmi.multimesh.instance_count, at.size()])
+		for i in at.size():
+			var tr: Transform3D = at[i]
+			var c := []
+			for cx in [u.position.x, u.end.x]:
+				for cy in [u.position.y, u.end.y]:
+					c.append(tr * Vector3(x0 + cx * k, y0 - cy * k, 0) - Vector3(p.x, 0, p.y))
+			var lo: float = c.map(func(w): return w.y).min()
+			var hi: float = c.map(func(w): return w.y).max()
+			var row := -1  # the board it stands on: at its foot's height, the nearest row of those
+			for j in f.rows.size():
+				if absf(lo - f.rows[j][0]) < 0.005 and hi <= f.rows[j][1] + 0.005 and (row < 0 or absf(tr.origin.z - p.y - f.rows[j][2]) < absf(tr.origin.z - p.y - f.rows[row][2])):
+					row = j
+			if row < 0 or not c.all(func(w): return f.inner.grow(0.005).has_point(Vector2(w.x, w.z))):
+				bad.append("%s pack %d at %s..%s m (not on a board, under the next, inside the shell)" % [pid, i, lo, hi])
+				break
+			used[row] = true
+		if used.size() < f.rows.size():
+			bad.append("%s fills %d of %d boards" % [pid, used.size(), f.rows.size()])
+		tops[Rect2(p.x - SV.FIXTURE_W / 2 + 0.05, p.y - 0.35, SV.FIXTURE_W - 0.1, 0.7)] = f.h + 0.1
+	check(tops.size() == st.products.keys().filter(func(pid): return SV.FIXTURES.has(SV.slot_kind(Sim.PRODUCTS[pid].slot))).size(), "every shelf, fridge and freezer line has its packs")
+	for c in v.room.get_children():
+		var box: AABB
+		if c is Sprite3D:
+			var u: Rect2i = drawn.call(c.texture, Rect2i(c.region_rect))
+			var px: float = c.pixel_size
+			var foot: float = c.position.y - (u.end.y - c.region_rect.size.y / 2) * px
+			box = AABB(c.position - Vector3(u.size.x * px / 2, c.position.y - foot, u.size.x * px / 2), Vector3(u.size.x * px, u.size.y * px, u.size.x * px))
+			if c in v.slot_icons.get("manga", []) and absf(foot) > 0.005:
+				bad.append("a magazine rack's foot %.2f m off the floor" % foot)
+		elif c is MeshInstance3D:
+			box = c.transform * c.get_aabb()
+		else:
+			continue
+		for r in tops:
+			if Rect2(box.position.x, box.position.z, box.size.x, box.size.z).intersects(r) and box.end.y > tops[r] + 0.001:
+				bad.append("%s %.2f m tall over the fixture at %s" % [c.get_class(), box.end.y, r.get_center()])
+	check(bad.is_empty(), "every pack stands on its fixture's boards and nothing on a fixture's top (%s)" % [bad])
+	v.room.free()
+	v.free()
 
 
 ## Every road ends on another road, at a quay or off the map: a side street at a T or a corner on another street, on
