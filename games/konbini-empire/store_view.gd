@@ -104,7 +104,9 @@ void vertex() {
 void fragment() {
 	vec4 c = light_vp * vec4(wpos, 1.0);
 	ALBEDO = vec3(0.08, 0.1, 0.2);
-	ALPHA = texture(mask, vec2(c.x, -c.y) * 0.5 + 0.5).a * strength;
+	vec2 uv = vec2(c.x, -c.y) * 0.5 + 0.5;
+	vec2 inside = step(vec2(0.0), uv) * step(uv, vec2(1.0));  // past the sun's view there is nothing to cast
+	ALPHA = texture(mask, uv).a * strength * inside.x * inside.y;
 }
 """
 # Buildings: boxes in a MultiMesh. Custom data = size and facade style (-1: plain shaded colour, for roofs); colour =
@@ -300,6 +302,9 @@ var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
 var cam_base := 12.0
 var zoom := 1.0
+var cam_dist := 400.0
+# the bay's open water carried on south past the city's own bay, widening as it goes, so the map never shows its edge
+var bay_mouth := PackedVector2Array([Vector2(-380, 999), Vector2(640, 999), Vector2(790, 1300), Vector2(760, 1640), Vector2(1080, 2050), Vector2(1450, 2800), Vector2(-1300, 2800), Vector2(-880, 2120), Vector2(-600, 1720), Vector2(-590, 1380)])
 var yaw := PI / 4
 var yaw_drag := 0.0  # right-drag turned so far; yaw follows it in quarter turns
 
@@ -690,8 +695,10 @@ func update_camera() -> void:
 		cam.size = 24.0 * zoom
 	var pitch := deg_to_rad(PITCH)
 	target += cam_offset
-	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * 400.0
-	cam.far = 900.0
+	# far enough back, and far reaching enough, that the ground stays whole to the frame's top and bottom edges
+	cam_dist = maxf(400.0, cam.size * 1.2)
+	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * cam_dist
+	cam.far = cam_dist * 2.0 + 100.0
 	cam.look_at(target)
 	overlay.queue_redraw()
 
@@ -857,6 +864,15 @@ func mm_node(mm: MultiMesh, m: Material, parent: Node) -> MultiMeshInstance3D:
 	return mmi
 
 
+## Whether r is open country, at least `edge` past the built-up land and clear of roads, parks and water. Out past
+## every road, river, park and plot (C.bounds grown by 120 holds them all) only the sea is in the way.
+func country(r: Rect2, edge: float) -> bool:
+	var p := r.get_center()
+	if not C.bounds.grow(120.0).intersects(r):
+		return not Geometry2D.is_point_in_polygon(p, C.bay) and not Geometry2D.is_point_in_polygon(p, bay_mouth)
+	return Sim.City.nearest(C, p)[1] > Sim.City.URBAN + edge and not Sim.City.blocked(C, r)
+
+
 ## Builds the fixed city once: ground, water, parks, streets, avenues, the expressway and the Yamanote, buildings,
 ## trees and landmarks. Lot contents (stores, empty plots) are built by build_lots.
 func build_static() -> void:
@@ -867,8 +883,8 @@ func build_static() -> void:
 	elevated.clear()
 	var b: Rect2 = C.bounds
 	var mid := b.get_center()
-	var grass := tiled(speckle([Color("7fa35a"), Color("8cb064"), Color("739a52"), Color("98b86c")]), Vector2(500, 500))
-	plane(city, Vector2(2000, 2000), Vector3(mid.x, -0.16, mid.y), grass)
+	var grass := tiled(speckle([Color("7fa35a"), Color("8cb064"), Color("739a52"), Color("98b86c")]), Vector2(1500, 1500))
+	plane(city, Vector2(6000, 6000), Vector3(mid.x, -0.16, mid.y), grass)
 	# farmland round the city: a patchwork of furrowed fields with grass between, kept off the roads and the shore
 	var furrows := Image.create(4, 4, false, Image.FORMAT_RGB8)
 	furrows.fill(Color.WHITE)
@@ -880,7 +896,7 @@ func build_static() -> void:
 	var fs := surface(fm)
 	var fr := RandomNumberGenerator.new()
 	fr.seed = 5
-	var fb := b.grow(400.0)
+	var fb := b.grow(1300.0)
 	var fy := fb.position.y
 	while fy < fb.end.y:
 		var fh := fr.randf_range(14.0, 26.0)
@@ -888,7 +904,7 @@ func build_static() -> void:
 		while fx < fb.end.x:
 			var fw := fr.randf_range(16.0, 36.0)
 			var r := Rect2(fx, fy, fw, fh).grow(-0.9)
-			if Sim.City.nearest(C, r.get_center())[1] > Sim.City.URBAN + 16.0 and not Sim.City.blocked(C, r.grow(12.0)):
+			if country(r.grow(12.0), 16.0):
 				var along := fr.randf() < 0.5
 				fs.set_color(Color(FIELDS[fr.randi() % FIELDS.size()]))
 				rect_quad(fs, r, -0.155, (r.size.y if along else r.size.x) / 3.0, along)
@@ -909,6 +925,7 @@ func build_static() -> void:
 	sea.texture_repeat = true
 	var ws := surface(sea)
 	poly_fill(ws, C.bay, -0.14)
+	poly_fill(ws, bay_mouth, -0.14)
 	for poly in C.river:
 		poly_fill(ws, poly, -0.14)
 	var palace: Dictionary = C.parks[0]
@@ -1571,13 +1588,13 @@ func build_trees() -> void:
 				if not Sim.City.is_water(C, p) and not C.streets.any(func(st): return srect(st, st.from - 2.0, st.to + 2.0, -1.0, st.w + 1.0).has_point(p)):
 					add.call(1 if r.randf() < 0.75 else 0, p, 0.55)
 			s += 10.0
-	var b: Rect2 = C.bounds.grow(320.0)
-	for k in 160:  # woods out in the country, clear of the roads
+	var b: Rect2 = C.bounds.grow(1300.0)
+	for k in 900:  # woods out in the country, clear of the roads
 		var g := Vector2(r.randf_range(b.position.x, b.end.x), r.randf_range(b.position.y, b.end.y))
 		var rad := r.randf_range(4.0, 14.0)
 		for j in int(rad * rad * 0.12) + 3:
 			var p := g + Vector2.from_angle(r.randf() * TAU) * rad * sqrt(r.randf())
-			if Sim.City.nearest(C, p)[1] > Sim.City.URBAN + 8.0 and not Sim.City.blocked(C, Rect2(p - Vector2.ONE, Vector2(2, 2))):
+			if country(Rect2(p - Vector2.ONE, Vector2(2, 2)), 8.0):
 				add.call([1, 1, 3, 1, 4][r.randi() % 5], p, r.randf_range(0.7, 1.1))
 	tree_mms.clear()
 	for id in spots:
@@ -1766,7 +1783,7 @@ func iso(p: Vector3) -> Vector2:
 # ---------- street life (cosmetic, not seeded) ----------
 
 func view_center() -> Vector2:
-	var t3 := cam.position - cam.global_transform.basis.z * 400.0
+	var t3 := cam.position - cam.global_transform.basis.z * cam_dist
 	return Vector2(t3.x, t3.z)
 
 
