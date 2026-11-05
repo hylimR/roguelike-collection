@@ -993,39 +993,40 @@ func build_elevated() -> void:
 	var dm := mat(Color.WHITE, stripes(Color("4f5158"), Color("e8e2c8"), 8, 1, 3))
 	dm.texture_repeat = true
 	var pillars: Array = []  # transforms
-	var routes: Array = []
-	for sh in C.shuto:
-		routes.append([sh.pts, sh.closed, Sim.City.EXPRESS_W, "shuto"])
-	for rp in C.ramps:
-		routes.append([rp.pts, false, Sim.City.RAMP_W, "ramp"])
-	for rt in routes:
-		var pts: PackedVector3Array = rt[0].duplicate()
-		if rt[1]:
-			pts.append(pts[0])
-			pts.append(pts[1])
-		var half: float = rt[2] / 2
+	var routes: Array = Sim.City.elevated(C)
+	for ri in routes.size():
+		var e: Dictionary = routes[ri]
+		var pts := lifted(e.pts)
+		if e.closed:
+			pts.append(pts[1])  # so the loop's last piece turns into its first
+		var half: float = e.w / 2
 		var i := 0
-		while i < pts.size() - 1 - (1 if rt[1] else 0):
-			var j := mini(i + 8, pts.size() - 1 - (1 if rt[1] else 0))
+		while i < e.pts.size() - 1:
+			var j := mini(i + 8, e.pts.size() - 1)
 			var lo := maxi(0, i - 1)
 			var part := pts.slice(lo, mini(j + 2, pts.size()))
-			var f := i - lo
-			var l := j - lo
 			var top := surface(deck)
 			var side := surface(fascia)
-			var mark := surface(lines)
-			var extra := surface(dm)
-			ribbon(top, part, half, -half, 0.3, 0.0, f, l)
-			for s in [half, -half]:
-				wall(side, part, s, -0.6, 0.9, f, l)
-			for s in [half - 0.5, 0.5 - half]:
-				ribbon(mark, part, s + 0.07, s - 0.07, 0.32, 0.0, f, l)
-			if rt[3] == "shuto":
-				wall(side, part, 0.0, 0.3, 0.8, f, l)  # median barrier
-				for s in [half / 2, -half / 2]:
-					ribbon(extra, part, s + 0.07, s - 0.07, 0.32, 0.5, f, l)
-			elevated.append(commit([top, side, mark, extra], city))
+			ribbon(top, part, half, -half, 0.0, 0.0, i - lo, j - lo)
+			for sd in [half, -half]:
+				wall(side, part, sd, -0.9, 0.0, i - lo, j - lo)
+			elevated.append(commit([top, side], city))
 			i = j
+		# parapets, edge lines, the median barrier and lane lines, left out where another carriageway runs into this one
+		var walls := surface(fascia)
+		var mark := surface(lines)
+		var extra := surface(dm)
+		var specs := [[half, walls, 0.6], [-half, walls, 0.6], [half - 0.5, mark, 0.0], [0.5 - half, mark, 0.0]]
+		if not e.ramp:
+			specs += [[0.0, walls, 0.5], [half / 2, extra, 0.0], [-half / 2, extra, 0.0]]
+		for sp in specs:
+			for run in Sim.City.line_runs(C, ri, sp[0]):
+				var sub := sub_line(e, pts, run[0], run[1])
+				if sp[2] > 0.0:
+					wall(sp[1], sub[0], sp[0], 0.0, sp[2], sub[1], sub[2])
+				else:
+					ribbon(sp[1], sub[0], sp[0] + 0.07, sp[0] - 0.07, 0.02, 0.5 if sp[1] == extra else 0.0, sub[1], sub[2])
+		elevated.append(commit([walls, mark, extra], city))
 	for dp in Sim.City.deck_pillars(C):  # where the city put the pillars: off the Yamanote's viaduct and the shop sets
 		var p: Vector3 = dp[2]
 		pillars.append(Transform3D(Basis.from_scale(Vector3(dp[3], p.y, dp[3])), Vector3(p.x, p.y / 2.0, p.z)))
@@ -1034,6 +1035,38 @@ func build_elevated() -> void:
 	for k in pillars.size():
 		pillar_mm.set_instance_transform(k, pillars[k])
 	mm_node(pillar_mm, mat(Color("aaa59b")), city)
+
+
+## An elevated carriageway's surface: 0.3 over its points on the deck, down to the road's own where a ramp lands.
+static func lifted(pts: PackedVector3Array) -> PackedVector3Array:
+	var out := pts.duplicate()
+	for i in out.size():
+		out[i].y += lerpf(-0.105, 0.3, clampf(pts[i].y / Sim.City.DECK, 0.0, 1.0))
+	return out
+
+
+## The surface points of carriageway e between arc lengths a and b, cut where those fall between its points, with the
+## loop's points either side of its start added undrawn so lines run on round it: [points, first, last] for ribbon.
+static func sub_line(e: Dictionary, pts: PackedVector3Array, a: float, b: float) -> Array:
+	var cum: PackedFloat32Array = e.cum
+	var n: int = e.pts.size()
+	var cut := func(x: float) -> Vector3:
+		var k := clampi(cum.bsearch(x), 1, n - 1)
+		var seg := cum[k] - cum[k - 1]
+		return pts[k - 1].lerp(pts[k], (x - cum[k - 1]) / seg if seg > 0.0 else 0.0)
+	var out := PackedVector3Array()
+	if e.closed and a <= 0.001:
+		out.append(pts[n - 2])
+	var first := out.size()
+	out.append(cut.call(a))
+	for k in n:
+		if cum[k] > a + 0.001 and cum[k] < b - 0.001:
+			out.append(pts[k])
+	out.append(cut.call(b))
+	var last := out.size() - 1
+	if e.closed and b >= cum[-1] - 0.001:
+		out.append(pts[1])
+	return [out, first, last]
 
 
 ## The Yamanote viaduct: two tracks on a ballasted deck with parapets and the line's green stripe, an island platform
@@ -1723,7 +1756,7 @@ func build_paths() -> void:
 			pts[i] = pts[i] + Vector3(0, 0.3 * pts[i].y / Sim.City.DECK, 0)
 		var pa := make_path(pts, Sim.City.RAMP_W, "ramp", false)
 		pa.dir = rp.side  # traffic keeps left: one way down each ramp
-		pa.s0 = rp.s0
+		pa.span = rp.span
 		pa.ground = paths.filter(func(q): return q.kind == "avenue" and q.name == av.name)[0]
 		pa.deck = decks[av.shuto]
 		paths.append(pa)
@@ -1934,7 +1967,7 @@ func off_ramp(o: Dictionary) -> void:
 	var top: bool = p.pts[-1 if o.v > 0.0 else 0].y > 1.0
 	var next: Dictionary = p.deck if top else p.ground
 	o.path = next
-	o.s = p.s0 + (Sim.City.RAMP_L if o.v > 0.0 else 0.0)
+	o.s = p.span[1] if o.v > 0.0 else p.span[0]
 	o.lat = lane(next, signf(o.v), 1)
 
 

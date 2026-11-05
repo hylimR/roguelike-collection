@@ -25,6 +25,7 @@ func _init() -> void:
 	curves()
 	start_state()
 	roads()
+	decks()
 	railway()
 	shelves()
 	var t0 := Time.get_ticks_msec()
@@ -156,6 +157,78 @@ func roads() -> void:
 			if not (not C.bounds.has_point(p) or on_street or ring_in_water or on_avenue.call(p, k) or City._poly_dist(c1, p) < City.EXPRESS_W / 2 + 1.0):
 				dead.append(p)
 	check(dead.is_empty(), "every road ends on another road, at a quay or off the map (%d don't, e.g. %s)" % [dead.size(), dead.slice(0, 4)])
+
+
+## The elevated roads join what they meet: every ramp lands in its avenue's carriageway and at the top runs level into
+## its deck, never parting from the deck's edge and ending inside its width; every route's end is on another deck, at
+## grade on a road or off the map; and no parapet or painted line of one carriageway stands inside another on the same
+## level, nor is one left out where nothing runs into it.
+func decks() -> void:
+	var City = Sim.City
+	var C: Dictionary = City.get_city()
+	var t0 := Time.get_ticks_msec()
+	var routes: Array = City.elevated(C)
+	var bad := []
+	var on_road := func(q: Vector2) -> bool:
+		return C.avenues.any(func(av): return City._poly_dist(av.pts, q) < av.w / 2) or C.streets.any(func(st): return (Rect2(st.from, st.line, st.to - st.from, st.w) if st.axis == "h" else Rect2(st.line, st.from, st.w, st.to - st.from)).has_point(q))
+	for rp in C.ramps:
+		var av: Dictionary = C.avenues[rp.av]
+		var deck: PackedVector2Array = City._flat(C.shuto.filter(func(sh): return sh.name == av.shuto)[0].pts)
+		for k in rp.pts.size():
+			var p: Vector3 = rp.pts[k]
+			var q := Vector2(p.x, p.z)
+			var off_deck: float = City._poly_dist(deck, q)
+			if near(p.y, City.DECK) and off_deck - City.RAMP_W / 2 > City.EXPRESS_W / 2 + 0.01:
+				bad.append("ramp at %s parts from its deck by %.2f m" % [q.round(), off_deck - City.RAMP_W / 2 - City.EXPRESS_W / 2])
+			if k == 0 or k == rp.pts.size() - 1:
+				if near(p.y, 0.0) and City._poly_dist(av.pts, q) + City.RAMP_W / 2 > City.CARRIER / 2 - City.SIDEWALK + 0.01:
+					bad.append("ramp foot at %s off its avenue's lanes" % [q.round()])
+				elif near(p.y, City.DECK) and off_deck + City.RAMP_W / 2 > City.EXPRESS_W / 2 + 0.01:
+					bad.append("ramp top at %s ends %.2f m outside its deck" % [q.round(), off_deck + City.RAMP_W / 2 - City.EXPRESS_W / 2])
+				elif not near(p.y, 0.0) and not near(p.y, City.DECK):
+					bad.append("ramp end at %s in mid-air (%.1f m)" % [q.round(), p.y])
+	# brute force, apart from the city's grid: is p within `margin` of the inside of a carriageway other than ri, level with it
+	var boxes := routes.map(func(e): return Array(e.pts).reduce(func(r, v): return r.expand(Vector2(v.x, v.z)), Rect2(Vector2(e.pts[0].x, e.pts[0].z), Vector2.ZERO)).grow(e.w))
+	var inside := func(ri: int, p: Vector3, margin: float) -> bool:
+		var q := Vector2(p.x, p.z)
+		for rj in routes.size():
+			if rj == ri or not boxes[rj].has_point(q):
+				continue
+			var e: Dictionary = routes[rj]
+			for k in e.pts.size() - 1:
+				var a2 := Vector2(e.pts[k].x, e.pts[k].z)
+				var b2 := Vector2(e.pts[k + 1].x, e.pts[k + 1].z)
+				var c := Geometry2D.get_closest_point_to_segment(q, a2, b2)
+				var t := 0.0 if a2 == b2 else (c - a2).length() / a2.distance_to(b2)
+				if c.distance_to(q) < e.w / 2 + margin and absf(lerpf(e.pts[k].y, e.pts[k + 1].y, t) - p.y) < 0.05:
+					return true
+		return false
+	for ri in routes.size():
+		var e: Dictionary = routes[ri]
+		if not e.closed:
+			for p in [e.pts[0], e.pts[-1]]:
+				var q := Vector2(p.x, p.z)
+				if not (not C.bounds.has_point(q) or inside.call(ri, p, 0.0) or (near(p.y, 0.0) and on_road.call(q))):
+					bad.append("deck end at %s meets nothing (%.1f m up)" % [q.round(), p.y])
+		var half: float = e.w / 2
+		var offs := [half, -half, half - 0.5, 0.5 - half] + ([] if e.ramp else [0.0, half / 2, -half / 2])
+		for off in offs:
+			var runs: Array = City.line_runs(C, ri, off)
+			var stands := func(x: float) -> bool: return runs.any(func(r): return x >= r[0] and x <= r[1])
+			var x := 0.5
+			while x < e.cum[-1]:
+				var k := clampi(e.cum.bsearch(x), 1, e.pts.size() - 1)
+				var a: Vector3 = e.pts[k - 1]
+				var b: Vector3 = e.pts[k]
+				var d := Vector2(b.x - a.x, b.z - a.z).normalized()
+				var p: Vector3 = a.lerp(b, (x - e.cum[k - 1]) / (e.cum[k] - e.cum[k - 1])) + Vector3(d.y, 0, -d.x) * off
+				if stands.call(x) and inside.call(ri, p, -0.3):
+					bad.append("a line at %.1f m stands inside another carriageway at %s" % [off, Vector2(p.x, p.z).round()])
+				elif not stands.call(x) and not inside.call(ri, p, 0.3):
+					bad.append("a line at %.1f m is left out at %s with nothing running in" % [off, Vector2(p.x, p.z).round()])
+				x += 1.0
+	print("decks checked in %.1f s" % ((Time.get_ticks_msec() - t0) / 1000.0))
+	check(bad.is_empty(), "every ramp runs into its deck and lands in its avenue, every deck end meets a road, and no parapet or line walls one carriageway off from another (%d: %s)" % [bad.size(), bad.slice(0, 4)])
 
 
 ## The Yamanote: no curve tighter than RAIL_R; its viaduct off every park, ring road, moat and the water; every station

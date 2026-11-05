@@ -3,7 +3,7 @@ extends RefCounted
 ## are carved out; blocks come from splitting the city again and again (so side streets meet in T-junctions and
 ## never line up into one grid), bridging the river, stopping at quays on the bay and ending on a road round every
 ## park; curved avenues and the elevated Shuto expressway over some of them (with ramps down to the avenue below) cut
-## across. Every road ends on another road, at a quay or off the map. The Yamanote's viaduct is laid last, through the
+## across. Every road ends on another road, at a quay or off the map, and every ramp and expressway end on its deck or its road. The Yamanote's viaduct is laid last, through the
 ## landmarks and lots, on curves no tighter than RAIL_R and clear of the parks, with a station by each of its
 ## districts; what it cannot keep off is placed again round it. Built once and cached: Tokyo never changes, only who
 ## holds which lot. Node-free; buildings() is only for the view.
@@ -32,6 +32,7 @@ const URBAN := 92.0  # built-up land reaches this far from the nearest district 
 const MOAT := 6.0
 const RIVER_W := 16.0
 const RAMP_L := 46.0 * DECK / 6.0  # a 1:7.7 grade up to the deck
+const MERGE_L := 20.0  # a ramp's level top, easing into the deck's outer lanes
 const BRIDGE := 30.0  # the longest water a side street bridges (the Sumida at a slant); longer, it stops at a quay
 # the Yamanote: a double-track viaduct, straight between its stations and round every corner on a RAIL_R curve; one
 # width all the way, the tracks spaced for an island platform between them at each station
@@ -434,17 +435,8 @@ static func _build() -> Dictionary:
 		C.avenues.append({"name": av.name, "w": av.w, "pts": pts, "shuto": av.get("shuto", "")})
 		if av.has("shuto"):
 			C.shuto.append({"name": av.shuto, "pts": _deck(pts, DECK), "closed": false})
-	var rainbow := smooth(RAINBOW)
-	var rb := _deck(rainbow, DECK)
-	var rcum := cumulative(rainbow)
-	for i in rb.size():
-		var p := rb[i]
-		p.y = DECK * clampf((rcum[-1] - rcum[i]) / (40.0 * DECK / 6.0), 0.0, 1.0)  # comes down onto Odaiba
-		rb[i] = p
-	C.shuto.append({"name": "11", "pts": rb, "closed": false})
-	for sh in C.shuto:
-		if sh.name in ["C1", "11"]:
-			_add_corridor(C, _flat(sh.pts), EXPRESS_W / 2 + 1.5, sh.closed)
+	C.shuto.append({"name": "11", "pts": _deck(smooth(RAINBOW), DECK), "closed": false, "lands": true})  # comes down onto Odaiba
+	_add_corridor(C, _flat(C.shuto[0].pts), EXPRESS_W / 2 + 1.5, true)
 	# blocks and side streets
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1964
@@ -461,6 +453,7 @@ static func _build() -> Dictionary:
 			bounds = r if bounds.size == Vector2.ZERO else bounds.merge(r)
 	C.bounds = bounds.grow(20.0)
 	C.streets = _streets(C, raw)
+	_land(C)
 	_trim_avenues(C)
 	C.avenues.append_array(_edge_roads(C))
 	for av in C.avenues:
@@ -489,6 +482,35 @@ static func _build() -> Dictionary:
 	return C
 
 
+## A route that comes down to the ground ends on a road: the last side street it crosses on land before the end it was
+## drawn to, at least 2 m inside the street, coming down to it over the 1:7.7 grade of a ramp.
+static func _land(C: Dictionary) -> void:
+	for sh in C.shuto:
+		if not sh.get("lands", false):
+			continue
+		var flat := _flat(sh.pts)
+		var cum := cumulative(flat)
+		var end := cum[-1]
+		while end > 0.0:
+			var q: Vector2 = at(flat, cum, end)[0]
+			if is_water(C, q):
+				break
+			if C.streets.any(func(st): return absf(q[1 if st.axis == "h" else 0] - st.line - st.w / 2) < st.w / 2 - 2.0 and q[0 if st.axis == "h" else 1] > st.from + 2.0 and q[0 if st.axis == "h" else 1] < st.to - 2.0):
+				break
+			end -= 0.5
+		var pts := PackedVector3Array()
+		for i in cum.size():
+			if cum[i] < end - 0.5:
+				pts.append(sh.pts[i])
+		var tip: Vector2 = at(flat, cum, end)[0]
+		pts.append(Vector3(tip.x, 0.0, tip.y))
+		var lcum := cumulative(_flat(pts))
+		for i in pts.size():
+			pts[i].y = DECK * clampf((lcum[-1] - lcum[i]) / RAMP_L, 0.0, 1.0)
+		sh.pts = pts
+		_add_corridor(C, _flat(pts), EXPRESS_W / 2 + 1.5)
+
+
 static func _deck(pts: PackedVector2Array, y: float) -> PackedVector3Array:
 	var out := PackedVector3Array()
 	for p in pts:
@@ -503,11 +525,12 @@ static func _flat(pts: PackedVector3Array) -> PackedVector2Array:
 	return out
 
 
-## The ramps between each expressway and the avenue under it, both ways: an off-ramp and an on-ramp each side, from
-## 42% of the way along, or the nearest spot to that where all four keep clear of the Yamanote's viaduct (they rise
-## through its height) and of the shop view's sets round the lots. They stay inside the avenue's width.
+## The ramps between each expressway and the avenue under it: for each direction of traffic (keeping left) an
+## off-ramp and then an on-ramp, from 42% of the way along, or the nearest spot to that where all four keep clear of
+## the Yamanote's viaduct (they rise through its height) and of the shop view's sets round the lots. They stay inside
+## the avenue's width.
 static func _ramps(C: Dictionary) -> void:
-	C.ramps = []  # {pts, av: the avenue below, s0: where along it the ramp starts, side: +1 left of its direction}
+	C.ramps = []  # {pts, av: the avenue below, s0: where its slope starts along it, side: +1 left of its direction, span: s along it at pts[0] and pts[-1]}
 	for ai in C.avenues.size():
 		var av: Dictionary = C.avenues[ai]
 		if av.shuto == "":
@@ -518,13 +541,15 @@ static func _ramps(C: Dictionary) -> void:
 		var set_ := []
 		for k in 80:  # 42%, then 4 m further each way in turn
 			var s0: float = cum[-1] * 0.42 + 4.0 * ceili(k / 2.0) * (1 if k % 2 == 0 else -1)
-			if s0 < 0.0 or s0 + span > cum[-1]:
+			if s0 - MERGE_L < 0.0 or s0 + span + MERGE_L > cum[-1]:
 				continue
 			set_ = []
 			for side in [1.0, -1.0]:
 				for s in [s0, s0 + RAMP_L + 24.0]:
-					var down: bool = (side > 0) == (s == s0)  # off-ramps first, on-ramps after, for traffic keeping left
-					set_.append({"pts": _ramp(pts, cum, s, side, down), "av": ai, "s0": s, "side": side})
+					var rp := _ramp(pts, cum, s, side, s == s0)  # the tops at the outer ends: off the deck first, on again after
+					rp.av = ai
+					rp.side = side
+					set_.append(rp)
 			if set_.all(func(rp): return Array(_flat(rp.pts)).all(func(p): return rail_dist(C, p) > RAIL_W / 2 + RAMP_W / 2 + 0.5) and not C.lots.any(func(L): return SET_PARTS.any(func(pt): return _deck_over([rp.pts, false, RAMP_W], Rect2(Vector2(L.x0, L.front) + pt[0].position, pt[0].size), pt[1])))):
 				break
 		C.ramps.append_array(set_)
@@ -532,19 +557,123 @@ static func _ramps(C: Dictionary) -> void:
 		_add_corridor(C, _flat(rp.pts), RAMP_W / 2 + 1.0)
 
 
-## A ramp beside the deck between s0 and s0 + RAMP_L: on `side` (+1 left of the avenue's direction), coming down
-## (or going up) between the deck's edge and the avenue's outer lane.
-static func _ramp(pts: PackedVector2Array, cum: PackedFloat32Array, s0: float, side: float, down: bool) -> PackedVector3Array:
-	var out := PackedVector3Array()
+## A ramp whose slope runs from s0 to s0 + RAMP_L on `side` (+1 left of the avenue's direction), coming down (or going
+## up) from flush against the deck's edge to the avenue's outer lane. At the top it runs on level for MERGE_L, easing
+## in over the deck's outer lanes until its outer edge is the deck's (before s0 when it comes down, after the slope
+## when it goes up), so its lane carries on into the deck's: {pts, s0, span}.
+static func _ramp(pts: PackedVector2Array, cum: PackedFloat32Array, s0: float, side: float, down: bool) -> Dictionary:
+	var ground := CARRIER / 2 - SIDEWALK - RAMP_W / 2
+	var flush := EXPRESS_W / 2 + RAMP_W / 2
+	var inside := EXPRESS_W / 2 - RAMP_W / 2
+	var rows := []  # [s along the avenue, height, offset from its centre line]
 	var n := 12
 	for k in n + 1:
 		var f := float(k) / n
 		var y := DECK * ((1.0 - f) if down else f)
-		var pt: Array = at(pts, cum, s0 + RAMP_L * f)
-		var left := Vector2(pt[1].y, -pt[1].x)
-		var p: Vector2 = pt[0] + left * side * lerpf(CARRIER / 2 - SIDEWALK - RAMP_W / 2, EXPRESS_W / 2 + RAMP_W / 2 + 0.4, y / DECK)
-		out.append(Vector3(p.x, y, p.y))
+		rows.append([s0 + RAMP_L * f, y, lerpf(ground, flush, y / DECK)])
+	for k in range(1, 7):
+		var g := k / 6.0
+		var row := [s0 - MERGE_L * g if down else s0 + RAMP_L + MERGE_L * g, DECK, lerpf(flush, inside, smoothstep(0.0, 1.0, g))]
+		if down:
+			rows.push_front(row)
+		else:
+			rows.append(row)
+	var out := PackedVector3Array()
+	for r in rows:
+		var pt: Array = at(pts, cum, r[0])
+		var p: Vector2 = pt[0] + Vector2(pt[1].y, -pt[1].x) * side * r[2]
+		out.append(Vector3(p.x, r[1], p.y))
+	return {"pts": out, "s0": s0, "span": Vector2(rows[0][0], rows[-1][0])}
+
+
+## Every elevated carriageway, the expressway's routes and then the ramps, as {pts (a loop's first point repeated at its
+## end), cum (arc length at each point), w, closed, ramp}; with a grid of their segments for line_runs.
+static func elevated(C: Dictionary) -> Array:
+	if C.has("elevated"):
+		return C.elevated
+	C.elevated = []
+	for sh in C.shuto:
+		var pts: PackedVector3Array = sh.pts.duplicate()
+		if sh.closed:
+			pts.append(pts[0])
+		C.elevated.append({"pts": pts, "w": EXPRESS_W, "closed": sh.closed, "ramp": false})
+	for rp in C.ramps:
+		C.elevated.append({"pts": rp.pts, "w": RAMP_W, "closed": false, "ramp": true})
+	C.deck_grid = {}
+	C.line_cache = {}
+	for ri in C.elevated.size():
+		var e: Dictionary = C.elevated[ri]
+		e.cum = cumulative(_flat(e.pts))
+		for k in e.pts.size() - 1:
+			for key in _cells(Rect2(Vector2(e.pts[k].x, e.pts[k].z), Vector2.ZERO).expand(Vector2(e.pts[k + 1].x, e.pts[k + 1].z)).grow(e.w / 2)):
+				if not C.deck_grid.has(key):
+					C.deck_grid[key] = []
+				C.deck_grid[key].append([ri, k])
+	return C.elevated
+
+
+static func _cells(r: Rect2) -> Array:
+	var out := []
+	for bx in range(floori(r.position.x / 8.0), floori(r.end.x / 8.0) + 1):
+		for bz in range(floori(r.position.y / 8.0), floori(r.end.y / 8.0) + 1):
+			out.append(Vector2i(bx, bz))
 	return out
+
+
+## Whether p lies inside an elevated carriageway other than ri, on its surface (within 5 cm of its height).
+static func _in_other(C: Dictionary, ri: int, p: Vector3) -> bool:
+	var q := Vector2(p.x, p.z)
+	for hit in C.deck_grid.get(Vector2i(floori(q.x / 8.0), floori(q.y / 8.0)), []):
+		if hit[0] == ri:
+			continue
+		var e: Dictionary = C.elevated[hit[0]]
+		var a: Vector3 = e.pts[hit[1]]
+		var b: Vector3 = e.pts[hit[1] + 1]
+		var a2 := Vector2(a.x, a.z)
+		var b2 := Vector2(b.x, b.z)
+		var c := Geometry2D.get_closest_point_to_segment(q, a2, b2)
+		var t := 0.0 if a2 == b2 else clampf((c - a2).dot(b2 - a2) / a2.distance_squared_to(b2), 0.0, 1.0)
+		if c.distance_to(q) < e.w / 2 - 0.05 and absf(lerpf(a.y, b.y, t) - p.y) < 0.05:
+			return true
+	return false
+
+
+## Where a parapet or a painted line at lateral offset `off` (left of the points' direction positive) stands along
+## elevated carriageway ri, as [from, to] arc lengths: everywhere but inside another carriageway on the same level, so
+## a ramp's level top and the deck it eases into, or two routes at a junction, open into each other instead of
+## walling each other off. Sampled every half metre near other carriageways.
+static func line_runs(C: Dictionary, ri: int, off: float) -> Array:
+	var e: Dictionary = elevated(C)[ri]
+	var key := "%d:%.2f" % [ri, off]
+	if C.line_cache.has(key):
+		return C.line_cache[key]
+	var runs := []
+	var pts: PackedVector3Array = e.pts
+	for k in pts.size() - 1:
+		var a := pts[k]
+		var b := pts[k + 1]
+		var d := Vector2(b.x - a.x, b.z - a.z)
+		var len_ := d.length()
+		if len_ <= 0.0:
+			continue
+		var left := Vector3(d.y, 0, -d.x) / len_
+		var near := false
+		for cell in _cells(Rect2(Vector2(a.x, a.z), Vector2.ZERO).expand(Vector2(b.x, b.z)).grow(absf(off) + 0.5)):
+			if C.deck_grid.get(cell, []).any(func(hit): return hit[0] != ri):
+				near = true
+				break
+		var n := ceili(len_ / 0.5) if near else 1
+		for j in n:
+			if near and _in_other(C, ri, a.lerp(b, (j + 0.5) / n) + left * off):
+				continue
+			var s0: float = e.cum[k] + len_ * j / n
+			var s1: float = e.cum[k] + len_ * (j + 1) / n
+			if not runs.is_empty() and absf(runs[-1][1] - s0) < 0.001:
+				runs[-1][1] = s1
+			else:
+				runs.append([s0, s1])
+	C.line_cache[key] = runs
+	return runs
 
 
 ## The Yamanote, laid through the city's landmarks and lots: a loop past its stations, straight between
@@ -770,12 +899,12 @@ static func _piers(C: Dictionary) -> Array:
 
 
 ## Where the expressway's and its ramps' pillars stand, as [route (C.shuto, then C.ramps), point index]: about every
-## 14 m where the deck is high enough to need one, each slid along its deck (up to two points either way) off the
+## 14 m where the deck is high enough to need one (a ramp's level top is the deck widened, on the deck's own), each slid along its deck (up to two points either way) off the
 ## Yamanote's viaduct where that passes under, and out of the shop view's sets. A loop's points run on past its start,
 ## as the view draws it.
 static func deck_pillars(C: Dictionary) -> Array:
 	var out := []
-	var routes: Array = C.shuto.map(func(sh): return [sh.pts, sh.closed, 1.5]) + C.ramps.map(func(rp): return [rp.pts, false, 1.0])
+	var routes: Array = C.shuto.map(func(sh): return [sh.pts, sh.closed, 1.5, INF]) + C.ramps.map(func(rp): return [rp.pts, false, 1.0, DECK - 0.01])
 	for ri in routes.size():
 		var pts: PackedVector3Array = routes[ri][0].duplicate()
 		if routes[ri][1]:
@@ -784,12 +913,12 @@ static func deck_pillars(C: Dictionary) -> Array:
 		var walked := 14.0
 		for k in range(1, pts.size()):
 			walked += pts[k - 1].distance_to(pts[k])
-			if walked >= 14.0 and pts[k].y > 1.5:
+			if walked >= 14.0 and pts[k].y > 1.5 and pts[k].y < routes[ri][3]:
 				walked = 0.0
 				for dk in [0, 1, -1, 2, -2]:
 					var q: int = k + dk
 					var foot := Vector2(pts[q].x, pts[q].z) if q >= 0 and q < pts.size() else Vector2.INF
-					if foot != Vector2.INF and pts[q].y > 1.5 and rail_dist(C, foot) > RAIL_W / 2 + routes[ri][2] / 2 + 0.4 and not in_set(C, foot):
+					if foot != Vector2.INF and pts[q].y > 1.5 and pts[q].y < routes[ri][3] and rail_dist(C, foot) > RAIL_W / 2 + routes[ri][2] / 2 + 0.4 and not in_set(C, foot):
 						out.append([ri, q, pts[q], routes[ri][2]])
 						break
 	return out
