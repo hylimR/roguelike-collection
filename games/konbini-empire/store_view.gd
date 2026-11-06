@@ -65,6 +65,7 @@ const FIXTURES := {
 const PACK_STEP := 1.05  # a row's packs stand shoulder to shoulder, this many drawn widths apart
 const RACK_H := 1.05  # the magazine racks' drawn height, stood on the floor
 const FIELDS := ["8cc458", "a8cc66", "d0c468", "c8b064", "a88e66", "70aa50", "98c488"]  # paddies, young rice, rapeseed, wheat, soil, greens, cabbages
+const FIELD_WEIGHTS := [3.0, 2.0, 0.8, 0.8, 0.7, 2.0, 1.5]  # mostly green, with a gold or bare field here and there
 # the day's weather over the view: [tint, then for falling rain or snow: drops, slant, speed px/s, streak length]
 const WEATHER_LOOK := {
 	"hot": [Color(1.0, 0.68, 0.3, 0.15)],
@@ -942,6 +943,10 @@ func build_static() -> void:
 	var fr := RandomNumberGenerator.new()
 	fr.seed = 5
 	var fb := b.grow(1300.0)
+	# neighbouring fields mostly share a crop, so the farmland reads as broad patches of one colour rather than a
+	# checkerboard; each field still takes its own shade
+	var crops := {}
+	var fw8 := PackedFloat32Array(FIELD_WEIGHTS)
 	var fy := fb.position.y
 	while fy < fb.end.y:
 		var fh := fr.randf_range(14.0, 26.0)
@@ -951,7 +956,14 @@ func build_static() -> void:
 			var r := Rect2(fx, fy, fw, fh).grow(-0.9)
 			if country(r.grow(12.0), 16.0):
 				var along := fr.randf() < 0.5
-				fs.set_color(Color(FIELDS[fr.randi() % FIELDS.size()]))
+				var at := r.get_center() + Vector2(fr.randf_range(-40.0, 40.0), fr.randf_range(-40.0, 40.0))
+				var cell := Vector2i((at / 110.0).floor())
+				if not crops.has(cell):
+					crops[cell] = fr.rand_weighted(fw8)
+				var crop: int = crops[cell] if fr.randf() < 0.75 else fr.rand_weighted(fw8)
+				var shade := fr.randf_range(-0.06, 0.06)
+				var fc := Color(FIELDS[crop])
+				fs.set_color(fc.lightened(shade) if shade > 0.0 else fc.darkened(-shade))
 				rect_quad(fs, r, -0.155, (r.size.y if along else r.size.x) / 3.0, along)
 			fx += fw
 		fy += fh
