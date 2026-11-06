@@ -280,6 +280,27 @@ func key_button(cb: Callable, tip: String, ic: Texture2D, w: int, h: int, radius
 	return b
 
 
+## A locked ability key sinks into a well with its art in silhouette; one cooling down keeps its art and counts down
+## in orange under the wipe, so the two no longer look the same.
+func ability_look(a: Button, state: String) -> void:
+	if a.get_meta("look", "") == state:
+		return
+	a.set_meta("look", state)
+	var off: StyleBoxFlat
+	if state == "locked":
+		off = box(Color("ece0c0"), 27, 4)
+		off.set_border_width_all(2)
+		off.border_color = Color("dccb9f")
+		off.corner_detail = 16
+		a.add_theme_color_override("icon_disabled_color", Color(INK, 0.32))
+		a.add_theme_color_override("font_disabled_color", Color("b9a47c"))
+	else:
+		off = box(PAPER, 27, 4, 1, 1)
+		a.add_theme_color_override("icon_disabled_color", Color(1, 1, 1, 0.8))
+		a.add_theme_color_override("font_disabled_color", ORANGE if state == "cooling" else MUTED)
+	a.add_theme_stylebox_override("disabled", off)
+
+
 ## Anchors a HUD group to a screen edge or corner; `o` holds the left, top, right and bottom offsets.
 func pin(c: Control, preset: Control.LayoutPreset, o: Rect2) -> void:
 	c.set_anchors_preset(preset)
@@ -393,8 +414,22 @@ func build() -> void:
 	ability_row.add_theme_constant_override("separation", 6)
 	ability_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(ability_row)
+	var disc := Image.create(54, 54, false, Image.FORMAT_RGBA8)
+	for y in 54:
+		for x in 54:
+			disc.set_pixel(x, y, Color(INK, 0.3 * clampf(26.5 - Vector2(x - 26.5, y - 26.5).length(), 0.0, 1.0)))
+	var wipe_tex := ImageTexture.create_from_image(disc)
 	for i in ABILITY_KEYS.size():
-		ability_row.add_child(key_button(do_act.bind({"type": "useAbility", "id": ABILITY_KEYS[i]}), "", frame("perks", ABILITY_ICON[ABILITY_KEYS[i]], 80), 54, 54, 27))
+		var k := key_button(do_act.bind({"type": "useAbility", "id": ABILITY_KEYS[i]}), "", frame("perks", ABILITY_ICON[ABILITY_KEYS[i]], 80), 54, 54, 27)
+		var wipe := TextureProgressBar.new()  # the cooldown still to run, shrinking round the key like a clock hand
+		wipe.texture_progress = wipe_tex
+		wipe.fill_mode = TextureProgressBar.FILL_COUNTER_CLOCKWISE
+		wipe.step = 0.0
+		wipe.nine_patch_stretch = true
+		wipe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wipe.set_anchors_preset(Control.PRESET_FULL_RECT)
+		k.add_child(wipe)
+		ability_row.add_child(k)
 	pick_btn = button("", open_pick, "Choose your level-up skill or reward  [P]")
 	pick_btn.custom_minimum_size = Vector2(92, 54)
 	pick_btn.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -779,14 +814,19 @@ func refresh_ui() -> void:
 		var a: Button = ability_row.get_child(i)
 		var ab = sim.player.abilities.get(id)
 		var def: Dictionary = Sim.ABILITIES[id]
+		var wipe: TextureProgressBar = a.get_child(0)
 		if ab == null:
 			a.text = "%d" % (i + 1)
 			a.disabled = true
 			a.tooltip_text = "%s: unlock it from a level-up card." % def.name
+			wipe.value = 0.0
 		else:
-			a.text = "%d %s" % [i + 1, "I".repeat(ab.level)] if ab.cd <= 0.0 else "%ds" % ceili(ab.cd)
+			a.text = "%d · %s" % [i + 1, "I".repeat(ab.level)] if ab.cd <= 0.0 else "%ds" % ceili(ab.cd)
 			a.disabled = ab.cd > 0.0 or sim.phase != "playing"
 			a.tooltip_text = "%s (level %d)  [%d]" % [def.name, ab.level, i + 1]
+			wipe.max_value = def.cd[ab.level - 1]
+			wipe.value = ab.cd
+		ability_look(a, "locked" if ab == null else ("cooling" if ab.cd > 0.0 else "ready"))
 	pick_btn.visible = not sim.pending.is_empty()
 	pick_btn.text = "New card!\n%d  [P]" % sim.pending.size()
 	var lines := toasts.map(func(t): return t[0])
