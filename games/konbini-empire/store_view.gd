@@ -956,8 +956,9 @@ func build_static() -> void:
 	poly_fill(ws, bay_mouth, -0.14)
 	for poly in C.river:
 		poly_fill(ws, poly, -0.14)
-	var palace: Dictionary = C.parks[0]
-	poly_fill(ws, Sim.City.ellipse(palace.center, palace.radii + Vector2(Sim.City.MOAT, Sim.City.MOAT), 40), -0.14)
+	for p in moat_ring(C.parks[0]):
+		ws.set_uv(p * 0.125)
+		ws.add_vertex(Vector3(p.x, -0.14, p.y))
 	var land := surface(mat(Color(Sim.City.GROUND.hub)))
 	for isl in C.islands:
 		poly_fill(land, isl, -0.135)
@@ -979,6 +980,19 @@ func build_static() -> void:
 			continue
 		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_SPAN * L.size / 22.0, Vector3(L.pos.x, 0, L.pos.y), lm_sprites)
 	build_paths()
+
+
+## The palace moat as triangles: a ring of water from the park's lawn (the same 40-point ellipse) out to the moat's
+## bank, so no water lies under the lawn for it to cover by a centimetre; software WebGL loses that centimetre across
+## the lawn's long fan triangles and showed the moat over half the lawn.
+static func moat_ring(pk: Dictionary) -> PackedVector2Array:
+	var inner := Sim.City.ellipse(pk.center, pk.radii, 40)
+	var outer := Sim.City.ellipse(pk.center, pk.radii + Vector2(Sim.City.MOAT, Sim.City.MOAT), 40)
+	var tris := PackedVector2Array()
+	for i in inner.size():
+		var j := (i + 1) % inner.size()
+		tris.append_array([inner[i], outer[i], outer[j], inner[i], outer[j], inner[j]])
+	return tris
 
 
 ## Side streets as rectangles (with junction mouths, zebra crossings and dashes) and the curved avenues.

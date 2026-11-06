@@ -29,6 +29,7 @@ func _init() -> void:
 	railway()
 	shelves()
 	colours()
+	water()
 	var t0 := Time.get_ticks_msec()
 	var a := {}
 	for s in SEEDS:
@@ -160,6 +161,40 @@ func colours() -> void:
 		var g := Color(City.GROUND[t])
 		var dh := absf(fposmod(g.h - SV.SEA.h + 0.5, 1.0) - 0.5) * 360.0
 		check(g.s < 0.06 or dh >= 45.0, "%s ground %s is not tinted like the water (%.0f degrees from it)" % [t, City.GROUND[t], dh])
+
+
+## No water is drawn under a park's lawn for the lawn to cover by a centimetre (software WebGL loses that centimetre
+## and shows the water through): the palace moat is a ring round its lawn that covers just the ring, and no bay or
+## river polygon reaches into any park.
+func water() -> void:
+	var City = Sim.City
+	var SV = load("res://store_view.gd")
+	var C: Dictionary = City.get_city()
+	var area := func(poly: PackedVector2Array) -> float:
+		var a := 0.0
+		for i in poly.size():
+			a += poly[i].cross(poly[(i + 1) % poly.size()])
+		return absf(a) / 2.0
+	var pk: Dictionary = C.parks[0]
+	var lawn: PackedVector2Array = City.ellipse(pk.center, pk.radii, 40)
+	var tris: PackedVector2Array = SV.moat_ring(pk)
+	var under := 0
+	var ring := 0.0
+	for i in range(0, tris.size(), 3):
+		var t := PackedVector2Array([tris[i], tris[i + 1], tris[i + 2]])
+		ring += area.call(t)
+		if Geometry2D.is_point_in_polygon((t[0] + t[1] + t[2]) / 3.0, lawn):
+			under += 1
+	var bank: float = area.call(City.ellipse(pk.center, pk.radii + Vector2(City.MOAT, City.MOAT), 40)) - area.call(lawn)
+	check(under == 0 and absf(ring - bank) < 0.01 * bank, "the moat covers its ring, not the lawn (%d triangles under the lawn, %.0f of %.0f m2)" % [under, ring, bank])
+	var wet := []
+	for p in C.parks:
+		var l: PackedVector2Array = City.ellipse(p.center, p.radii, 40)
+		for poly in [C.bay] + C.river:
+			for o in Geometry2D.intersect_polygons(l, poly):
+				if area.call(o) > 0.5:
+					wet.append([p.center, area.call(o)])
+	check(wet.is_empty(), "no bay or river lies under a park (%s)" % [wet])
 
 
 ## Every road ends on another road, at a quay or off the map: a side street at a T or a corner on another street, on
