@@ -28,6 +28,7 @@ func _init() -> void:
 	decks()
 	railway()
 	shelves()
+	colours()
 	var t0 := Time.get_ticks_msec()
 	var a := {}
 	for s in SEEDS:
@@ -119,6 +120,41 @@ func shelves() -> void:
 	check(bad.is_empty(), "every pack stands on its fixture's boards and nothing on a fixture's top (%s)" % [bad])
 	v.room.free()
 	v.free()
+
+
+## The world in colour, measured on what the city builds rather than on its palettes: its walls, gable roofs and flat
+## roofs (a membrane taking ROOF_TINT of its walls' tint), and the ground under its blocks by area, are mostly tinted
+## and spread round the colour wheel (enough 30-degree hue sectors each holding 5%), not shades of beige and grey.
+func colours() -> void:
+	var City = Sim.City
+	var SV = load("res://store_view.gd")
+	var C: Dictionary = City.get_city()
+	var sets := {"walls": [], "gable roofs": [], "flat roofs": [], "block ground": []}
+	for bd in City.buildings():
+		sets.walls.append([bd.tint, 1.0])
+		if bd.roof != "":
+			sets["gable roofs"].append([Color(bd.roof), 1.0])
+		else:
+			sets["flat roofs"].append([Color(City.FLAT_ROOFS[bd.accent]).lerp(bd.tint, SV.ROOF_TINT), 1.0])
+	for bl in C.blocks:
+		sets["block ground"].append([Color(City.GROUND[C.districts[bl.d].type]), bl.rect.get_area()])
+	# [least saturation that counts as tinted, share tinted, hue sectors]
+	var need := {"walls": [0.15, 0.8, 6], "gable roofs": [0.3, 0.75, 5], "flat roofs": [0.12, 0.7, 6], "block ground": [0.1, 0.9, 3]}
+	for k in sets:
+		var total := 0.0
+		var tinted := 0.0
+		var sectors := {}
+		for e in sets[k]:
+			total += e[1]
+			if e[0].s >= need[k][0]:
+				tinted += e[1]
+				var h := int(e[0].h * 12.0) % 12
+				sectors[h] = sectors.get(h, 0.0) + e[1]
+		var wide: int = sectors.values().filter(func(w): return w >= 0.05 * total).size()
+		var by_hue := range(12).map(func(h): return roundi(100.0 * sectors.get(h, 0.0) / total))
+		print("%s: %d, %.0f%% tinted, %d hue sectors, %% per 30 degrees %s" % [k, sets[k].size(), 100.0 * tinted / total, wide, by_hue])
+		check(tinted / total >= need[k][1], "%s are tinted, not grey (%.0f%% of them, need %.0f%%)" % [k, 100.0 * tinted / total, 100.0 * need[k][1]])
+		check(wide >= need[k][2], "%s spread round the colour wheel (%d hue sectors, need %d)" % [k, wide, need[k][2]])
 
 
 ## Every road ends on another road, at a quay or off the map: a side street at a T or a corner on another street, on

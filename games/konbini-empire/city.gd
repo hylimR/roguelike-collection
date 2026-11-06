@@ -1385,19 +1385,29 @@ static func _place_lots(C: Dictionary, only: Array = []) -> void:
 
 enum { GLASS, CONCRETE, APARTMENT, SHOPS, NEON, WOOD, HOUSE, WAREHOUSE, STONE, PLAIN, BRICK }
 const STYLE_COUNT := 11
+# wall tints per style, each a family of hues rather than shades of beige: towers in sky and aqua, offices in sand and
+# terracotta, flats, shops and houses in pastels, jewel-toned neon blocks, red-brown and ochre timber, painted tin sheds
 const TINTS := [
-	["c9cfd6", "e6e8ea", "9aa3ad", "b7c2cc"],
-	["d9cfbd", "c8c2b5", "e3dccd", "b9b2a6", "d6c6a8"],
-	["efe9dc", "e8dcc6", "f2efe8", "d9d2c3", "e6d3bf"],
-	["f0e6d2", "e8d8c0", "d8e2e6", "f2dccf", "e0e4d0", "ddd5e8"],
-	["5a5e6b", "6b6460", "4f5866", "726a7a"],
-	["8a6a4a", "7a5c40", "96734f", "6e5038"],
-	["f2efe6", "ede3cf", "e2e6e8", "f0e0d0", "e6e2cf"],
-	["a8b0b8", "9aa6a0", "b8b2a4", "8f9aa8"],
-	["e8dfcc", "d8ccb4", "cfc8bc", "efe8da"],
-	["b8b8b4"],
+	["bcd9e8", "b4e0d4", "c4ccf0", "a8cce0", "e2eef4"],
+	["e8d0a8", "e0bca8", "b0d4c0", "f0dcb8", "dcb498"],
+	["f8e6c0", "f6ccbc", "bce4b8", "c0d8f2", "f4e4a0", "dcc4f0"],
+	["fcdcb4", "f8c4d8", "b8e8d0", "cce0f8", "f6eaa4", "d8bef2"],
+	["3c4a80", "6c3c62", "2c626a", "7c4638", "4a3c70"],
+	["a06a40", "8e4630", "b07c48", "74482e"],
+	["ffe8c8", "f8cce0", "bfe8c4", "c4dcf8", "f8e8b0", "e0c8f4"],
+	["88b4cc", "98c49c", "cc9a78", "dcd0b0", "78a8aa"],
+	["ecd8b4", "e0c098", "ece2cc", "e4c8b8"],
+	["dcd0b8", "b8d8c4", "e4ccc0"],
 ]
-const ROOFS := ["4a5568", "5b4a42", "a0523a", "3d4650", "6b7a4a"]
+# gable tiles: glazed blue and green kawara, terracotta, oxblood, amber, silver
+const ROOFS := ["3c6aa4", "b85a38", "4c8a58", "8e3834", "5c6878", "2c8a86", "b08030"]
+# flat roofs, by the building's accent: green and teal coatings, light membranes, terracotta pavers
+const FLAT_ROOFS := ["7cae88", "a8b8c8", "ccb890", "c47e5c", "6ca8a8", "c0c0b8", "b4a48c", "9cc0dc"]
+# a block's ground by its district's type, on paving (or gravel where it's leafy)
+const GROUND := {"hub": "e0c8ac", "office": "c4d0dc", "luxury": "e8d6b4", "nightlife": "d0bcd0", "youth": "eac4ba",
+	"otaku": "c4c8e4", "tourist": "e4c49c", "university": "d8d0a8", "homes": "c4d8a0", "oldtown": "dcc898",
+	"park": "b8d898", "market": "ccb498", "palace": "c4d0dc"}
+const LEAFY := ["homes", "oldtown", "park"]
 # per district profile: [weight, style, floors min, max, width min, max, depth min, max]
 const MIX := {
 	"hub": [[3, SHOPS, 3, 7, 6, 11, 10, 14], [3, NEON, 4, 9, 6, 10, 10, 14], [2, CONCRETE, 5, 10, 12, 18, 12, 16], [2, GLASS, 6, 14, 14, 20, 14, 18]],

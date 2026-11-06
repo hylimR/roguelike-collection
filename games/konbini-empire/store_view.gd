@@ -64,7 +64,7 @@ const FIXTURES := {
 }
 const PACK_STEP := 1.05  # a row's packs stand shoulder to shoulder, this many drawn widths apart
 const RACK_H := 1.05  # the magazine racks' drawn height, stood on the floor
-const FIELDS := ["9cb862", "b2c46e", "86a85a", "cdbb72", "a98f62", "79a05a", "bfc77e"]  # paddies, crops, tilled soil
+const FIELDS := ["8cc458", "a8cc66", "d0c468", "c8b064", "a88e66", "70aa50", "98c488"]  # paddies, young rice, rapeseed, wheat, soil, greens, cabbages
 # the day's weather over the view: [tint, then for falling rain or snow: drops, slant, speed px/s, streak length]
 const WEATHER_LOOK := {
 	"hot": [Color(1.0, 0.7, 0.3, 0.12)],
@@ -81,7 +81,9 @@ const GOLDEN := [16.0, 17.8, 19.2]  # golden hour's rise, peak and end: walls fa
 const DAWN := [6.0, 6.5, 7.8]  # the same for sunrise, from the other side and rosier
 const LAMP := Color(1.0, 0.85, 0.58)
 const SHOP_LIGHT := Color(0.86, 0.95, 1.0)  # a konbini's cool white strip lights
-const SEA := Color("3f7fbf")
+const SEA := Color("3a8cc8")
+const ROOF_TINT := 0.3  # how much of its walls' tint a flat roof takes over its membrane
+const ASPHALT := Color("576074")  # a cool slate rather than flat grey
 const PITCH := 30.0
 const SUN :=Vector3(-0.35, 1.0, 0.6)  # towards the sun; the building shader lights its faces from here too
 const SHADOW_RES := 4096
@@ -128,7 +130,7 @@ varying vec4 tint;
 varying vec2 sunl;
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
 const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.68, 0.64, 0.42), vec3(0.52, 0.52, 0.5), vec3(0.68, 0.66, 0.61));  // boards, tatami, concrete, tile
-const vec3 ROOF[8] =vec3[8](vec3(0.62, 0.62, 0.6), vec3(0.72, 0.72, 0.7), vec3(0.62, 0.4, 0.32), vec3(0.47, 0.6, 0.38), vec3(0.46, 0.53, 0.6), vec3(0.6, 0.56, 0.5), vec3(0.44, 0.45, 0.48), vec3(0.7, 0.65, 0.53));
+const vec3 ROOF[8] = vec3[8](FLAT_ROOFS);  // Sim.City.FLAT_ROOFS
 
 void vertex() {
 	info = INSTANCE_CUSTOM;
@@ -186,7 +188,7 @@ void fragment() {
 					vec2 sd = abs(q - hc + sunl * 0.45);
 					f = max(hd.x, hd.y) < 0.5 ? (max(hd.x, hd.y) < 0.4 ? 1.12 : 0.8) : (max(sd.x, sd.y) < 0.5 ? f * 0.78 : f);
 				}
-				col = mix(ROOF[pick], tint.rgb, 0.15) * (min(e.x, e.y) < 0.3 ? 1.14 : f);
+				col = mix(ROOF[pick], tint.rgb, ROOF_TINT) * (min(e.x, e.y) < 0.3 ? 1.14 : f);
 			}
 		} else {
 			bool front = abs(lnrm.z) > 0.5;
@@ -669,7 +671,7 @@ func paving() -> ImageTexture:
 func pavers() -> StandardMaterial3D:
 	var r := RandomNumberGenerator.new()
 	r.seed = 23
-	var base := Color("cec9c0")
+	var base := Color("dcc4ac")  # warm clay pavers
 	var img := Image.create(32, 32, false, Image.FORMAT_RGB8)
 	for row in 8:
 		for k in 4:
@@ -909,7 +911,7 @@ func build_static() -> void:
 	elevated.clear()
 	var b: Rect2 = C.bounds
 	var mid := b.get_center()
-	var grass := tiled(speckle([Color("7fa35a"), Color("8cb064"), Color("739a52"), Color("98b86c")]), Vector2(1500, 1500))
+	var grass := tiled(speckle([Color("7cb058"), Color("8abd62"), Color("70a44e"), Color("98c86c")]), Vector2(1500, 1500))
 	plane(city, Vector2(6000, 6000), Vector3(mid.x, -0.16, mid.y), grass)
 	# farmland round the city: a patchwork of furrowed fields with grass between, kept off the roads and the shore
 	var furrows := Image.create(4, 4, false, Image.FORMAT_RGB8)
@@ -942,11 +944,11 @@ func build_static() -> void:
 	var gravel := surface(ground_mat(speckle([Color(1, 1, 1), Color(0.95, 0.96, 0.93), Color(0.98, 0.97, 0.94), Color(0.9, 0.92, 0.88)])))
 	for bl in C.blocks:
 		var dt: String = C.districts[bl.d].type
-		var gs: SurfaceTool = gravel if dt in ["homes", "oldtown", "park"] else paved
-		gs.set_color(Color("bfc4a6") if gs == gravel else (Color("b8b2a6") if dt == "market" else Color("cdc6b6")))
+		var gs: SurfaceTool = gravel if dt in Sim.City.LEAFY else paved
+		gs.set_color(Color(Sim.City.GROUND[dt]))
 		rect_quad(gs, bl.rect.grow(0.2), -0.15, 0.0, false, 0.25)
 	commit([paved, gravel], city)
-	var sea_tex := speckle([Color("3f7fbf"), Color("4a8ccb"), Color("3a74b0"), Color("5596d3")])
+	var sea_tex := speckle([SEA, SEA.lightened(0.08), SEA.darkened(0.08), SEA.lightened(0.16)])
 	var sea := mat(Color.WHITE, sea_tex)
 	sea.texture_repeat = true
 	var ws := surface(sea)
@@ -956,10 +958,10 @@ func build_static() -> void:
 		poly_fill(ws, poly, -0.14)
 	var palace: Dictionary = C.parks[0]
 	poly_fill(ws, Sim.City.ellipse(palace.center, palace.radii + Vector2(Sim.City.MOAT, Sim.City.MOAT), 40), -0.14)
-	var land := surface(mat(Color("cdc6b6")))
+	var land := surface(mat(Color(Sim.City.GROUND.hub)))
 	for isl in C.islands:
 		poly_fill(land, isl, -0.135)
-	var park_tex := tiled(speckle([Color("6f9e4c"), Color("7cab57"), Color("659446"), Color("86b360")]), Vector2.ONE)
+	var park_tex := tiled(speckle([Color("68a84a"), Color("76b656"), Color("5c9c42"), Color("86c262")]), Vector2.ONE)
 	park_tex.texture_repeat = true
 	var ps := surface(park_tex)
 	lm_ground = {"water": [sea, 0.125], "grass": [park_tex, 0.25]}
@@ -982,15 +984,15 @@ func build_static() -> void:
 ## Side streets as rectangles (with junction mouths, zebra crossings and dashes) and the curved avenues.
 func build_roads() -> void:
 	var walkway := surface(pavers())
-	var asphalt := mat(Color("5d5f66"))
+	var asphalt := mat(ASPHALT)
 	var tar := surface(asphalt)
 	var mouth := surface(asphalt)
-	var dash_tex := stripes(Color("5d5f66"), Color("e8e2c8"), 8, 1, 4)
+	var dash_tex := stripes(ASPHALT, Color("e8e2c8"), 8, 1, 4)
 	var dm := mat(Color.WHITE, dash_tex)
 	dm.texture_repeat = true
 	var dash := surface(dm)
 	var solid := surface(mat(Color("e8e2c8")))
-	var zm := mat(Color.WHITE, stripes(Color("5d5f66"), Color("ece7d8"), 8, 1, 4))
+	var zm := mat(Color.WHITE, stripes(ASPHALT, Color("ece7d8"), 8, 1, 4))
 	zm.texture_repeat = true
 	var zebra := surface(zm)
 	var rail := surface(mat(Color("d9d4c7")))
@@ -1234,7 +1236,7 @@ func block_into(st: SurfaceTool, c: Vector3, size_: Vector3, turn: float) -> voi
 ## Every building as a box with a facade shader (one MultiMesh), gable roofs on houses and kit on flat roofs.
 func build_buildings() -> void:
 	var shader := Shader.new()
-	shader.code = BUILDING_SHADER
+	shader.code = BUILDING_SHADER.replace("FLAT_ROOFS", ", ".join(Sim.City.FLAT_ROOFS.map(func(h): return "vec3(%.3f, %.3f, %.3f)" % [Color(h).r, Color(h).g, Color(h).b]))).replace("ROOF_TINT", "%.2f" % ROOF_TINT)
 	building_mat = ShaderMaterial.new()
 	building_mat.shader = shader
 	var atlas := facade_atlas()
@@ -2298,7 +2300,7 @@ func build_set() -> void:
 	var side_roads := roads.filter(func(rd): return rd is Array or rd.size.y > rd.size.x)  # avenues and cross streets
 	# where the set runs out over water (the bay, a canal) it stands on made ground: its street with a strip either
 	# side, and the lots of your shop and the rival. Elsewhere the water stays and the neighbours keep out of it.
-	var made := surface(mat(Color("bfc4a6") if type in ["homes", "oldtown", "park"] else (Color("b8b2a6") if type == "market" else Color("cdc6b6"))))
+	var made := surface(mat(Color(Sim.City.GROUND[type])))
 	var made_runs := []
 	if near_water():
 		made_runs = water_runs(-9.2, 9.2) + water_runs(-20.2, -7.2, -16.5, span.y)
@@ -2310,7 +2312,7 @@ func build_set() -> void:
 	var overhead := decks_near()
 	var under := [mouths(-8.2, -3.6, overhead), mouths(3.6, 8.2, overhead)]  # where a deck crosses each sidewalk
 	var walk := surface(pavers())
-	var tar := surface(tiled(speckle([Color("5d5f66"), Color("585a61"), Color("63656c"), Color("55575d")]), Vector2.ONE))
+	var tar := surface(tiled(speckle([ASPHALT, ASPHALT.darkened(0.05), ASPHALT.lightened(0.06), ASPHALT.darkened(0.08)]), Vector2.ONE))
 	rect_quad(tar, Rect2(SET.position.x, -3.7, SET.size.x, 7.4), -0.045, 0.0, false, 0.5)
 	var kerb := surface(mat(Color("8f8b84")))
 	var tactile := surface(mat(Color("d2b862")))  # the yellow guide strip down each sidewalk
@@ -2343,7 +2345,7 @@ func build_set() -> void:
 				rect_quad(paint, Rect2(zx, sd[2], 0.45, 2.9), -0.04)
 				zx += 0.9
 	# your parking: bays and bicycles between your shop and the alley, nothing tall to hide the till
-	var bay := surface(tiled(speckle([Color("6e7076"), Color("686a70"), Color("75777d"), Color("63655b")]), Vector2.ONE))
+	var bay := surface(tiled(speckle([ASPHALT.lightened(0.1), ASPHALT.lightened(0.06), ASPHALT.lightened(0.14), ASPHALT.lightened(0.03)]), Vector2.ONE))
 	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042, 0.0, false, 0.5)
 	for kb in [Rect2(-3.4, -16.25, 7.1, 0.25), Rect2(3.45, -16.25, 0.25, 9.05)]:  # kerb round the back and side
 		rect_quad(kerb, kb, -0.036)
@@ -2458,10 +2460,10 @@ func build_set() -> void:
 		# its roof: a weathered membrane laid in strips with a drain, an old water tank on a frame, two tired AC units
 		# and a vent stack, all kept low so nothing rises over your shop
 		var xl := vx - vw / 2
-		block(set_node, Vector3(vw - 0.4, 0.04, 8.4), Vector3(vx, 3.61, -11.75), Color("a39f8d"))
+		block(set_node, Vector3(vw - 0.4, 0.04, 8.4), Vector3(vx, 3.61, -11.75), Color(Sim.City.FLAT_ROOFS[2]))
 		var sz := -8.6
 		while sz > -15.6:
-			block(set_node, Vector3(vw - 0.4, 0.05, 0.14), Vector3(vx, 3.62, sz), Color("8a8573"))
+			block(set_node, Vector3(vw - 0.4, 0.05, 0.14), Vector3(vx, 3.62, sz), Color(Sim.City.FLAT_ROOFS[2]).darkened(0.18))
 			sz -= 1.4
 		block(set_node, Vector3(0.3, 0.05, 0.3), Vector3(xl + 0.45, 3.63, -7.95), Color("4d4a44"))
 		var tank := Vector3(xl + 1.0, 3.6, -14.9)
@@ -2943,7 +2945,7 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 		casts.append([Rect2(span.x + 3.575 + k * 1.6, -14.925, 1.25, 1.05), Vector2(0.25, -0.42)])
 	casts.append([Rect2(span.x + 1.6, -13.8, span.y - span.x - 2.2, 0.8), Vector2.ZERO])  # the walkway
 	var drain := Vector2(span.y - 0.8, -7.95)
-	var base := Color("a3a29e")
+	var base := Color(Sim.City.FLAT_ROOFS[4])  # a teal coating
 	var img := Image.create(iw, ih, false, Image.FORMAT_RGB8)
 	for j in ih:
 		var z := -16.0 + (j + 0.5) / 10.0
@@ -3042,7 +3044,7 @@ func build_shop(parent: Node3D, zl: float) -> void:
 		var y := 2.62 - k * 0.2
 		block(parent, Vector3(w + 0.04, 0.18, 0.06), Vector3(cx, y, front + 0.03), LAYOUT.stripe[k])
 		block(parent, Vector3(0.06, 0.18, 9.34), Vector3(o.x + 6.63, y, o.y), LAYOUT.stripe[k])
-	block(parent, Vector3(w - 0.4, 0.05, 8.9), Vector3(cx, 3.12, o.y), Color("a3a29e"))
+	block(parent, Vector3(w - 0.4, 0.05, 8.9), Vector3(cx, 3.12, o.y), Color(Sim.City.FLAT_ROOFS[0]))  # a green coating
 	for e in [[Vector3(w, 0.3, 0.2), Vector3(cx, 3.25, front - 0.1)], [Vector3(w, 0.3, 0.2), Vector3(cx, 3.25, o.y - 4.55)],
 			[Vector3(0.2, 0.3, 9.3), Vector3(o.x + zl + 0.1, 3.25, o.y)], [Vector3(0.2, 0.3, 9.3), Vector3(o.x + 6.5, 3.25, o.y)]]:
 		block(parent, e[0], e[1], Color("e6e2d8"))
