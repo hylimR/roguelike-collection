@@ -1166,9 +1166,10 @@ static func sub_line(e: Dictionary, pts: PackedVector3Array, a: float, b: float)
 ## under a canopy at each station; a column and cap beam under it at each pier.
 func build_rail(pillars: Array) -> void:
 	var CT := Sim.City
-	var ballast := mat(Color("8a8174"))
-	var bed := mat(Color("6f675d"))
-	var steel := mat(Color("4a4440"))
+	var ballast := tiled(speckle([Color("8a8174"), Color("938a7d"), Color("80786c"), Color("9b9285")]), Vector2(1, CT.RAIL_W / 3.2))
+	var bed := mat(Color.WHITE, sleepers())
+	var steel := mat(Color("aeaca6"))
+	var web := mat(Color("4a4440"))
 	var fascia := mat(Color("c3bfb6"))
 	var green := mat(Color("7fc241"))
 	var slab := mat(Color("d6d2c6"))
@@ -1187,20 +1188,23 @@ func build_rail(pillars: Array) -> void:
 		var top := surface(ballast)
 		var beds := surface(bed)
 		var rails := surface(steel)
+		var webs := surface(web)
 		var side := surface(fascia)
 		var stripe := surface(green)
 		var f := 1
 		var l := part.size() - 2
-		ribbon(top, part, half, -half, 0.3, 0.0, f, l)
+		ribbon(top, part, half, -half, 0.3, 1.0 / 3.2, f, l)
 		for t in [CT.TRACK, -CT.TRACK]:
-			ribbon(beds, part, t + 1.0, t - 1.0, 0.31, 0.0, f, l)
+			ribbon(beds, part, t + 1.3, t - 1.3, 0.31, 1.0 / 0.6, f, l)
 			for g in [0.6, -0.6]:
-				ribbon(rails, part, t + g + 0.07, t + g - 0.07, 0.36, 0.0, f, l)
+				ribbon(rails, part, t + g + 0.06, t + g - 0.06, 0.37, 0.0, f, l)
+				for e in [0.05, -0.05]:
+					wall(webs, part, t + g + e * 1.2, 0.31, 0.37, f, l)
 		for s in [half, -half]:
 			wall(side, part, s, -0.6, 0.9, f, l)
 		for s in [half + 0.01, -half - 0.01]:
 			wall(stripe, part, s, 0.25, 0.45, f, l)
-		elevated.append(commit([top, beds, rails, side, stripe], city))
+		elevated.append(commit([top, beds, webs, rails, side, stripe], city))
 		i = j
 	# stations: an island platform between the tracks, its yellow edges, a canopy on posts
 	for st in C.stations:
@@ -1234,6 +1238,19 @@ func build_rail(pillars: Array) -> void:
 		var turn := atan2(on[1].x, on[1].y)
 		pillars.append(Transform3D(Basis.from_scale(Vector3(1.2, y - 0.6, 1.2)), Vector3(at_.x, (y - 0.6) / 2.0, at_.y)))
 		pillars.append(Transform3D(Basis(Vector3.UP, turn) * Basis.from_scale(Vector3(CT.RAIL_W - 0.6, 0.7, 1.1)), Vector3(on[0].x, y - 0.6, on[0].y)))
+
+
+## One sleeper on its ballast bed, u along the track (a sleeper every texture width), v across it: a concrete tie
+## between the bed's shoulders, a shadow on its far side.
+func sleepers() -> ImageTexture:
+	var img := Image.create(6, 13, false, Image.FORMAT_RGB8)
+	img.fill(Color("6a6259"))
+	img.fill_rect(Rect2i(1, 1, 2, 11), Color("b3ada2"))
+	img.fill_rect(Rect2i(3, 1, 1, 11), Color("58514a"))
+	for y in [0, 12]:
+		for x in 6:
+			img.set_pixel(x, y, Color("7b7368") if x % 2 else Color("8a8174"))
+	return ImageTexture.create_from_image(img)
 
 
 ## A box into a surface: centre c, size, turned `turn` about y (unshaded flat colour, as the walls round it).
