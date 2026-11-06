@@ -1404,9 +1404,9 @@ const ROOFS := ["3c6aa4", "b85a38", "4c8a58", "8e3834", "5c6878", "2c8a86", "b08
 # flat roofs, by the building's accent: green and teal coatings, light membranes, terracotta pavers
 const FLAT_ROOFS := ["7cae88", "a8b8c8", "ccb890", "c47e5c", "6ca8a8", "c0c0b8", "b4a48c", "9cc0dc"]
 # a block's ground by its district's type, on paving (or gravel where it's leafy)
-const GROUND := {"hub": "e0c8ac", "office": "c4d0dc", "luxury": "e8d6b4", "nightlife": "d0bcd0", "youth": "eac4ba",
-	"otaku": "c4c8e4", "tourist": "e4c49c", "university": "d8d0a8", "homes": "c4d8a0", "oldtown": "dcc898",
-	"park": "b8d898", "market": "ccb498", "palace": "c4d0dc"}
+const GROUND := {"hub": "e0c8ac", "office": "dccac0", "luxury": "e8d6b4", "nightlife": "d0bcd0", "youth": "eac4ba",
+	"otaku": "d4c4e8", "tourist": "e4c49c", "university": "d8d0a8", "homes": "c4d8a0", "oldtown": "dcc898",
+	"park": "b8d898", "market": "ccb498", "palace": "e0d4b4"}
 const LEAFY := ["homes", "oldtown", "park"]
 # per district profile: [weight, style, floors min, max, width min, max, depth min, max]
 const MIX := {

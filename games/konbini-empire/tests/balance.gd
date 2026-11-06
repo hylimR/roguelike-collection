@@ -155,6 +155,11 @@ func colours() -> void:
 		print("%s: %d, %.0f%% tinted, %d hue sectors, %% per 30 degrees %s" % [k, sets[k].size(), 100.0 * tinted / total, wide, by_hue])
 		check(tinted / total >= need[k][1], "%s are tinted, not grey (%.0f%% of them, need %.0f%%)" % [k, 100.0 * tinted / total, 100.0 * need[k][1]])
 		check(wide >= need[k][2], "%s spread round the colour wheel (%d hue sectors, need %d)" % [k, wide, need[k][2]])
+	# ground tinted near the water's hue reads as more water where a block meets the bay, a river or the moat
+	for t in City.GROUND:
+		var g := Color(City.GROUND[t])
+		var dh := absf(fposmod(g.h - SV.SEA.h + 0.5, 1.0) - 0.5) * 360.0
+		check(g.s < 0.06 or dh >= 45.0, "%s ground %s is not tinted like the water (%.0f degrees from it)" % [t, City.GROUND[t], dh])
 
 
 ## Every road ends on another road, at a quay or off the map: a side street at a T or a corner on another street, on
