@@ -305,6 +305,8 @@ var fascia_glows: Array = []  # [weakref to the glow round a rival's lit fascia,
 var fascia_glow_tex: ImageTexture
 var snow_tex: ImageTexture  # patchy settled snow, tiled 8 m
 var snow_cover: MeshInstance3D  # the set's snowy ground, shown on a cold snap
+var matsuri: Node3D  # the set's festival lanterns, shown on a Summer Matsuri
+var lantern_glow_mat: StandardMaterial3D
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
@@ -365,6 +367,7 @@ func _ready() -> void:
 	spill_mat = pool_mat.duplicate()
 	flood_mat = pool_mat.duplicate()
 	sign_glow_mat = halo_mat.duplicate()
+	lantern_glow_mat = halo_mat.duplicate()
 	var fall := Image.create(64, 32, false, Image.FORMAT_RGBA8)
 	for y in 32:
 		for x in 64:
@@ -591,6 +594,7 @@ func update_light() -> void:
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
 	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night)
 	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night)
+	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.75 * night)
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
 	if car_glass:
 		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
@@ -2324,6 +2328,73 @@ func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 	return mi
 
 
+## Summer Matsuri: paper lanterns, red and white, strung on sagging ropes between poles along both kerbs, glowing after
+## dark. Not across your shopfront and car park, so the till stays in plain view. Built hidden.
+func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
+	var node := Node3D.new()
+	node.visible = false
+	set_node.add_child(node)
+	var rope := surface(mat(Color("3b2f2b")))
+	var spots := []
+	var mine: float = Sim.ORIGIN.x + Sim.ZONE_LEFT[branch.store.size]
+	for side in [[far_gaps + [Vector2(mine - 0.6, 4.3)], -4.65], [near_gaps, 4.65]]:
+		var gaps: Array = side[0].duplicate()
+		gaps.sort_custom(func(a, b2): return a.x < b2.x)
+		for o in open_spans(gaps):
+			if o.y - o.x < 3.4:
+				continue
+			var n: int = maxi(1, roundi((o.y - o.x - 0.8) / 6.5))
+			var step: float = (o.y - o.x - 0.8) / n
+			for k in n + 1:
+				var px: float = o.x + 0.4 + k * step
+				block(node, Vector3(0.08, 3.35, 0.08), Vector3(px, 1.675, side[1]), Color("b8955a"))
+				block(node, Vector3(0.14, 0.06, 0.14), Vector3(px, 3.38, side[1]), Color("6b4a2e"))
+				if k == 0:
+					continue
+				var sag := func(t: float) -> float: return 3.25 - 0.05 * step * 4.0 * t * (1.0 - t)
+				var pts := PackedVector3Array()
+				for i in 9:
+					pts.append(Vector3(px - step + step * i / 8.0, sag.call(i / 8.0), side[1]))
+				wall(rope, pts, 0.0, -0.014, 0.014)
+				var m := maxi(2, roundi(step / 1.2))
+				for j in m:
+					var t: float = (j + 0.5) / m
+					spots.append(Vector3(px - step + step * t, sag.call(t) - 0.36, side[1]))
+	commit([rope], node)
+	var ribs := Image.create(1, 16, false, Image.FORMAT_RGB8)
+	for y in 16:  # bamboo ribs round the paper, darker toward the caps
+		var v := absf(y - 7.5) / 7.5
+		ribs.set_pixel(0, y, Color.WHITE * (lerpf(1.0, 0.72, v * v) * (0.8 if y % 3 == 1 else 1.0)))
+	var body := SphereMesh.new()
+	body.radius = 0.19
+	body.height = 0.48
+	body.radial_segments = 10
+	body.rings = 6
+	var bm := multimesh(body, spots.size(), true)
+	var cm := multimesh(shaded_box(), spots.size() * 2, true)
+	var gm := multimesh(QuadMesh.new(), spots.size())
+	for i in spots.size():
+		var at: Vector3 = spots[i]
+		bm.set_instance_transform(i, Transform3D(Basis(), at))
+		bm.set_instance_color(i, Color("d6402e") if i % 3 != 2 else Color("f4ead6"))
+		for c in 2:
+			cm.set_instance_transform(i * 2 + c, Transform3D(Basis().scaled(Vector3(0.21, 0.06, 0.21)), at + Vector3(0, 0.24 if c == 0 else -0.24, 0)))
+			cm.set_instance_color(i * 2 + c, Color("2e2523"))
+		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.25, 1.25, 1.25)), at))
+	var paper := mat(Color.WHITE, ImageTexture.create_from_image(ribs))
+	paper.vertex_color_use_as_albedo = true
+	paper.vertex_color_is_srgb = true
+	paper.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	light_up(paper, 1.0)
+	mm_node(bm, paper, node)
+	var cap := mat(Color.WHITE)
+	cap.vertex_color_use_as_albedo = true
+	cap.vertex_color_is_srgb = true
+	mm_node(cm, cap, node)
+	mm_node(gm, lantern_glow_mat, node)
+	return node
+
+
 func speckle(colors: Array) -> ImageTexture:
 	var r := RandomNumberGenerator.new()
 	r.seed = 7
@@ -2463,6 +2534,7 @@ func build_set() -> void:
 	commit([made, walk, tar, kerb, bay, paint, hatch, tactile], set_node)
 	quay(made_runs, side_roads)
 	snow_cover = settled_snow(far_gaps, near_gaps)
+	matsuri = matsuri_lanterns(far_gaps + under[0], near_gaps + under[1])
 	for cx in [-1.0, 1.4]:  # wheel stops
 		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("d8d2c4"))
 	# a low planter along the back of the car park, below the till's sight line
@@ -3803,6 +3875,8 @@ func _process(delta: float) -> void:
 			build_set()
 		if snow_cover:
 			snow_cover.visible = branch.event != null and branch.event.id == "coldSnap"
+		if matsuri:
+			matsuri.visible = branch.event != null and branch.event.id == "festival"
 		refresh_stock()
 		sync_actors(delta)
 		street_traffic(delta)
