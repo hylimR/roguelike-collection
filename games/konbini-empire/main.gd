@@ -70,6 +70,8 @@ var pick_btn: Button
 var info: Label
 var head: Label
 var sub: Label
+var event_tag: PanelContainer
+var event_lbl: Label
 var rival_chip: PanelContainer
 var rival_name: Label
 var rival_tier: Label
@@ -442,7 +444,17 @@ func build() -> void:
 	sv.add_theme_constant_override("separation", 4)
 	store_card.add_child(sv)
 	head = label("", Color.WHITE, 16)
-	sv.add_child(tag(head, MINT))
+	# the day's event rides beside the branch's name, amber like the clock's rush tag, wrapping under it when both don't fit
+	var heads := HFlowContainer.new()
+	heads.add_theme_constant_override("h_separation", 6)
+	heads.add_theme_constant_override("v_separation", 4)
+	heads.add_child(tag(head, MINT))
+	event_lbl = label("", Color("6b4512"), 12)
+	event_lbl.add_theme_font_override("font", bold)
+	event_tag = tag(event_lbl, Color("ffc94a"))
+	event_tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	heads.add_child(event_tag)
+	sv.add_child(heads)
 	sub = para("", MUTED, CARD_W - 20)
 	sub.add_theme_font_size_override("font_size", 11)
 	sv.add_child(sub)
@@ -769,8 +781,10 @@ func refresh_ui() -> void:
 
 	head.text = b.name
 	var d: Dictionary = Sim.DISTRICTS[b.district]
-	var ev: String = "" if b.event == null else "  ·  " + Sim.EVENTS[b.event.id].name
-	sub.text = "%s, %s%s\nRent %s + wages %s\n%d served, %d lost%s" % [d.name, Sim.QUIRKS[b.quirk].name.to_lower(), ev, yen(sim.rent(b)), yen(sim.wages(b)), b.day_stats.customers, b.day_stats.lost, "" if b.regulars == 0 else "  ·  %d regulars due" % b.regulars]
+	event_tag.visible = b.event != null
+	if b.event != null:
+		event_lbl.text = Sim.EVENTS[b.event.id].name
+	sub.text = "%s, %s\nRent %s + wages %s\n%d served, %d lost%s" % [d.name, Sim.QUIRKS[b.quirk].name.to_lower(), yen(sim.rent(b)), yen(sim.wages(b)), b.day_stats.customers, b.day_stats.lost, "" if b.regulars == 0 else "  ·  %d regulars due" % b.regulars]
 	var rv: Dictionary = b.rival
 	var chain := Color(Sim.RIVALS[rv.id].color)
 	rival_name.text = Sim.RIVALS[rv.id].name
