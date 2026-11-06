@@ -279,7 +279,7 @@ var shadow_mat: ShaderMaterial
 var env: Environment
 var light := Color.WHITE  # the hour's tint (DAYLIGHT)
 var night := 0.0  # 0 by day, 1 from 22:00, fading out at first light: lit windows and lamp pools
-var lit_mats: Array = []  # [weakref to an outdoor material, its own colour]
+var lit_mats: Array = []  # [weakref to an outdoor material, its own colour, how far it lights up after dark (lightboxes)]
 var lit_sprites: Array = []  # outdoor sprites that stand still, relit when the light changes
 var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the street after dark
 var pool_mat: StandardMaterial3D
@@ -289,6 +289,8 @@ var beam_mat: StandardMaterial3D  # the cone of light falling from a lit lamp he
 var spill_mat: StandardMaterial3D  # shop light falling out of a glass front across the sidewalk
 var flood_mat: StandardMaterial3D  # your car park's floodlight on the bays
 var sign_glow_mat: StandardMaterial3D  # the glow round your lit pole sign
+var fascia_glows: Array = []  # [weakref to the glow round a rival's lit fascia, its chain's colour]
+var fascia_glow_tex: ImageTexture
 var snow_tex: ImageTexture  # patchy settled snow, tiled 8 m
 var snow_cover: MeshInstance3D  # the set's snowy ground, shown on a cold snap
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
@@ -357,6 +359,12 @@ func _ready() -> void:
 			var u := x / 63.0
 			fall.set_pixel(x, y, Color(1, 1, 1, (exp(-2.2 * y / 31.0) - exp(-2.2)) / (1.0 - exp(-2.2)) * smoothstep(0.0, 0.2, u) * smoothstep(0.0, 0.2, 1.0 - u)))
 	spill_mat.albedo_texture = ImageTexture.create_from_image(fall)
+	var halo := Image.create(64, 16, false, Image.FORMAT_RGBA8)
+	for y in 16:
+		for x in 64:
+			var d := Vector2(maxf(absf(x - 31.5) - 22.0, 0.0) / 10.0, maxf(absf(y - 7.5) - 2.0, 0.0) / 6.0).length()
+			halo.set_pixel(x, y, Color(1, 1, 1, pow(clampf(1.0 - d, 0.0, 1.0), 2.0)))
+	fascia_glow_tex = ImageTexture.create_from_image(halo)
 	beam_mat = halo_mat.duplicate()
 	beam_mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	var cone := Image.create(32, 64, false, Image.FORMAT_RGBA8)
@@ -425,11 +433,19 @@ func mat(color: Color, texture: Texture2D = null, indoor := false) -> StandardMa
 	if color.a < 1.0:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	if not indoor:
-		lit_mats.append([weakref(m), color])
+		lit_mats.append([weakref(m), color, 0.0])
 	return m
 
 
-func block(parent: Node3D, size_: Vector3, pos: Vector3, color: Color, indoor := false) -> void:
+## Marks an outdoor material as a lightbox: after dark it lights up toward its own colour by k instead of dimming.
+func light_up(m: StandardMaterial3D, k: float) -> void:
+	for i in range(lit_mats.size() - 1, -1, -1):  # just made, so near the end
+		if lit_mats[i][0].get_ref() == m:
+			lit_mats[i][2] = k
+			return
+
+
+func block(parent: Node3D, size_: Vector3, pos: Vector3, color: Color, indoor := false) -> StandardMaterial3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = shaded_box()
 	mi.scale = size_
@@ -439,6 +455,7 @@ func block(parent: Node3D, size_: Vector3, pos: Vector3, color: Color, indoor :=
 	mi.material_override = m
 	mi.position = pos
 	parent.add_child(mi)
+	return m
 
 
 ## A unit cube with each face pre-shaded in the house's three tones (top full, the walls turned to the sun 0.9, the
@@ -501,7 +518,7 @@ func prop(parent: Node3D, kind: String, at: Vector3) -> Sprite3D:
 
 
 ## A picture on an upright quad facing +z (shop art, the rival's window), mipmapped so it stays clean when small.
-func art_panel(parent: Node3D, img: Image, size_: Vector2, pos: Vector3, tint := Color.WHITE, reps := 1.0, lit := true) -> void:
+func art_panel(parent: Node3D, img: Image, size_: Vector2, pos: Vector3, tint := Color.WHITE, reps := 1.0, lit := true) -> StandardMaterial3D:
 	img.generate_mipmaps()
 	var m := mat(tint, ImageTexture.create_from_image(img), lit)
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -513,6 +530,7 @@ func art_panel(parent: Node3D, img: Image, size_: Vector2, pos: Vector3, tint :=
 	mi.material_override = m
 	mi.position = pos
 	parent.add_child(mi)
+	return m
 
 
 func radial(colors: Array, offsets: Array) -> GradientTexture2D:
@@ -543,7 +561,10 @@ func update_light() -> void:
 	night = n
 	lit_mats = lit_mats.filter(func(e): return e[0].get_ref() != null)
 	for e in lit_mats:
-		e[0].get_ref().albedo_color = e[1] * light
+		e[0].get_ref().albedo_color = e[1] * light.lerp(Color.WHITE, e[2] * night)
+	fascia_glows = fascia_glows.filter(func(e): return e[0].get_ref() != null)
+	for e in fascia_glows:
+		e[0].get_ref().albedo_color = e[1] * Color(1, 1, 1, 0.85 * night)
 	if building_mat:
 		building_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
 		building_mat.set_shader_parameter("night", night)
@@ -1611,7 +1632,7 @@ func build_trees() -> void:
 		m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 		m.billboard_keep_scale = true
 		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		lit_mats.append([weakref(m), Color.WHITE])
+		lit_mats.append([weakref(m), Color.WHITE, 0.0])
 		var list: Array = spots[id]
 		var mm := multimesh(q, list.size())
 		var base := []
@@ -2743,15 +2764,30 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	var cx := (span.x + span.y) / 2
 	var c := Color("8a8780") if rv.defeated else Color(Sim.RIVALS[rv.id].color)  # a beaten chain's sign goes grey
 	block(parent, Vector3(w, 4.2, 9.0), Vector3(cx, 2.1, -11.7), Color("f1eee6"))
-	block(parent, Vector3(w + 0.1, 0.8, 0.12), Vector3(cx, 3.65, -7.16), c)
-	# fascia in the chain's stripes; a grey roof inside a parapet, with a stair hatch, a walkway, skylights over the
+	var box := block(parent, Vector3(w + 0.1, 0.8, 0.12), Vector3(cx, 3.65, -7.16), c)
+	# fascia in the chain's stripes, a lightbox that glows after dark (a beaten chain's stays dark); a grey roof inside a parapet, with a stair hatch, a walkway, skylights over the
 	# shop floor (lit from below at night) and the air-conditioning units on their plinths, piped into one trunk
 	var band := Image.create(1, 10, false, Image.FORMAT_RGB8)
 	band.fill(c)
 	band.set_pixel(0, 6, Color.WHITE)
 	for y in [7, 8, 9]:
 		band.set_pixel(0, y, c.darkened(0.25))
-	art_panel(parent, band, Vector2(w + 0.1, 0.8), Vector3(cx, 3.65, -7.095), Color.WHITE, 1.0, not rv.defeated)
+	var face := art_panel(parent, band, Vector2(w + 0.1, 0.8), Vector3(cx, 3.65, -7.095), Color.WHITE, 1.0, false)
+	if not rv.defeated:
+		light_up(box, 0.8)
+		light_up(face, 1.0)
+		var gm := sign_glow_mat.duplicate()
+		gm.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
+		gm.albedo_texture = fascia_glow_tex
+		gm.albedo_color = Color(0, 0, 0, 0)
+		fascia_glows.append([weakref(gm), c.lightened(0.45)])
+		var glow := MeshInstance3D.new()
+		var q := QuadMesh.new()
+		q.size = Vector2(w + 3.0, 2.8)
+		glow.mesh = q
+		glow.material_override = gm
+		glow.position = Vector3(cx, 3.55, -6.98)
+		parent.add_child(glow)
 	plane(parent, Vector2(w - 0.4, 8.6), Vector3(cx, 4.245, -11.7), rival_roof(span))
 	for e in [[Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -7.3)], [Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -16.1)],
 			[Vector3(0.2, 0.34, 9.0), Vector3(span.x + 0.1, 4.37, -11.7)], [Vector3(0.2, 0.34, 9.0), Vector3(span.y - 0.1, 4.37, -11.7)]]:
@@ -2805,8 +2841,9 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		block(parent, Vector3(1.4, 2.6, 0.1), Vector3(rv.x, 1.3, -7.05), Color(0.86, 0.93, 0.98, 0.55), true)
 		for dx in [-0.72, 0.0, 0.72]:
 			block(parent, Vector3(0.07, 2.6, 0.12), Vector3(rv.x + dx, 1.3, -7.03), Color("8b96a1"))
-	block(parent, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
+	var awning := block(parent, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
 	if not rv.defeated:
+		light_up(awning, 0.5)
 		spill(parent, cx, w + 1.6, -7.05)
 
 
