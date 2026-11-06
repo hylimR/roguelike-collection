@@ -325,6 +325,8 @@ var snow_tex: ImageTexture  # patchy settled snow, tiled 8 m
 var snow_cover: MeshInstance3D  # the set's snowy ground, shown on a cold snap
 var matsuri: Node3D  # the set's festival lanterns, shown on a Summer Matsuri
 var lantern_glow_mat: StandardMaterial3D
+var works: Node3D  # the set's roadworks, shown on a Roadworks day
+var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
@@ -390,6 +392,7 @@ func _ready() -> void:
 	flood_mat = pool_mat.duplicate()
 	sign_glow_mat = halo_mat.duplicate()
 	lantern_glow_mat = halo_mat.duplicate()
+	works_glow_mat = halo_mat.duplicate()
 	var fall := Image.create(64, 32, false, Image.FORMAT_RGBA8)
 	for y in 32:
 		for x in 64:
@@ -2486,6 +2489,124 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 	return node
 
 
+## Roadworks: a stretch of the near kerb lane fenced off with striped barricades, cones on a striped bar, steel plates
+## over a trench, and an arrow board turning traffic out; their red lamps and the arrow flash after dark. Built hidden.
+func roadworks(near_gaps: Array) -> Node3D:
+	var node := Node3D.new()
+	node.visible = false
+	set_node.add_child(node)
+	var gaps: Array = near_gaps.duplicate()
+	gaps.sort_custom(func(a, b2): return a.x < b2.x)
+	const L := 7.6
+	var x0 := INF
+	for o in open_spans(gaps):  # the clear kerb nearest the middle of the view, off the crossing
+		for run in [Vector2(o.x + 1.4, minf(o.y - 2.4, Sim.CROSS_X - 4.8)), Vector2(maxf(o.x + 1.4, Sim.CROSS_X + 3.2), o.y - 2.4)]:
+			if run.y - run.x >= L:
+				var at := clampf(-7.0 - L / 2, run.x, run.y - L)
+				if x0 == INF or absf(at + L / 2 + 7.0) < absf(x0 + L / 2 + 7.0):
+					x0 = at
+	if x0 == INF:
+		return node
+	var x1 := x0 + L
+	var kit := mat(Color.WHITE)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var st := surface(kit)
+	var plate := Color("7f8388")
+	var bar := func(a: Vector3, b2: Vector3, h: float, seg: float) -> void:  # a yellow and black striped rail from a to b2
+		var n := maxi(1, roundi(a.distance_to(b2) / seg))
+		for i in n:
+			var p := a.lerp(b2, float(i) / n)
+			var q := a.lerp(b2, float(i + 1) / n)
+			box_into(st, Vector3(minf(p.x, q.x), p.y - h / 2, minf(p.z, q.z)) - Vector3(0.025, 0, 0.025),
+				Vector3(maxf(p.x, q.x), p.y + h / 2, maxf(p.z, q.z)) + Vector3(0.025, 0, 0.025), Color("f2c230") if i % 2 == 0 else Color("2b2a2c"))
+	# the dug lane: steel road plates with their seams, a trench left open and a patch of fresh black tarmac
+	box_into(st, Vector3(x0 + 0.9, -0.045, 2.75), Vector3(x0 + 4.6, -0.02, 3.5), plate)
+	for k in 4:
+		box_into(st, Vector3(x0 + 1.8 + k * 0.92, -0.045, 2.75), Vector3(x0 + 1.84 + k * 0.92, -0.016, 3.5), plate.darkened(0.35))
+	box_into(st, Vector3(x0 + 4.6, -0.045, 2.75), Vector3(x0 + 5.7, -0.03, 3.5), Color("8a6440"))
+	box_into(st, Vector3(x0 + 4.8, -0.045, 2.88), Vector3(x0 + 5.5, -0.025, 3.37), Color("3e2c20"))
+	box_into(st, Vector3(x0 + 5.7, -0.045, 2.7), Vector3(x1 - 0.8, -0.03, 3.52), Color("2f3135"))
+	for b in [x0 + 0.35, x1 - 0.35]:  # a barricade across each end, two striped boards on white legs, a lamp on top
+		for z in [2.62, 3.48]:
+			box_into(st, Vector3(b - 0.04, -0.04, z - 0.04), Vector3(b + 0.04, 0.95, z + 0.04), Color("eceae4"))
+			box_into(st, Vector3(b - 0.16, -0.04, z - 0.1), Vector3(b + 0.16, 0.03, z + 0.1), Color("3a3a3e"))
+		bar.call(Vector3(b, 0.8, 2.58), Vector3(b, 0.8, 3.52), 0.2, 0.16)
+		bar.call(Vector3(b, 0.4, 2.58), Vector3(b, 0.4, 3.52), 0.14, 0.16)
+	var cones := []
+	var cx := x0 + 1.4
+	while cx < x1 - 0.9:
+		cones.append(Vector3(cx, 0.0, 2.58))
+		cx += 1.15
+	for i in cones.size():  # bases, and the striped bar resting in the cones' tops
+		box_into(st, cones[i] + Vector3(-0.2, -0.045, -0.2), cones[i] + Vector3(0.2, 0.0, 0.2), Color("2b2a2c"))
+		if i > 0:
+			bar.call(cones[i - 1] + Vector3(0, 0.6, 0), cones[i] + Vector3(0, 0.6, 0), 0.06, 0.2)
+	bar.call(Vector3(x0 + 0.35, 0.6, 2.58), cones[0] + Vector3(0, 0.6, 0), 0.06, 0.2)
+	bar.call(cones[-1] + Vector3(0, 0.6, 0), Vector3(x1 - 0.35, 0.6, 2.58), 0.06, 0.2)
+	# the arrow board on its trailer stand, out ahead of the works where oncoming cars meet it
+	var ab := x1 + 0.7
+	box_into(st, Vector3(ab - 0.35, -0.04, 2.85), Vector3(ab + 0.35, 0.3, 3.4), Color("d9c25a"))
+	box_into(st, Vector3(ab - 0.04, 0.35, 3.08), Vector3(ab + 0.04, 1.1, 3.16), Color("5a5d63"))
+	box_into(st, Vector3(ab - 0.06, 1.1, 2.6), Vector3(ab + 0.06, 2.12, 3.64), Color("2b2a2c"))
+	commit([st], node)
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.03
+	cone.bottom_radius = 0.16
+	cone.height = 0.7
+	cone.radial_segments = 8
+	cone.rings = 1
+	var band := CylinderMesh.new()
+	band.top_radius = 0.085
+	band.bottom_radius = 0.105
+	band.height = 0.14
+	band.radial_segments = 8
+	band.rings = 1
+	var lamps: Array = [Vector3(x0 + 0.35, 0.98, 3.05), Vector3(x1 - 0.35, 0.98, 3.05)]
+	var cm := multimesh(cone, cones.size(), true)
+	var bm := multimesh(band, cones.size(), true)
+	for i in cones.size():
+		cm.set_instance_transform(i, Transform3D(Basis(), cones[i] + Vector3(0, 0.35, 0)))
+		cm.set_instance_color(i, Color("f0662a"))
+		bm.set_instance_transform(i, Transform3D(Basis(), cones[i] + Vector3(0, 0.38, 0)))
+		bm.set_instance_color(i, Color("f4f1ea"))
+	var paint := mat(Color.WHITE)
+	paint.vertex_color_use_as_albedo = true
+	paint.vertex_color_is_srgb = true
+	mm_node(cm, paint, node)
+	mm_node(bm, paint, node)
+	var lm := multimesh(shaded_box(), lamps.size())
+	for i in lamps.size():
+		lm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(0.12, 0.1, 0.12)), lamps[i]))
+	var lamp := mat(Color("e8392c"))
+	light_up(lamp, 1.0)
+	mm_node(lm, lamp, node)
+	# the board's face: amber chevrons pointing traffic away from the kerb, lit like a sign
+	var img := Image.create(12, 12, false, Image.FORMAT_RGB8)
+	img.fill(Color("1d1c20"))
+	for y in range(2, 10):
+		for tip in [6, 10]:
+			for w in 2:
+				img.set_pixel(tip - w - absi(y * 2 - 11) / 2, y, Color("ffb52e"))
+	var face := MeshInstance3D.new()
+	var fq := QuadMesh.new()
+	fq.size = Vector2(0.96, 0.92)
+	face.mesh = fq
+	var fm := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	light_up(fm, 1.0)
+	face.material_override = fm
+	face.rotation.y = PI / 2
+	face.position = Vector3(ab + 0.065, 1.61, 3.12)
+	node.add_child(face)
+	var gm := multimesh(QuadMesh.new(), lamps.size() + 1)
+	for i in lamps.size():
+		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.2, 1.2, 1.2)), lamps[i]))
+	gm.set_instance_transform(lamps.size(), Transform3D(Basis().scaled(Vector3(2.2, 2.2, 2.2)), Vector3(ab + 0.2, 1.61, 3.12)))
+	mm_node(gm, works_glow_mat, node)
+	cast(node, Vector2(ab, 3.12), 1.1, 2.12, 1.0)
+	return node
+
+
 func speckle(colors: Array) -> ImageTexture:
 	var r := RandomNumberGenerator.new()
 	r.seed = 7
@@ -2638,6 +2759,7 @@ func build_set() -> void:
 	quay(made_runs, side_roads)
 	snow_cover = settled_snow(far_gaps, near_gaps)
 	matsuri = matsuri_lanterns(far_gaps + under[0], near_gaps + under[1])
+	works = roadworks(near_gaps + under[1])
 	for cx in [-1.0, 1.4]:  # wheel stops
 		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("d8d2c4"))
 	# a low planter along the back of the car park, below the till's sight line
@@ -3977,6 +4099,10 @@ func _process(delta: float) -> void:
 			snow_cover.visible = branch.event != null and branch.event.id == "coldSnap"
 		if matsuri:
 			matsuri.visible = branch.event != null and branch.event.id == "festival"
+		if works:
+			works.visible = branch.event != null and branch.event.id == "roadworks"
+			if works.visible:
+				works_glow_mat.albedo_color = Color(1.0, 0.45, 0.2, (0.9 if fmod(Time.get_ticks_msec() / 1000.0, 0.9) < 0.5 else 0.45) * night)
 		refresh_stock()
 		sync_actors(delta)
 		street_traffic(delta)
