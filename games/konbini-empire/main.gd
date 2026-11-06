@@ -1211,8 +1211,10 @@ func show_staff() -> void:
 			member_cells(apps, a, 200)
 			var fee := Sim.rnd(a.wage * sim.mods().wage)
 			if have >= cap:
-				var full := label("Full", MUTED, 11)
-				full.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				for c in apps.get_children().slice(-2):
+					c.modulate.a = 0.5
+				var full := small_button("Full", func(): pass)
+				full.disabled = true
 				apps.add_child(full)
 				continue
 			var hb := small_button("Hire %s" % yen(fee), staff_act.bind("hire", a.id))
@@ -1266,7 +1268,10 @@ func small_button(text: String, cb: Callable) -> Button:
 		var s: StyleBoxFlat = theme.get_stylebox(k, "Button").duplicate()
 		s.content_margin_top = 2
 		s.content_margin_bottom = 2
+		if k == "disabled":  # the theme's off pill vanishes on a staff well
+			s.bg_color = LINE.lerp(GROUND, 0.3)
 		b.add_theme_stylebox_override(k, s)
+	b.add_theme_color_override("font_disabled_color", MUTED)
 	return b
 
 
