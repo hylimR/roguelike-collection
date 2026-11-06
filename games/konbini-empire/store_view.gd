@@ -1294,6 +1294,21 @@ func sleepers() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+## A box from corner p0 to p1 into a vertex-coloured surface, each face in the house's three tones of col.
+func box_into(st: SurfaceTool, p0: Vector3, p1: Vector3, col: Color) -> void:
+	var c := (p0 + p1) / 2
+	var h := (p1 - p0).abs() / 2
+	for fc in [[Vector3.UP, 1.0], [Vector3.BACK, 0.9], [Vector3.LEFT, 0.9], [Vector3.RIGHT, 0.75], [Vector3.FORWARD, 0.75]]:
+		var fn: Vector3 = fc[0]
+		var u := Vector3.UP if absf(fn.y) < 0.5 else Vector3.RIGHT
+		var v := fn.cross(u)
+		var ctr := c + fn * absf(fn.dot(h))
+		var hu := u * absf(u.dot(h))
+		var hv := v * absf(v.dot(h))
+		st.set_color(Color(col.r * fc[1], col.g * fc[1], col.b * fc[1]))
+		add_quad(st, [ctr - hu - hv, ctr + hu - hv, ctr + hu + hv, ctr - hu + hv], [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+
+
 ## A box into a surface: centre c, size, turned `turn` about y (unshaded flat colour, as the walls round it).
 func block_into(st: SurfaceTool, c: Vector3, size_: Vector3, turn: float) -> void:
 	var b := Basis(Vector3.UP, turn)
@@ -2494,14 +2509,26 @@ func build_set() -> void:
 	var tar := surface(tiled(speckle([ASPHALT, ASPHALT.darkened(0.05), ASPHALT.lightened(0.06), ASPHALT.darkened(0.08)]), Vector2.ONE))
 	rect_quad(tar, Rect2(street_x.x, -3.7, street_x.y - street_x.x, 7.4), -0.045, 0.0, false, 0.5)
 	var kerb := surface(mat(Color("8f8b84")))
+	var kerb_m := mat(Color.WHITE)
+	kerb_m.vertex_color_use_as_albedo = true
+	kerb_m.vertex_color_is_srgb = true
+	var kerbs := surface(kerb_m)
 	var tactile := surface(mat(Color("d2b862")))  # the yellow guide strip down each sidewalk
-	for sd in [[far_gaps, -7.2, -3.8, -5.4], [near_gaps, 3.7, 3.6, 5.0]]:
+	# a raised kerb along each sidewalk, dropped flush at the crossing and, on your side, across the car park's mouth
+	for sd in [[far_gaps, -7.2, -3.8, -5.4, Vector2(-3.4, Sim.CROSS_X + 1.7)], [near_gaps, 3.7, 3.6, 5.0, Vector2(Sim.CROSS_X - 1.7, Sim.CROSS_X + 1.7)]]:
+		var drop: Vector2 = sd[4]
 		for o in open_spans(sd[0]):
 			rect_quad(walk, Rect2(o.x, sd[1], o.y - o.x, 3.5), -0.045, 0.0, false, 0.5)
 			rect_quad(kerb, Rect2(o.x, sd[2], o.y - o.x, 0.2), -0.04)
 			rect_quad(tactile, Rect2(o.x, sd[3], o.y - o.x, 0.32), -0.042)
-		for g in sd[0]:  # a side road's mouth: the asphalt runs through the sidewalk
+			for seg in [Vector2(o.x, minf(o.y, drop.x)), Vector2(maxf(o.x, drop.y), o.y)]:
+				if seg.y - seg.x > 0.3:
+					box_into(kerbs, Vector3(seg.x, -0.045, sd[2]), Vector3(seg.y, 0.09, sd[2] + 0.2), Color("bdb7ab"))
+		for g in sd[0]:  # a side road's mouth: the asphalt runs through the sidewalk, the kerb turning the corners
 			rect_quad(tar, Rect2(g.x, sd[1], g.y - g.x, 3.5), -0.045, 0.0, false, 0.5)
+			for ex in [g.x - 0.2, g.y]:
+				if ex > street_x.x and ex + 0.2 < street_x.y:
+					box_into(kerbs, Vector3(ex, -0.045, sd[1]), Vector3(ex + 0.2, 0.09, sd[1] + 3.5), Color("bdb7ab"))
 	var paint := surface(mat(Color("ebe7dc")))
 	var x := SET.position.x
 	while x < SET.end.x:
@@ -2541,7 +2568,7 @@ func build_set() -> void:
 	# a painted arrow in the aisle leads drivers in off the street
 	rect_quad(paint, Rect2(0.95, -9.6, 0.24, 1.5), -0.038)
 	poly_fill(paint, PackedVector2Array([Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55)]), -0.038)
-	commit([made, walk, tar, kerb, bay, paint, hatch, tactile], set_node)
+	commit([made, walk, tar, kerb, bay, paint, hatch, tactile, kerbs], set_node)
 	quay(made_runs, side_roads)
 	snow_cover = settled_snow(far_gaps, near_gaps)
 	matsuri = matsuri_lanterns(far_gaps + under[0], near_gaps + under[1])
@@ -2919,18 +2946,7 @@ func quay(runs: Array, roads: Array) -> void:
 	m.vertex_color_is_srgb = true
 	var wall_ := surface(m)
 	var shade := surface(mat(Color("2d5b88")))
-	var box := func(p0: Vector3, p1: Vector3, col: Color) -> void:
-		var c := (p0 + p1) / 2
-		var h := (p1 - p0).abs() / 2
-		for fc in [[Vector3.UP, 1.0], [Vector3.BACK, 0.9], [Vector3.LEFT, 0.9], [Vector3.RIGHT, 0.75], [Vector3.FORWARD, 0.75]]:
-			var fn: Vector3 = fc[0]
-			var u := Vector3.UP if absf(fn.y) < 0.5 else Vector3.RIGHT
-			var v := fn.cross(u)
-			var ctr := c + fn * absf(fn.dot(h))
-			var hu := u * absf(u.dot(h))
-			var hv := v * absf(v.dot(h))
-			wall_.set_color(Color(col.r * fc[1], col.g * fc[1], col.b * fc[1]))
-			add_quad(wall_, [ctr - hu - hv, ctr + hu - hv, ctr + hu + hv, ctr - hu + hv], [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	var box := func(p0: Vector3, p1: Vector3, col: Color) -> void: box_into(wall_, p0, p1, col)
 	const T := 0.3  # the wall's thickness, inside the made ground's edge
 	const TOP := 0.34
 	for e in edges:
