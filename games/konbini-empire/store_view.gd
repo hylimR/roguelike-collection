@@ -3654,9 +3654,8 @@ func draw_clock() -> void:
 	var dw := font.get_string_size(day, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
 	pill(Vector2(16 + 7 + dw / 2, 78), day, 13, Color.WHITE, Color("6b5236"))
 	var band := Sim.band(h)
-	var at := Vector2(16 + dw + 22, 78)
-	overlay.draw_string_outline(font, at + Vector2(1, 2), band.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, 4, shade)
-	overlay.draw_string(font, at, band.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("ffe27c") if band.rush else Color.WHITE)
+	var bw := font.get_string_size(band.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	pill(Vector2(16 + dw + 14 + 8 + 7 + bw / 2, 78), band.name, 13, Color("ffc94a") if band.rush else Color("7a5c3a"), Color("6b4512") if band.rush else Color.WHITE)
 
 
 func draw_overlay() -> void:

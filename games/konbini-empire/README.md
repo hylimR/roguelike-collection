@@ -61,7 +61,7 @@ The light follows the clock: a violet first light with the street lamps and wind
 
 The HUD floats over the street in rounded cream bubbles, island-life style, and leaves the street the whole screen:
 
-- a big white clock with the day in a pill, with pause, speed, sound and seed buttons under it;
+- a big white clock with the day in a white pill and the hour's name on a tag beside it (amber for the rushes), with pause, speed, sound and seed buttons under it;
 - money, level, rating and bills tags along the top;
 - a small store card in the top-right corner that is only as tall as its content: district, rent and wages, the rival as a tag in its chain's color with its tier over a bar of its takings, and one key per product showing its stock bar and restock price (click to restock), a full shelf a pale mint tile marked Full in green;
 - store tabs, round ability keys, a speech bubble for news and a dock of colored app keys (Staff, Expand, Store, City) along the bottom; a key that can't be used fades to a flat, paler shade of its own color.
