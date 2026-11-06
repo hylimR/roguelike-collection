@@ -68,6 +68,7 @@ var tabs: HBoxContainer
 var ability_row: HBoxContainer
 var pick_btn: Button
 var info: Label
+var info_lines: Array = []
 var head: Label
 var sub: Label
 var event_tag: PanelContainer
@@ -421,6 +422,7 @@ func build() -> void:
 	bh.add_child(info)
 	info.text = "\n\n"
 	info.custom_minimum_size = Vector2(150, info.get_minimum_size().y)  # always three lines tall, so the tabs above never jump
+	info.resized.connect(fit_info)
 	var dock := HBoxContainer.new()
 	dock.add_theme_constant_override("separation", 6)
 	dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -630,6 +632,20 @@ func cycle_sound(m := -1) -> void:
 	best.save("user://best.cfg")
 
 
+## Fits the bubble's three lines: older toasts drop off first, then the type shrinks, so the newest line is never cut off.
+func fit_info() -> void:
+	var lines := info_lines.slice(maxi(0, info_lines.size() - 3))
+	info.add_theme_font_size_override("font_size", 11)
+	info.text = "\n".join(lines)
+	while lines.size() > 1 and info.get_line_count() > 3:
+		lines.pop_front()
+		info.text = "\n".join(lines)
+	for px in [10, 9]:
+		if info.get_line_count() <= 3:
+			break
+		info.add_theme_font_size_override("font_size", px)
+
+
 func toast(text: String, color := INK) -> void:
 	toasts.append([text, color, 6.0])
 	if toasts.size() > 3:
@@ -776,7 +792,9 @@ func refresh_ui() -> void:
 	var lines := toasts.map(func(t): return t[0])
 	if lines.is_empty():
 		lines = [hint(b)]
-	info.text = "\n".join(lines.slice(maxi(0, lines.size() - 3)))
+	if lines != info_lines:
+		info_lines = lines
+		fit_info()
 	info.add_theme_color_override("font_color", toasts[-1][1] if not toasts.is_empty() else INK)
 
 	head.text = b.name
