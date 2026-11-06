@@ -82,6 +82,7 @@ const DAWN := [6.0, 6.5, 7.8]  # the same for sunrise, from the other side and r
 const LAMP := Color(1.0, 0.85, 0.58)
 const SHOP_LIGHT := Color(0.86, 0.95, 1.0)  # a konbini's cool white strip lights
 const SEA := Color("3a8cc8")
+const SEA_NIGHT := Color(0.5, 0.48, 0.46)  # water goes darker than the land after dark instead of glowing blue under the night tint
 const ROOF_TINT := 0.3  # how much of its walls' tint a flat roof takes over its membrane
 const ASPHALT := Color("576074")  # a cool slate rather than flat grey
 const PITCH := 30.0
@@ -314,6 +315,7 @@ var box_mesh: ArrayMesh
 var sign_tex: ImageTexture
 var soft_mat: StandardMaterial3D  # soft contact shadows under people, cars and street things
 var ao_mat: StandardMaterial3D  # the dark seam where a building meets the sidewalk
+var sea_mat: StandardMaterial3D
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
 var cam_base := 12.0
@@ -587,7 +589,10 @@ func update_light() -> void:
 		building_mat.set_shader_parameter("dawn", dawn_at(h))
 	if shadow_mat:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
-	env.background_color = SEA * light
+	var dusk_sea := light * Color.WHITE.lerp(SEA_NIGHT, night)
+	env.background_color = SEA * dusk_sea
+	if sea_mat:
+		sea_mat.albedo_color = dusk_sea
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
@@ -960,6 +965,8 @@ func build_static() -> void:
 	var sea_tex := speckle([SEA, SEA.lightened(0.08), SEA.darkened(0.08), SEA.lightened(0.16)])
 	var sea := mat(Color.WHITE, sea_tex)
 	sea.texture_repeat = true
+	sea.albedo_color = light * Color.WHITE.lerp(SEA_NIGHT, night)
+	sea_mat = sea
 	var ws := surface(sea)
 	poly_fill(ws, C.bay, -0.14)
 	poly_fill(ws, bay_mouth, -0.14)
