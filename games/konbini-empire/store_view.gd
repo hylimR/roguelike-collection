@@ -125,9 +125,10 @@ uniform vec3 light = vec3(1.0);
 uniform float golden = 0.0;
 uniform float dawn = 0.0;
 varying vec3 lpos;
-varying vec3 lnrm;
-varying vec4 info;
-varying vec4 tint;
+// per instance or face: flat, as the hashes below blow up the slightest drift across a triangle into patches
+varying flat vec3 lnrm;
+varying flat vec4 info;
+varying flat vec4 tint;
 varying vec2 sunl;
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
 const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.68, 0.64, 0.42), vec3(0.52, 0.52, 0.5), vec3(0.68, 0.66, 0.61));  // boards, tatami, concrete, tile
