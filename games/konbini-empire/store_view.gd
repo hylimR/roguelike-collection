@@ -113,6 +113,21 @@ void fragment() {
 	ALPHA = texture(mask, uv).a * strength * inside.x * inside.y;
 }
 """
+# Farmland: each field's crop colour, furrowed, under the hour's light; after dark the crops fade into one dark green
+# so the lit city stands out rather than a patchwork of maroon, olive and green round it.
+const FIELD_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+uniform sampler2D furrows : filter_linear_mipmap, repeat_enable;
+uniform vec3 light = vec3(1.0);
+uniform float night = 0.0;
+
+void fragment() {
+	float l = dot(COLOR.rgb, vec3(0.3, 0.59, 0.11));
+	vec3 crop = mix(COLOR.rgb, vec3(0.47, 0.62, 0.36) * (0.9 + 0.4 * (l - 0.66)), 0.8 * night);
+	ALBEDO = crop * texture(furrows, UV).rgb * light;
+}
+"""
 # Buildings: boxes in a MultiMesh. Custom data = size and facade style (-1: plain shaded colour, for roofs); colour =
 # wall tint, alpha = accent index / 8. A landmark's curved faces (no size) use alpha below 1 for floodlighting. Walls pick a 3-unit bay and floor tile from the facade atlas.
 const BUILDING_SHADER := """
@@ -320,6 +335,7 @@ var ao_mat: StandardMaterial3D  # the dark seam where a building meets the sidew
 var cast_mat: StandardMaterial3D  # the sun's shadow of a pole or post laid on the street
 var casts: Array = []  # those shadows, stretched as the sun goes down
 var sea_mat: StandardMaterial3D
+var field_mat: ShaderMaterial
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
 var cam_base := 12.0
@@ -609,6 +625,9 @@ func update_light() -> void:
 	env.background_color = SEA * dusk_sea
 	if sea_mat:
 		sea_mat.albedo_color = dusk_sea
+	if field_mat:
+		field_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
+		field_mat.set_shader_parameter("night", night)
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
@@ -950,9 +969,13 @@ func build_static() -> void:
 	furrows.fill(Color.WHITE)
 	furrows.fill_rect(Rect2i(0, 0, 1, 4), Color(0.84, 0.86, 0.78))
 	furrows.generate_mipmaps()
-	var fm := mat(Color.WHITE, ImageTexture.create_from_image(furrows))
-	fm.vertex_color_use_as_albedo = true
-	fm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	var fm := ShaderMaterial.new()
+	fm.shader = Shader.new()
+	fm.shader.code = FIELD_SHADER
+	fm.set_shader_parameter("furrows", ImageTexture.create_from_image(furrows))
+	fm.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
+	fm.set_shader_parameter("night", maxf(night, 0.0))
+	field_mat = fm
 	var fs := surface(fm)
 	var fr := RandomNumberGenerator.new()
 	fr.seed = 5
