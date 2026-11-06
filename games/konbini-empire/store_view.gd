@@ -67,7 +67,7 @@ const RACK_H := 1.05  # the magazine racks' drawn height, stood on the floor
 const FIELDS := ["8cc458", "a8cc66", "d0c468", "c8b064", "a88e66", "70aa50", "98c488"]  # paddies, young rice, rapeseed, wheat, soil, greens, cabbages
 # the day's weather over the view: [tint, then for falling rain or snow: drops, slant, speed px/s, streak length]
 const WEATHER_LOOK := {
-	"hot": [Color(1.0, 0.7, 0.3, 0.12)],
+	"hot": [Color(1.0, 0.68, 0.3, 0.15)],
 	"rain": [Color(0.2, 0.25, 0.38, 0.24), 170, -0.18, 950.0, 15.0],
 	"cold": [Color(0.8, 0.88, 1.0, 0.2), 240, 0.15, 50.0, 0.0],
 	"typhoon": [Color(0.1, 0.14, 0.24, 0.36), 360, -0.6, 1500.0, 24.0],
@@ -3904,9 +3904,6 @@ func draw_weather() -> void:
 	var look: Array = WEATHER_LOOK.get({"heatwave": "hot", "coldSnap": "cold"}.get(branch.event.id, ""), [])
 	if look.is_empty() or mode != "store":
 		return
-	overlay.draw_rect(Rect2(Vector2.ZERO, size), look[0])
-	if look.size() == 1:
-		return
 	var inside := PackedVector2Array()
 	var zl: float = Sim.ZONE_LEFT[branch.store.size]
 	for y in [0.0, 3.0]:
@@ -3916,6 +3913,10 @@ func draw_weather() -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = 11
 	var now := Time.get_ticks_msec() / 1000.0
+	if look.size() == 1:
+		draw_heat(look[0], inside, r, now)
+		return
+	overlay.draw_rect(Rect2(Vector2.ZERO, size), look[0])
 	var span := size.y + 40.0
 	var lines := PackedVector2Array()
 	for i in look[1]:
@@ -3934,6 +3935,34 @@ func draw_weather() -> void:
 			lines.append_array([p, p + Vector2(look[2], 1.0).normalized() * look[4]])
 	if not lines.is_empty():
 		overlay.draw_multiline(lines, Color(0.86, 0.9, 1.0, 0.5))
+
+
+## A heatwave goes with the sun: a warm haze (eased off in the already amber golden hour), glare washing down from the
+## sky, and shimmer rising off the street but never inside your air-conditioned shop; after dark only a faint warmth is left.
+func draw_heat(tint: Color, inside: PackedVector2Array, r: RandomNumberGenerator, now: float) -> void:
+	var day := 1.0 - night
+	overlay.draw_rect(Rect2(Vector2.ZERO, size), tint * Color(1, 1, 1, lerpf(0.25, 1.0, day) * (1.0 - 0.5 * golden_at(sim.hour()))))
+	if day <= 0.01:
+		return
+	var glare := Color(1.0, 0.88, 0.58)
+	var low := size.y * 0.6
+	overlay.draw_polygon(PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0), Vector2(size.x, low * 0.6), Vector2(0, low)]),
+		PackedColorArray([glare * Color(1, 1, 1, 0.42 * day), glare * Color(1, 1, 1, 0.22 * day), Color(glare, 0.0), Color(glare, 0.0)]))
+	for i in 34:
+		var x := r.randf() * size.x
+		var y0 := size.y * r.randf_range(0.2, 1.05)
+		var w := r.randf_range(50.0, 110.0)
+		var life := fposmod(now * r.randf_range(0.16, 0.24) + r.randf(), 1.0)
+		var c := Vector2(x, y0 - life * 70.0)
+		if inside.size() > 2 and Geometry2D.is_point_in_polygon(c, inside):
+			continue
+		var wave := PackedVector2Array()
+		for k in 9:
+			var u := k / 8.0
+			wave.append(c + Vector2((u - 0.5) * w, sin(u * TAU * 1.5 + now * 3.0 + i) * 2.5))
+		var a := sin(life * PI) * day * day
+		overlay.draw_polyline(wave, Color(1.0, 0.95, 0.82, 0.14 * a), 6.0)
+		overlay.draw_polyline(wave, Color(1.0, 0.98, 0.9, 0.34 * a), 2.0)
 
 
 func text(at: Vector2, s: String, px: int, c: Color, w := 0.0, outline := Color(1, 1, 1, 0.9)) -> void:
