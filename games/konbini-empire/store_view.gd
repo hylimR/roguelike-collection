@@ -927,7 +927,9 @@ func build_static() -> void:
 	var b: Rect2 = C.bounds
 	var mid := b.get_center()
 	var grass := tiled(speckle([Color("7cb058"), Color("8abd62"), Color("70a44e"), Color("98c86c")]), Vector2(1500, 1500))
-	plane(city, Vector2(6000, 6000), Vector3(mid.x, -0.16, mid.y), grass)
+	# well under the farmland: across this one quad 6 km wide, software WebGL lost the 5 mm the fields once stood above
+	# it and tore them into wedges and slivers
+	plane(city, Vector2(6000, 6000), Vector3(mid.x, -0.4, mid.y), grass)
 	# farmland round the city: a patchwork of furrowed fields with grass between, kept off the roads and the shore
 	var furrows := Image.create(4, 4, false, Image.FORMAT_RGB8)
 	furrows.fill(Color.WHITE)
