@@ -317,6 +317,8 @@ var box_mesh: ArrayMesh
 var sign_tex: ImageTexture
 var soft_mat: StandardMaterial3D  # soft contact shadows under people, cars and street things
 var ao_mat: StandardMaterial3D  # the dark seam where a building meets the sidewalk
+var cast_mat: StandardMaterial3D  # the sun's shadow of a pole or post laid on the street
+var casts: Array = []  # those shadows, stretched as the sun goes down
 var sea_mat: StandardMaterial3D
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
@@ -413,6 +415,14 @@ func _ready() -> void:
 	seam.gradient.colors = PackedColorArray([Color(0.1, 0.08, 0.14), Color(0.1, 0.08, 0.14, 0)])
 	ao_mat.albedo_texture = seam
 	ao_mat.albedo_color = Color(1, 1, 1, 0.3)
+	cast_mat = soft_mat.duplicate()
+	var fade := GradientTexture2D.new()
+	fade.fill_from = Vector2(0, 0)
+	fade.fill_to = Vector2(0, 1)
+	fade.gradient = Gradient.new()
+	fade.gradient.offsets = PackedFloat32Array([0.0, 0.75, 1.0])
+	fade.gradient.colors = PackedColorArray([Color(0.1, 0.08, 0.14), Color(0.1, 0.08, 0.14, 0.7), Color(0.1, 0.08, 0.14, 0)])
+	cast_mat.albedo_texture = fade
 	cam = Camera3D.new()
 	cam.fov = 38.0
 	vp.add_child(cam)
@@ -591,6 +601,10 @@ func update_light() -> void:
 		building_mat.set_shader_parameter("dawn", dawn_at(h))
 	if shadow_mat:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
+	cast_mat.albedo_color.a = 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
+	casts = casts.filter(func(s): return is_instance_valid(s))
+	for s in casts:
+		s.scale.z = 1.0 + 0.9 * golden_at(h)
 	var dusk_sea := light * Color.WHITE.lerp(SEA_NIGHT, night)
 	env.background_color = SEA * dusk_sea
 	if sea_mat:
@@ -2194,6 +2208,23 @@ func blob(parent: Node3D, at: Vector2, r: float) -> void:
 	plane(parent, Vector2(r, r) * 2.0, Vector3(at.x, -0.035, at.y), soft_mat)
 
 
+## The sun's shadow of whatever stands w wide between heights h0 and h1 over `at`, laid along the ground away from
+## SUN (as the city's buildings cast theirs), lengthening through golden hour.
+func cast(parent: Node3D, at: Vector2, h0: float, h1: float, w: float) -> void:
+	var d := Vector2(-SUN.x, -SUN.z) / SUN.y
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(w, (h1 - h0) * d.length())
+	pm.center_offset = Vector3(0, 0, (h0 + h1) / 2 * d.length())
+	mi.mesh = pm
+	mi.material_override = cast_mat
+	mi.position = Vector3(at.x, -0.033, at.y)
+	mi.rotation.y = atan2(d.x, d.y)
+	mi.scale.z = 1.0 + 0.9 * golden_at(sim.hour())
+	parent.add_child(mi)
+	casts.append(mi)
+
+
 ## City walkers and traffic round the view (walkers only when close enough to see), kept out of the street set.
 func street_life(delta: float) -> void:
 	var busy: float = Sim.band(sim.hour()).traffic / 1.2 if sim.phase == "playing" else 1.0
@@ -2633,8 +2664,10 @@ func build_set() -> void:
 			block(set_node, Vector3(0.24, 7.0, 0.24), Vector3(px, 3.5, 6.85), Color("a19d94"))
 			block(set_node, Vector3(0.3, 1.1, 0.3), Vector3(px, 0.55, 6.85), Color("e3c34a"))
 			block(set_node, Vector3(0.12, 0.12, 1.4), Vector3(px, 6.6, 6.85), Color("6f6c66"))
+			cast(set_node, Vector2(px, 6.85), 0.0, 7.0, 0.24)
 			if k % 2 == 0:
 				block(set_node, Vector3(0.5, 0.75, 0.5), Vector3(px, 5.5, 7.2), Color("8a979c"))
+				cast(set_node, Vector2(px, 7.2), 5.1, 5.9, 0.5)
 			blob(set_node, Vector2(px, 6.85), 0.3)
 		if k == 0 or under[1].any(func(g): return g.y > poles[k - 1] and g.x < px):  # no wire up through a deck
 			continue
@@ -2783,6 +2816,8 @@ func build_set() -> void:
 		light_poles.append(pole + Vector3(0, 2.5, 0))
 		block(set_node, Vector3(0.12, 2.6, 0.12), pole + Vector3(0, 1.3, 0), Color("4a4d57"))
 		block(set_node, Vector3(0.36, 0.7, 0.3), pole + Vector3(0, 2.5, 0), Color("2b2d42"))
+		cast(set_node, Vector2(pole.x, pole.z), 0.0, 2.85, 0.12)
+		cast(set_node, Vector2(pole.x, pole.z), 2.15, 2.85, 0.32)
 	# outside facilities
 	var outside := {"vending": Vector3(Sim.VENDING_X, 0, -7.2 + 0.375), "gacha": Vector3(Sim.GACHA_X - 0.1, 0, -7.2 + 0.25), "bench": Vector3(-13.6, 0, -6.6)}
 	for f in st.facilities:
@@ -2840,6 +2875,8 @@ func street_lamp(at: Vector3) -> void:
 	beam.position = at + Vector3(0, 2.0, 1.0 * out)
 	set_node.add_child(beam)
 	blob(set_node, Vector2(at.x, at.z), 0.25)
+	cast(set_node, Vector2(at.x, at.z), 0.0, 4.2, 0.14)
+	cast(set_node, Vector2(at.x, at.z + 1.0 * out), 4.0, 4.2, 0.36)
 	pool(set_node, at + Vector3(0, 0, 0.9 * out), Vector2(7.0, 7.0))
 
 
@@ -3269,6 +3306,8 @@ func pole_sign(parent: Node3D) -> void:
 		var w := parent.global_position + lot
 		pools.append(Vector3(w.x, w.z, 4.4))
 	blob(parent, Vector2(ps.x, ps.z), 0.3)
+	cast(parent, Vector2(ps.x, ps.z), 0.0, 5.7, 0.22)
+	cast(parent, Vector2(ps.x, ps.z), 5.7, 7.15, 1.3)
 
 
 ## Your shop closed up, as the city map shows it on a lot (street frame, 1:1, where the street set's cutaway stands):
