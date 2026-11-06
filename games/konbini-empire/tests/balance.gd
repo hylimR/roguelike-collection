@@ -30,6 +30,7 @@ func _init() -> void:
 	shelves()
 	colours()
 	water()
+	quays()
 	var t0 := Time.get_ticks_msec()
 	var a := {}
 	for s in SEEDS:
@@ -195,6 +196,46 @@ func water() -> void:
 				if area.call(o) > 0.5:
 					wet.append([p.center, area.call(o)])
 	check(wet.is_empty(), "no bay or river lies under a park (%s)" % [wet])
+
+
+## A shop's street stops at a quay where the land runs out, instead of running on over open water as a pier: for every
+## lot and both rival widths the street and its made ground go no further than the last land (or city road) across the
+## set's band, or the last place the game puts people, and no land lies past the street's ends.
+func quays() -> void:
+	var City = Sim.City
+	var SV = load("res://store_view.gd")
+	var C: Dictionary = City.get_city()
+	var ends := []
+	for li in C.lots.size():
+		var L: Dictionary = C.lots[li]
+		var o := Vector2(L.x0 + City.LOT_W / 2 + 10.0, L.front + 7.2)
+		var roads: Array = SV.roads_at(C, o)
+		var solid := func(x: float) -> bool:
+			for k in 30:
+				var p := Vector2(x + 0.5, -19.7 + k)
+				if not City.is_water(C, o + p) or roads.any(func(rd): return rd.has_point(p) if rd is Rect2 else Geometry2D.get_closest_point_to_segment(p, rd[0], rd[1]).distance_to(p) < rd[2]):
+					return true
+			return false
+		var land := Vector2(SV.SET.end.x, SV.SET.position.x)  # the first and past the last solid column
+		for x in range(int(SV.SET.position.x), int(SV.SET.end.x)):
+			if solid.call(x):
+				land = Vector2(minf(land.x, x), x + 1.0)
+		for rv in [Sim.RIVALS.tanuki, Sim.RIVALS.mega]:
+			var span: Vector2 = SV.rival_span({"x": rv.door, "width": rv.width})
+			var r: Vector2 = SV.street_reach(C, o, span, roads)
+			var people := Vector2(minf(Sim.ALLEYS.min(), Sim.DOOR.x - 26.0), maxf(Sim.ALLEYS.max(), span.y))
+			var most := Vector2(minf(land.x, people.x - 3.0), maxf(land.y, people.y + 3.0))
+			check(r.x <= people.x and r.y >= people.y, "lot %d: the street reaches every alley, the rival and the fans (%s vs %s)" % [li, r, people])
+			check(r.x <= land.x, "lot %d: no land lies past the street's left end (%s, land from %d)" % [li, r, land.x])
+			check(r.y >= land.y, "lot %d: no land lies past the street's right end (%s, land to %d)" % [li, r, land.y])
+			for w in SV.made_ground(C, o, r, span):
+				if w.position.x < most.x or w.end.x > most.y:
+					check(false, "lot %d: made ground %s runs out past the last land and the last person (%s) as a pier" % [li, w, most])
+					break
+			if r != Vector2(SV.SET.position.x, SV.SET.end.x):
+				ends.append("%s %s" % [C.districts[L.block].name, r])
+	print("streets ending at a quay: ", ends)
+	check(not ends.is_empty(), "some shop's street ends at a quay (Tsukishima's does), so these checks have a case")
 
 
 ## Every road ends on another road, at a quay or off the map: a side street at a T or a corner on another street, on

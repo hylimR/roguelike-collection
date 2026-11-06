@@ -235,6 +235,8 @@ var sheet_imgs := {}  # sheet images read back for their cells' used rects
 var sim
 var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
 var set_sig := ""
+var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
+var entries := []  # x of the side roads that meet the set's street, where cars come in when both its ends are quays
 var slot_icons := {}  # product -> [Sprite3D]: its stock on the shelf
 var slot_goods := {}  # product -> MultiMesh: packs faced up on its fixture, as many showing as are in stock
 var agent_nodes := {}  # sim id -> {node, a (walk row), step}
@@ -2194,6 +2196,11 @@ func street_life(delta: float) -> void:
 
 ## Cars on the set's street, keeping left: each waits behind the one ahead and stops at the crossing on amber and
 ## red, headlights washing the road ahead after dark.
+## Whether the set's street runs on into the city at its end toward `dir` (else it stops at a quay).
+func street_open(dir: float) -> bool:
+	return street_x.y == SET.end.x if dir > 0.0 else street_x.x == SET.position.x
+
+
 func street_traffic(delta: float) -> void:
 	delta = minf(delta, 0.5)
 	var lt: Array = sim.lights()
@@ -2202,8 +2209,13 @@ func street_traffic(delta: float) -> void:
 	if next_set_car <= 0.0:
 		next_set_car = randf_range(1.5, 4.0)
 		var dir := 1.0 if randf() < 0.5 else -1.0
+		# cars come in off the city at an open end of the street; where both its ends are quays, from a side road
+		if not street_open(-dir) and street_open(dir):
+			dir = -dir
 		var x0 := SET.position.x if dir > 0.0 else SET.end.x
-		if not set_cars.any(func(o): return o.dir == dir and absf(o.x - x0) < 8.0):
+		if not street_open(-dir):
+			x0 = INF if entries.is_empty() else entries[randi() % entries.size()]
+		if x0 < INF and not set_cars.any(func(o): return o.dir == dir and absf(o.x - x0) < 8.0):
 			var kv := randi() % 4
 			var node := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
 			var y := VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
@@ -2219,9 +2231,24 @@ func street_traffic(delta: float) -> void:
 			set_node.add_child(node)
 			facing(node, Vector3(dir, 0, 0), kv * 2, VEHICLE_CELL)
 			var cruise := randf_range(5.0, 8.0) * (0.6 if kv == 3 else 1.0)
-			set_cars.append({"node": node, "x": x0, "v": cruise, "dir": dir, "cruise": cruise})
+			set_cars.append({"node": node, "x": x0, "v": cruise, "dir": dir, "cruise": cruise, "kv": kv, "turn": -1.0, "back": false})
 	var gone := []
 	for o in set_cars:
+		if o.turn >= 0.0:  # turning round short of a quay: a half circle from its lane into the other one
+			o.turn = minf(o.turn + 3.0 * delta / 1.7, PI)
+			var t := Vector3(o.dir * cos(o.turn), 0, o.dir * sin(o.turn))
+			o.node.position = Vector3(o.x + o.dir * 1.7 * sin(o.turn), o.node.position.y, -o.dir * 1.7 * cos(o.turn))
+			if o.turn >= PI:
+				o.dir = -o.dir
+				o.turn = -1.0
+				o.back = true
+				o.v = 3.0
+				t = Vector3(o.dir, 0, 0)
+			facing(o.node, t, o.kv * 2, VEHICLE_CELL)
+			var beam: Node3D = o.node.get_child(1)
+			beam.position = Vector3(t.x * 3.2, beam.position.y, t.z * 3.2)
+			shine(o.node)
+			continue
 		var room_ := INF
 		for q in set_cars:
 			if q != o and q.dir == o.dir and (q.x - o.x) * o.dir > 0.0:
@@ -2229,12 +2256,21 @@ func street_traffic(delta: float) -> void:
 		var line: float = (Sim.CROSS_X - 4.0 * o.dir - o.x) * o.dir  # the car's centre to its stop line
 		if held and line > -0.2:
 			room_ = minf(room_, line)
+		var turn_at: float = (street_x.y if o.dir > 0.0 else street_x.x) - o.dir * 4.0
+		if not street_open(o.dir):
+			room_ = minf(room_, (turn_at - o.x) * o.dir + 2.5)  # slow for the turn
 		o.v = minf(move_toward(o.v, o.cruise, 4.0 * delta), maxf(room_, 0.0) * 1.2)
+		var was: float = o.x
 		o.x += o.dir * o.v * delta
 		o.node.position.x = o.x
 		shine(o.node)
+		if not street_open(o.dir) and (o.x - turn_at) * o.dir >= 0.0:
+			o.x = turn_at
+			o.turn = 0.0
 		if o.x > SET.end.x or o.x < SET.position.x:
 			gone.append(o)
+		elif o.back and not street_open(o.dir) and entries.any(func(e): return (e - was) * (e - o.x) <= 0.0):
+			gone.append(o)  # off down the side road it came in by
 	for o in gone:
 		o.node.queue_free()
 	set_cars = set_cars.filter(func(o): return not gone.has(o))
@@ -2282,7 +2318,7 @@ func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 			rect_quad(deep, Rect2(o.x, sd[1], o.y - o.x, 3.5), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(-3.4, -16.0, 7.1, 8.8), -0.034, 0.0, false, 0.125)
 	for band in [Vector2(-3.7, -3.05), Vector2(-2.25, -1.55), Vector2(-0.45, 0.45), Vector2(1.55, 2.25), Vector2(3.05, 3.7)]:
-		rect_quad(thin, Rect2(SET.position.x, band.x, SET.size.x, band.y - band.x), -0.034, 0.0, false, 0.125)
+		rect_quad(thin, Rect2(street_x.x, band.x, street_x.y - street_x.x, band.y - band.x), -0.034, 0.0, false, 0.125)
 	var mi := commit([deep, thin], set_node)
 	mi.visible = false
 	return mi
@@ -2355,24 +2391,27 @@ func build_set() -> void:
 	# ground: the sidewalks, the road with its centre line and crossing. Either side the city's own blocks and roads
 	# show, so the side streets and avenues that cross the set run on through it.
 	var span := rival_span(b.rival)
+	var here := Vector2(site.position.x, site.position.z)
 	var roads := roads_near()
+	street_x = street_reach(C, here, span, roads)
 	var side_roads := roads.filter(func(rd): return rd is Array or rd.size.y > rd.size.x)  # avenues and cross streets
 	# where the set runs out over water (the bay, a canal) it stands on made ground: its street with a strip either
 	# side, and the lots of your shop and the rival. Elsewhere the water stays and the neighbours keep out of it.
 	var made := surface(mat(Color(Sim.City.GROUND[type])))
 	var made_runs := []
 	if near_water():
-		made_runs = water_runs(-9.2, 9.2) + water_runs(-20.2, -7.2, -16.5, span.y)
+		made_runs = made_ground(C, here, street_x, span)
 		for w in made_runs:
 			rect_quad(made, w, -0.125)  # over the water, under any bridge
-		roads.append_array(water_runs(SET.position.y, -20.2) + water_runs(-20.2, -7.2, SET.position.x, -16.5) + water_runs(-20.2, -7.2, span.y, SET.end.x))
+		roads.append_array(water_runs(C, here, SET.position.y, -20.2) + water_runs(C, here, -20.2, -7.2, SET.position.x, -16.5) + water_runs(C, here, -20.2, -7.2, span.y, SET.end.x))
 	var far_gaps := mouths(-8.2, -3.6, side_roads, Vector2(-16.5, span.y))  # none between your shop and the rival
 	var near_gaps := mouths(3.6, 8.2, side_roads)
+	entries = (far_gaps + near_gaps).map(func(g): return (g.x + g.y) / 2)
 	var overhead := decks_near()
 	var under := [mouths(-8.2, -3.6, overhead), mouths(3.6, 8.2, overhead)]  # where a deck crosses each sidewalk
 	var walk := surface(pavers())
 	var tar := surface(tiled(speckle([ASPHALT, ASPHALT.darkened(0.05), ASPHALT.lightened(0.06), ASPHALT.darkened(0.08)]), Vector2.ONE))
-	rect_quad(tar, Rect2(SET.position.x, -3.7, SET.size.x, 7.4), -0.045, 0.0, false, 0.5)
+	rect_quad(tar, Rect2(street_x.x, -3.7, street_x.y - street_x.x, 7.4), -0.045, 0.0, false, 0.5)
 	var kerb := surface(mat(Color("8f8b84")))
 	var tactile := surface(mat(Color("d2b862")))  # the yellow guide strip down each sidewalk
 	for sd in [[far_gaps, -7.2, -3.8, -5.4], [near_gaps, 3.7, 3.6, 5.0]]:
@@ -2385,7 +2424,7 @@ func build_set() -> void:
 	var paint := surface(mat(Color("ebe7dc")))
 	var x := SET.position.x
 	while x < SET.end.x:
-		if x + 2.0 < Sim.CROSS_X - 2.0 or x > Sim.CROSS_X + 2.0:
+		if x >= street_x.x and x + 2.0 <= street_x.y and (x + 2.0 < Sim.CROSS_X - 2.0 or x > Sim.CROSS_X + 2.0):
 			rect_quad(paint, Rect2(x, -0.08, 2.0, 0.16), -0.04)
 		x += 4.0
 	var z := -3.3
@@ -2447,6 +2486,8 @@ func build_set() -> void:
 	lit_sprites.append(car)
 	pole_sign(set_node)
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
+		if mh.x < street_x.x + 0.6 or mh.x > street_x.y - 0.6:
+			continue
 		for ring in [[0.46, Color("74767c"), -0.039], [0.36, Color("4d4f55"), -0.037]]:
 			var disc := MeshInstance3D.new()
 			var cm := CylinderMesh.new()
@@ -2460,10 +2501,14 @@ func build_set() -> void:
 			set_node.add_child(disc)
 	# utility poles and their sagging wires along the far sidewalk
 	var wires := surface(mat(Color("34343a")))
-	var poles := [SET.position.x, -42.0, -19.0, 12.0, 36.0, SET.end.x].filter(func(px): return absf(px) == SET.end.x or not in_gaps(px, near_gaps + under[1]))
+	var poles := [-42.0, -19.0, 12.0, 36.0].filter(func(px): return px > street_x.x + 1.0 and px < street_x.y - 1.0 and not in_gaps(px, near_gaps + under[1]))
+	if street_x.x == SET.position.x:  # the wires run on off the set where the street does; at a quay they stop at a pole
+		poles.push_front(SET.position.x)
+	if street_x.y == SET.end.x:
+		poles.append(SET.end.x)
 	for k in poles.size():
 		var px: float = poles[k]
-		if k > 0 and k < poles.size() - 1:
+		if absf(px) != SET.end.x:
 			block(set_node, Vector3(0.24, 7.0, 0.24), Vector3(px, 3.5, 6.85), Color("a19d94"))
 			block(set_node, Vector3(0.3, 1.1, 0.3), Vector3(px, 0.55, 6.85), Color("e3c34a"))
 			block(set_node, Vector3(0.12, 0.12, 1.4), Vector3(px, 6.6, 6.85), Color("6f6c66"))
@@ -2588,7 +2633,7 @@ func build_set() -> void:
 	if b.quirk == "busStop":
 		props_at.append([11, Vector2(-24.5, -4.4)])
 	for p in props_at:
-		if in_gaps(p[1].x, far_gaps if p[1].y < 0.0 else near_gaps) or in_gaps(p[1].x, under[0] if p[1].y < 0.0 else under[1]):
+		if p[1].x < street_x.x + 0.5 or p[1].x > street_x.y - 0.5 or in_gaps(p[1].x, far_gaps if p[1].y < 0.0 else near_gaps) or in_gaps(p[1].x, under[0] if p[1].y < 0.0 else under[1]):
 			continue
 		if p[0] == 6:
 			street_lamp(Vector3(p[1].x, 0, p[1].y))
@@ -2706,14 +2751,17 @@ func fill_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: 
 
 ## The city's streets (rects) and avenue pieces ([a, b, half width]) that cross the set, in the street frame.
 func roads_near() -> Array:
-	var o := Vector2(site.position.x, site.position.z)
+	return roads_at(C, Vector2(site.position.x, site.position.z))
+
+
+static func roads_at(town: Dictionary, o: Vector2) -> Array:
 	var area := Rect2(o + SET.position, SET.size)
 	var out := []
-	for s in C.streets:
+	for s in town.streets:
 		var rr := Rect2(s.from, s.line, s.to - s.from, s.w) if s.axis == "h" else Rect2(s.line, s.from, s.w, s.to - s.from)
 		if rr.intersects(area):
 			out.append(Rect2(rr.position - o, rr.size))
-	for av in C.avenues:
+	for av in town.avenues:
 		for i in range(1, av.pts.size()):
 			if seg_hits(area.grow(av.w / 2), av.pts[i - 1], av.pts[i]):
 				out.append([av.pts[i - 1] - o, av.pts[i] - o, av.w / 2])
@@ -2779,10 +2827,11 @@ func quay(runs: Array, roads: Array) -> void:
 				var b: Vector2 = sd[0] + d * minf(i + 1.0, len_)
 				if not open_water.call((a + b) / 2 + n * 0.5):  # the next cell's own sample, as water_runs takes it
 					continue
-				if not edges.is_empty() and edges[-1][2] == n and edges[-1][1].is_equal_approx(a):
-					edges[-1][1] = b
-				else:
+				var on := edges.filter(func(e): return e[2] == n and e[1].is_equal_approx(a))  # across a quay's end, run by run
+				if on.is_empty():
 					edges.append([a, b, n])
+				else:
+					on[0][1] = b
 	var m := mat(Color.WHITE)
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
@@ -2824,9 +2873,37 @@ func quay(runs: Array, roads: Array) -> void:
 	commit([shade, wall_], set_node)
 
 
+## How far along the street (street frame x, on water_runs' grid) the set's street runs: as far as land or a city road
+## reaches anywhere across its band, from the rival's lot to the made ground's near edge, and always past everywhere
+## the game puts people (the alleys, the rival, fans out front). Beyond it lies open water to the set's end, so the
+## street stops there at a quay rather than running on as a pier to nowhere.
+static func street_reach(town: Dictionary, o: Vector2, span: Vector2, roads: Array) -> Vector2:
+	var solid := func(x: float) -> bool:
+		var z := -20.2
+		while z < 9.2:
+			var p := Vector2(x + 0.5, z + 0.5)
+			if not Sim.City.is_water(town, o + p) or roads.any(func(rd): return rd.has_point(p) if rd is Rect2 else Geometry2D.get_closest_point_to_segment(p, rd[0], rd[1]).distance_to(p) < rd[2]):
+				return true
+			z += 1.0
+		return false
+	var lo := floorf(minf(Sim.ALLEYS.min(), Sim.DOOR.x - 26.0) - 2.0)  # fans gather up to 26 m either side of your door
+	var hi := ceilf(maxf(Sim.ALLEYS.max(), span.y) + 1.5)
+	var x0 := SET.position.x
+	while x0 < lo and not solid.call(x0):
+		x0 += 1.0
+	var x1 := SET.end.x - 1.0
+	while x1 >= hi and not solid.call(x1):
+		x1 -= 1.0
+	return Vector2(x0, maxf(x1 + 1.0, hi))
+
+
+## The made ground the set stands on over water: its street and sidewalks out to `street_x`, your shop's and the rival's lots.
+static func made_ground(town: Dictionary, o: Vector2, reach_: Vector2, span: Vector2) -> Array:
+	return water_runs(town, o, -9.2, 9.2, reach_.x, reach_.y) + water_runs(town, o, -20.2, -7.2, -16.5, span.y)
+
+
 ## Water in the band z0..z1 between x0 and x1 (street frame), as runs 1 m deep on a 1 m grid.
-func water_runs(z0: float, z1: float, x0: float = SET.position.x, x1: float = SET.end.x) -> Array:
-	var o := Vector2(site.position.x, site.position.z)
+static func water_runs(town: Dictionary, o: Vector2, z0: float, z1: float, x0: float = SET.position.x, x1: float = SET.end.x) -> Array:
 	var out := []
 	var z := z0
 	while z < z1:
@@ -2834,7 +2911,7 @@ func water_runs(z0: float, z1: float, x0: float = SET.position.x, x1: float = SE
 		var start := INF
 		var x := x0
 		while x < x1:
-			var wet := Sim.City.is_water(C, o + Vector2(x + 0.5, z + h / 2))
+			var wet := Sim.City.is_water(town, o + Vector2(x + 0.5, z + h / 2))
 			if wet and start == INF:
 				start = x
 			elif not wet and start < INF:
@@ -2850,19 +2927,19 @@ func water_runs(z0: float, z1: float, x0: float = SET.position.x, x1: float = SE
 ## Where side roads meet the set's sidewalk band z0..z1, as x spans, leaving out any that touch `keep`.
 func mouths(z0: float, z1: float, roads: Array, keep := Vector2(INF, INF)) -> Array:
 	var out := []
-	var x := SET.position.x
-	for run in free_runs(SET.position.x, SET.end.x, z0, z1, roads) + [Vector2(SET.end.x, SET.end.x)]:
+	var x := street_x.x
+	for run in free_runs(street_x.x, street_x.y, z0, z1, roads) + [Vector2(street_x.y, street_x.y)]:
 		if run.x > x and (x >= keep.y or run.x <= keep.x):
 			out.append(Vector2(x, run.x))
 		x = run.y
 	return out
 
 
-## The set's length with the gaps taken out.
-static func open_spans(gaps: Array) -> Array:
+## The street's length with the gaps taken out.
+func open_spans(gaps: Array) -> Array:
 	var out := []
-	var x := SET.position.x
-	for g in gaps + [Vector2(SET.end.x, SET.end.x)]:
+	var x := street_x.x
+	for g in gaps + [Vector2(street_x.y, street_x.y)]:
 		if g.x > x:
 			out.append(Vector2(x, g.x))
 		x = g.y
@@ -3370,6 +3447,12 @@ func clear_actors() -> void:
 
 
 ## Keeps one sprite per sim actor; new ones get made, gone ones freed.
+## Whether a pedestrian shows: not while in the rival's shop, nor past a quay (the game walks people in from 44 m
+## along the street; there they are still on their way round to it).
+func in_view(a: Dictionary) -> bool:
+	return a.state != "inRival" and a.x > street_x.x - 0.3 and a.x < street_x.y + 0.3
+
+
 func sync_actors(delta: float) -> void:
 	var seen := {}
 	for a in branch.agents:
@@ -3383,7 +3466,7 @@ func sync_actors(delta: float) -> void:
 			actors.add_child(node)
 			e = {"node": node, "a": a.look % 7, "step": randf() * 4.0}
 			agent_nodes[a.id] = e
-		e.node.visible = a.state != "inRival"
+		e.node.visible = in_view(a)
 		move_sprite(e, a, a.speed if not a.inside else Sim.INSIDE_SPEED, delta)
 		if a.state == "browse" and Sim.PRODUCTS.has(a.get("want", "")):
 			turn_to(e.node, Vector2(a.x, a.z), Sim.world(Sim.SLOTS[Sim.PRODUCTS[a.want].slot].pos))
@@ -3926,7 +4009,7 @@ func draw_street() -> void:
 			overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.05, 0.12, 0.15))
 	# pedestrians: angry ones and what they carry
 	for a in b.agents:
-		if a.state == "inRival":
+		if not in_view(a):
 			continue
 		var head := screen(Vector3(a.x, 1.75, a.z))
 		if a.mood == "angry":
