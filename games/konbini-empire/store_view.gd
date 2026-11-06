@@ -3793,7 +3793,14 @@ func draw_street() -> void:
 	var rv: Dictionary = b.rival
 	var def: Dictionary = Sim.RIVALS[rv.id]
 	var span := rival_span(rv)
-	var sign_at := screen(Vector3((span.x + span.y) / 2, 4.6, -7.2))
+	# the rival's name rides a pin over its roof, like a branch on the city map, so the plate never covers its fascia
+	var roof_at := screen(Vector3((span.x + span.y) / 2, 4.42, -9.4))
+	var sign_at := roof_at + Vector2(0, -58)
+	overlay.draw_line(roof_at + Vector2(1, 0), sign_at + Vector2(1, 0), Color(0, 0, 0, 0.3), 3.0)
+	overlay.draw_line(roof_at, sign_at, Color.WHITE, 2.0)
+	overlay.draw_circle(roof_at + Vector2(0, 1.5), 5.5, Color(0, 0, 0, 0.3))
+	overlay.draw_circle(roof_at, 5.0, Color.WHITE)
+	overlay.draw_circle(roof_at, 3.6, Color("8a8780") if rv.defeated else Color(def.color))
 	if not rv.defeated:
 		# name and takings on one cream plate, so the bar never sits on the chain's own fascia color
 		var font: Font = bold if bold else get_theme_default_font()
