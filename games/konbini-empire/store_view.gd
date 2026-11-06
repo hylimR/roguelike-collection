@@ -259,6 +259,9 @@ var city_sig := ""
 var lm_ground := {}  # "water" / "grass" -> [material, uv per metre]: the city's ground, for landmarks' own pools and lawns
 var lm_sprites: Array = []  # [Sprite3D, half width]: landmarks, cleared when they cover the street
 var lot_nodes: Array = []  # [Node3D, footprint centre]: the shops built on other branches' lots, hidden under the set
+var rails: Array = []  # [pts, offset, segment]: the city's bridge and quay railings, one piece per segment
+var rail_node: MeshInstance3D  # those railings, rebuilt without the pieces that would stand on the set's street
+var rail_sig := Rect2(1, 1, -1, -1)
 var lm_trees: Array = []  # [world position, scale, outdoor frame]: trees planted by landmark models
 var lot_feet: Array = []  # their world footprints (your shop's and the rival's), where the city gives way
 var hover_lot := -1
@@ -1009,7 +1012,7 @@ func build_roads() -> void:
 	var zm := mat(Color.WHITE, stripes(ASPHALT, Color("ece7d8"), 8, 1, 4))
 	zm.texture_repeat = true
 	var zebra := surface(zm)
-	var rail := surface(mat(Color("d9d4c7")))
+	rails = []
 	var SW := Sim.City.SIDEWALK
 	for s in C.streets:
 		var along_z: bool = s.axis == "v"
@@ -1033,11 +1036,11 @@ func build_roads() -> void:
 		var pt := func(x: float, off := 0.0) -> Vector3: return Vector3(x, 0, c + off) if s.axis == "h" else Vector3(c + off, 0, x)
 		for br in s.bridges:
 			for side in [s.w / 2 - 0.2, 0.2 - s.w / 2]:
-				wall(rail, PackedVector3Array([pt.call(br[0] - 1.0), pt.call(br[1] + 1.0)]), side, -0.12, 0.55)
+				rails.append([PackedVector3Array([pt.call(br[0] - 1.0), pt.call(br[1] + 1.0)]), side, 0])
 		for e in 2:
 			if s.quay[e]:
 				var x: float = s.from + 0.1 if e == 0 else s.to - 0.1
-				wall(rail, PackedVector3Array([pt.call(x, -s.w / 2), pt.call(x, s.w / 2)]), 0.0, -0.12, 0.55)
+				rails.append([PackedVector3Array([pt.call(x, -s.w / 2), pt.call(x, s.w / 2)]), 0.0, 0])
 		# where the street meets the one across its end: clear that street's markings, paint a crossing
 		for e in 2:
 			if s.j[e] <= 0.0:
@@ -1068,9 +1071,31 @@ func build_roads() -> void:
 				run = maxi(0, i - 1)
 			elif (not wet or i == pts.size() - 1) and run >= 0:
 				for side in [half - 0.2, 0.2 - half]:
-					wall(rail, pts, side, -0.12, 0.55, run, i)
+					for k in range(run, i):
+						rails.append([pts, side, k])
 				run = -1
-	commit([walkway, tar, mouth, dash, solid, zebra, rail], city)
+	commit([walkway, tar, mouth, dash, solid, zebra], city)
+	rail_node = commit([], city)
+	rail_sig = Rect2(1, 1, -1, -1)
+	build_rails([])
+
+
+## The city's railings, leaving out every piece that crosses one of `clear` (the set's street and buildings), where
+## the set lays its own ground and quays over the city's.
+func build_rails(clear: Array) -> void:
+	var rail := surface(mat(Color("d9d4c7")))
+	var any := false
+	for r in rails:
+		var pts: PackedVector3Array = r[0]
+		var a := Vector2(pts[r[2]].x, pts[r[2]].z)
+		var b := Vector2(pts[r[2] + 1].x, pts[r[2] + 1].z)
+		if not clear.any(func(q): return seg_hits(q, a, b)):
+			wall(rail, pts, r[1], -0.12, 0.55, r[2], r[2] + 1)
+			any = true
+	var mesh := ArrayMesh.new()
+	if any:
+		rail.commit(mesh)
+	rail_node.mesh = mesh
 
 
 ## Rect of street s from a0 to a1 along it and c0 to c1 across from its top (or left) edge.
@@ -1745,6 +1770,9 @@ func update_fade() -> void:
 		scr = foot_rect(Rect2(o.x - 24.0, o.z - 18.0, 54.0, 26.0), 5.0)
 		depth = o.x + o.z
 	var taken := func(f: Rect2) -> bool: return on and (f.intersects(front) or set_feet.any(func(q): return f.intersects(q)))
+	if rail_node and front != rail_sig:
+		rail_sig = front
+		build_rails([front] + set_feet if on else [])
 	for e in lot_nodes:
 		e[0].visible = not taken.call(Rect2(e[1] - Vector2(0.5, 0.5), Vector2.ONE))
 	for e in lm_sprites:
