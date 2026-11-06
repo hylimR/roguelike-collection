@@ -411,12 +411,14 @@ func build() -> void:
 	bh.add_child(picture("perks", 0, 80, Vector2(38, 38)))
 	info = label("", INK)
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.custom_minimum_size = Vector2(150, 38)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	info.max_lines_visible = 3
 	info.add_theme_font_size_override("font_size", 11)
+	info.add_theme_constant_override("line_spacing", -3)
 	bh.add_child(info)
+	info.text = "\n\n"
+	info.custom_minimum_size = Vector2(150, info.get_minimum_size().y)  # always three lines tall, so the tabs above never jump
 	var dock := HBoxContainer.new()
 	dock.add_theme_constant_override("separation", 6)
 	dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
