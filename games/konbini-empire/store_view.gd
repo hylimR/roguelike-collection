@@ -2299,8 +2299,10 @@ func build_set() -> void:
 	# where the set runs out over water (the bay, a canal) it stands on made ground: its street with a strip either
 	# side, and the lots of your shop and the rival. Elsewhere the water stays and the neighbours keep out of it.
 	var made := surface(mat(Color("bfc4a6") if type in ["homes", "oldtown", "park"] else (Color("b8b2a6") if type == "market" else Color("cdc6b6"))))
+	var made_runs := []
 	if near_water():
-		for w in water_runs(-9.2, 9.2) + water_runs(-20.2, -7.2, -16.5, span.y):
+		made_runs = water_runs(-9.2, 9.2) + water_runs(-20.2, -7.2, -16.5, span.y)
+		for w in made_runs:
 			rect_quad(made, w, -0.125)  # over the water, under any bridge
 		roads.append_array(water_runs(SET.position.y, -20.2) + water_runs(-20.2, -7.2, SET.position.x, -16.5) + water_runs(-20.2, -7.2, span.y, SET.end.x))
 	var far_gaps := mouths(-8.2, -3.6, side_roads, Vector2(-16.5, span.y))  # none between your shop and the rival
@@ -2359,6 +2361,7 @@ func build_set() -> void:
 	rect_quad(paint, Rect2(0.95, -9.6, 0.24, 1.5), -0.038)
 	poly_fill(paint, PackedVector2Array([Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55)]), -0.038)
 	commit([made, walk, tar, kerb, bay, paint, hatch, tactile], set_node)
+	quay(made_runs, side_roads)
 	snow_cover = settled_snow(far_gaps, near_gaps)
 	for cx in [-1.0, 1.4]:  # wheel stops
 		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("d8d2c4"))
@@ -2691,6 +2694,73 @@ func near_water() -> bool:
 			if Sim.City.is_water(C, o + Vector2(x, z)):
 				return true
 	return false
+
+
+## Where the made ground meets open water: a concrete quay wall with its coping, standing in its own shade on the
+## water, left open where a road runs on over a bridge.
+func quay(runs: Array, roads: Array) -> void:
+	if runs.is_empty():
+		return
+	var o := Vector2(site.position.x, site.position.z)
+	var open_water := func(p: Vector2) -> bool:
+		return Sim.City.is_water(C, o + p) and not runs.any(func(r): return r.grow(0.01).has_point(p)) \
+			and not roads.any(func(rd): return rd.has_point(p) if rd is Rect2 else Geometry2D.get_closest_point_to_segment(p, rd[0], rd[1]).distance_to(p) < rd[2])
+	var edges := []  # [from, to, outward normal], merged along each side
+	for r in runs:
+		for sd in [[r.position, Vector2(r.end.x, r.position.y), Vector2.UP], [Vector2(r.position.x, r.end.y), r.end, Vector2.DOWN], [r.position, Vector2(r.position.x, r.end.y), Vector2.LEFT], [Vector2(r.end.x, r.position.y), r.end, Vector2.RIGHT]]:
+			var n: Vector2 = sd[2]
+			if n.x != 0.0 and absf(sd[0].x) == SET.end.x:  # the set's cut ends: the street runs on
+				continue
+			var len_: float = sd[0].distance_to(sd[1])
+			var d: Vector2 = (sd[1] - sd[0]) / len_
+			for i in ceili(len_ - 0.01):  # 1 m cells from the run's start, on water_runs' own grid
+				var a: Vector2 = sd[0] + d * i
+				var b: Vector2 = sd[0] + d * minf(i + 1.0, len_)
+				if not open_water.call((a + b) / 2 + n * 0.5):  # the next cell's own sample, as water_runs takes it
+					continue
+				if not edges.is_empty() and edges[-1][2] == n and edges[-1][1].is_equal_approx(a):
+					edges[-1][1] = b
+				else:
+					edges.append([a, b, n])
+	var m := mat(Color.WHITE)
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	var wall_ := surface(m)
+	var shade := surface(mat(Color("2d5b88")))
+	var box := func(p0: Vector3, p1: Vector3, col: Color) -> void:
+		var c := (p0 + p1) / 2
+		var h := (p1 - p0).abs() / 2
+		for fc in [[Vector3.UP, 1.0], [Vector3.BACK, 0.9], [Vector3.LEFT, 0.9], [Vector3.RIGHT, 0.75], [Vector3.FORWARD, 0.75]]:
+			var fn: Vector3 = fc[0]
+			var u := Vector3.UP if absf(fn.y) < 0.5 else Vector3.RIGHT
+			var v := fn.cross(u)
+			var ctr := c + fn * absf(fn.dot(h))
+			var hu := u * absf(u.dot(h))
+			var hv := v * absf(v.dot(h))
+			wall_.set_color(Color(col.r * fc[1], col.g * fc[1], col.b * fc[1]))
+			add_quad(wall_, [ctr - hu - hv, ctr + hu - hv, ctr + hu + hv, ctr - hu + hv], [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	const T := 0.3  # the wall's thickness, inside the made ground's edge
+	const TOP := 0.34
+	for e in edges:
+		var n: Vector2 = e[2]
+		var lo := Vector2(minf(e[0].x, e[1].x), minf(e[0].y, e[1].y))
+		var hi := Vector2(maxf(e[0].x, e[1].x), maxf(e[0].y, e[1].y))
+		rect_quad(shade, Rect2(lo, hi - lo).merge(Rect2(lo + n * 0.55, hi - lo)), -0.137)
+		var r := Rect2(lo, hi - lo).merge(Rect2(lo - n * T, hi - lo))
+		box.call(Vector3(r.position.x, -0.14, r.position.y), Vector3(r.end.x, TOP, r.end.y), Color("c4bfb3"))
+		var st_ := Rect2(lo + n * 0.02, hi - lo).merge(Rect2(lo - n * 0.02, hi - lo))  # a wet tide line along its foot
+		box.call(Vector3(st_.position.x, -0.14, st_.position.y), Vector3(st_.end.x, 0.02, st_.end.y), Color("7d8079"))
+		# a railing along the coping: posts every 2 m, a top rail and a mid rail
+		var mid := lo - n * T / 2
+		var posts := maxi(1, roundi(lo.distance_to(hi) / 2.0))
+		for i in posts + 1:
+			var q := mid + (hi - lo) * i / posts
+			box.call(Vector3(q.x - 0.04, TOP, q.y - 0.04), Vector3(q.x + 0.04, TOP + 0.75, q.y + 0.04), Color("5d6a6c"))
+		for ry in [TOP + 0.7, TOP + 0.35]:
+			var p0 := Vector3(mid.x, ry, mid.y) - Vector3(n.x, 0, n.y) * 0.03
+			var p1 := Vector3(mid.x + (hi - lo).x, ry + 0.06, mid.y + (hi - lo).y) + Vector3(n.x, 0, n.y) * 0.03
+			box.call(Vector3(minf(p0.x, p1.x), p0.y, minf(p0.z, p1.z)), Vector3(maxf(p0.x, p1.x), p1.y, maxf(p0.z, p1.z)), Color("6b7a7c"))
+	commit([shade, wall_], set_node)
 
 
 ## Water in the band z0..z1 between x0 and x1 (street frame), as runs 1 m deep on a 1 m grid.
