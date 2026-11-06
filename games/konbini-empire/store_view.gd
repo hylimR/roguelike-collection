@@ -188,7 +188,50 @@ void fragment() {
 				int k = int(r * 4.0);
 				vec2 g = fract(lpos.xz * (k == 0 ? vec2(0.0, 4.0) : (k == 1 ? vec2(1.1, 0.55) : vec2(1.0))));
 				float seam = min(k == 0 ? 1.0 : min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)) < 0.05 ? 0.86 : 1.0;
-				vec3 fl = FLOOR[k] * seam * mix(0.72, 1.0, smoothstep(0.0, 0.5, wall));
+				vec3 fl = FLOOR[k] * seam;
+				// furnished to suit the floor: a piece against one wall (sofa, futon, steel racking, a kitchen counter)
+				// and one in the room (a rug, a low table, boxes, a dining table), the standing ones shadowed off the sun
+				vec2 o = floor(rc) * bay;
+				vec2 lo = max(o + 0.06, vec2(0.3));
+				vec2 hi = min(o + bay - 0.06, info.xz - 0.3);
+				vec2 mid = (lo + hi) * 0.5;
+				vec2 room = hi - lo;
+				int side = int(fract(r * 7.13) * 4.0);
+				float run = room[side / 2 == 0 ? 1 : 0] * (0.45 + 0.25 * fract(r * 3.71));
+				float deep = k == 1 ? 0.55 : 0.4;
+				vec2 ha = side / 2 == 0 ? vec2(deep, run) * 0.5 : vec2(run, deep) * 0.5;
+				vec2 ca = mid + (side / 2 == 0 ? vec2((room.x * 0.5 - ha.x) * (side == 0 ? -1.0 : 1.0), 0.0) : vec2(0.0, (room.y * 0.5 - ha.y) * (side == 2 ? -1.0 : 1.0)));
+				vec2 hb = min(room * (k == 0 ? vec2(0.24, 0.22) : vec2(0.15, 0.12)) + 0.05, vec2(0.75));
+				vec2 cb = mid + (vec2(fract(r * 5.3), fract(r * 9.7)) - 0.5) * 0.25 * room - (ca - mid) * 0.15;
+				vec3 ACol[4] = vec3[4](mix(ACCENT[(pick + 4) % 8], vec3(0.45), 0.45), vec3(0.93, 0.9, 0.84), vec3(0.6, 0.65, 0.7), vec3(0.9, 0.9, 0.87));
+				vec3 BCol[4] = vec3[4](mix(ACCENT[(pick + int(r * 5.0) + 1) % 8], fl, 0.35), vec3(0.42, 0.27, 0.17), vec3(0.77, 0.6, 0.4), vec3(0.74, 0.56, 0.36));
+				float ta = k == 1 ? 0.12 : 0.35;  // how far each casts its shadow: a futon barely, racking far
+				float tb = k == 0 ? 0.0 : 0.25;  // a rug casts none
+				vec2 da = abs(lpos.xz - ca) - ha;
+				vec2 db = abs(lpos.xz - cb) - hb;
+				vec2 sa = abs(lpos.xz + sunl * ta - ca) - ha;
+				vec2 sb = abs(lpos.xz + sunl * tb - cb) - hb;
+				float ina = max(da.x, da.y);
+				float inb = fract(r * 17.0) < 0.8 ? max(db.x, db.y) : 1.0;
+				if (min(max(sa.x, sa.y), tb > 0.0 ? max(sb.x, sb.y) : 1.0) < 0.0 && min(ina, inb) > 0.0) {
+					fl *= 0.78;
+				}
+				if (inb < 0.0) {
+					fl = BCol[k] * (inb > -0.05 ? 0.82 : (k == 0 && inb > -0.14 ? 1.15 : 1.0));
+					if (k == 2) {  // a strip of tape across each box
+						fl *= abs(lpos.x - cb.x) < 0.04 ? 1.2 : 1.0;
+					}
+				}
+				if (ina < 0.0) {
+					fl = ACol[k] * (ina > -0.05 ? 0.8 : 1.0);
+					if (k == 1) {  // a futon: a blue quilt up to the pillow at its head
+						fl = dot(lpos.xz - ca, side / 2 == 0 ? vec2(0.0, 1.0) : vec2(1.0, 0.0)) < run * 0.28 && ina < -0.04 ? vec3(0.45, 0.58, 0.8) : fl;
+					} else if (k == 3) {  // a steel sink let into the counter
+						vec2 sk = abs(lpos.xz - ca) - min(ha, vec2(0.18));
+						fl = max(sk.x, sk.y) < 0.0 ? vec3(0.66, 0.7, 0.74) : fl;
+					}
+				}
+				fl *= mix(0.72, 1.0, smoothstep(0.0, 0.5, wall));
 				col = wall < 0.0 ? tint.rgb * 1.08 : fl;
 				glow = wall < 0.0 ? vec3(0.0) : fl * vec3(1.0, 0.86, 0.62) * step(0.5, fract(r * 13.0)) * 0.45 * switched(fract(r * 29.0), night);
 			} else {  // a flat roof: coping round a parapet that shades the roof on its sunny sides, membrane in strips, a hatch
