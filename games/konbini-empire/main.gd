@@ -161,6 +161,7 @@ func make_theme() -> Theme:
 	th.set_color("icon_disabled_color", "Button", Color(1, 1, 1, 0.35))
 	th.set_stylebox("panel", "PanelContainer", box(PAPER, 20, 12, 0, 5))
 	th.set_color("font_color", "Label", INK)
+	th.set_constant("line_spacing", "Label", -2)  # Nunito's own line gap is already loose; Godot's +3 made wrapped text read double-spaced
 	var field := box(Color.WHITE, 14, 8)
 	field.set_border_width_all(2)
 	field.border_color = LINE
@@ -1031,7 +1032,6 @@ func intro_tile(pic: Control, what: String, line: String) -> PanelContainer:
 	c.add_child(label(what, INK, 15))
 	var l := para(line, MUTED, 124)
 	l.add_theme_font_size_override("font_size", 11)
-	l.add_theme_constant_override("line_spacing", -2)
 	c.add_child(l)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
@@ -1231,7 +1231,6 @@ func show_staff() -> void:
 		roles.add_child(role_tag(r[0]))
 		var l := para(r[1], MUTED, 196)
 		l.add_theme_font_size_override("font_size", 11)
-		l.add_theme_constant_override("line_spacing", -2)
 		roles.add_child(l)
 	crew.add_child(staff_well(roles))
 	cols.add_child(crew)
