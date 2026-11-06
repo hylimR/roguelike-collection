@@ -208,6 +208,11 @@ void fragment() {
 			glow = m.g * (1.0 - m.b) * step(0.6, r) * lamp * switched(fract(r * 29.0), night) + m.r * ACCENT[pick] * 0.9 * switched(0.1 * fract(r * 17.0), night);
 			inside = m.b * switched(0.3 * fract(r * 29.0), night);
 			lit_in = mix(t.rgb * vec3(1.06, 0.96, 0.8), vec3(1.0, 0.9, 0.68), m.g);  // goods and shelves on a warm glow
+			if (info.y < 1.0) {  // cut down: the wall's solid section on a dark plinth, not a slice of its windows
+				col = tint.rgb * (lpos.y < 0.16 ? 0.62 : (lpos.y > info.y - 0.06 ? 1.08 : 0.96));
+				glow = vec3(0.0);
+				inside = 0.0;
+			}
 		}
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
 	} else if (info.x == 0.0 && tint.a < 0.99) {  // a landmark face packed with alpha under 1 is floodlit after dark
