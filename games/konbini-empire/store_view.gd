@@ -310,6 +310,7 @@ var drag := 0.0
 var bold: Font  # the HUD's heavy weight, for the clock and street tags
 var styles := {}  # rounded boxes for tags and bars, by color and radius
 var roof_texs := {}  # the rival's roof, by the width of its shop
+var skylight_pair: Array = []  # weakrefs to the rival's skylight glass and its night glow, shared by both skylights
 
 var walkers: Array = []
 var cars: Array = []
@@ -3348,7 +3349,9 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	for k in 2:
 		var sx := span.x + 3.2 + k * 2.6
 		block(parent, Vector3(1.9, 0.2, 1.3), Vector3(sx, 4.3, -10.0), Color("d6d3ca"))
-		block(parent, Vector3(1.6, 0.04, 1.0), Vector3(sx, 4.41, -10.0), Color("dceaf0"), not rv.defeated)
+		plane(parent, Vector2(1.6, 1.0), Vector3(sx, 4.405, -10.0), skylight_mats()[0])
+		if not rv.defeated:
+			plane(parent, Vector2(2.4, 1.6), Vector3(sx, 4.45, -10.0), skylight_mats()[1])
 	for k in 3:
 		var ac := Vector3(span.x + 4.2 + k * 1.6, 4.25, -14.4)
 		block(parent, Vector3(1.25, 0.1, 1.05), ac + Vector3(0, 0.05, 0), Color("8e8d88"))
@@ -3393,6 +3396,44 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	if not rv.defeated:
 		light_up(awning, 0.5)
 		spill(parent, cx, w + 1.6, -7.05)
+
+
+## The rival's skylights, 20 px a metre (the glow 10): [four panes in a pale frame, darker sky reflected toward the far edge with a
+## sheen across them, dimming with the day; the shop's cool light through the panes after dark, softly past the frame].
+func skylight_mats() -> Array:
+	if skylight_pair.size() == 2 and skylight_pair[0].get_ref() and skylight_pair[1].get_ref():
+		return [skylight_pair[0].get_ref(), skylight_pair[1].get_ref()]
+	var glass := Image.create(32, 20, false, Image.FORMAT_RGB8)
+	for y in 20:
+		for x in 32:
+			var bar := x == 0 or x == 31 or y == 0 or y == 19 or x == 16 or y == 10
+			var c := Color("5d86a0").lerp(Color("93b6c9"), y / 19.0)
+			if posmod(x + y, 16) < 3:
+				c = c.lerp(Color("d8eaf2"), 0.4)
+			glass.set_pixel(x, y, Color("8f989d") if bar else c)
+	glass.generate_mipmaps()
+	var gm := mat(Color.WHITE, ImageTexture.create_from_image(glass))
+	gm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	gm.texture_repeat = false
+	var mask := Image.create(24, 16, false, Image.FORMAT_RGBA8)
+	for y in 16:
+		for x in 24:
+			var px := x - 4
+			var py := y - 3
+			var a := 0.0
+			if px >= 0 and px < 16 and py >= 0 and py < 10:
+				a = 0.3 if px == 0 or px == 15 or py == 0 or py == 9 or px == 8 or py == 5 else 1.0
+			else:
+				var d := Vector2(maxf(maxf(-px, px - 15), 0), maxf(maxf(-py, py - 9), 0)).length()
+				a = 0.3 * pow(clampf(1.0 - d / 4.0, 0.0, 1.0), 2.0)
+			mask.set_pixel(x, y, Color(1, 1, 1, a))
+	var lm: StandardMaterial3D = sign_glow_mat.duplicate()
+	lm.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
+	lm.albedo_texture = ImageTexture.create_from_image(mask)
+	lm.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night)
+	fascia_glows.append([weakref(lm), SHOP_LIGHT])
+	skylight_pair = [weakref(gm), weakref(lm)]
+	return [gm, lm]
 
 
 ## The rival's roof as the city's flat roofs are drawn: membrane in strips across its depth, each a shade off, the
