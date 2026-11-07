@@ -1159,6 +1159,7 @@ func listing_card(v: VBoxContainer, L: Dictionary) -> void:
 	var d: Dictionary = Sim.DISTRICTS[L.district]
 	var q: Dictionary = Sim.QUIRKS[L.quirk]
 	var rv: Dictionary = Sim.RIVALS[L.rival]
+	v.add_child(lot_picture(L))
 	v.add_child(label(tokyo, INK, 16))
 	var kinds := HBoxContainer.new()
 	kinds.add_theme_constant_override("separation", 6)
@@ -1182,8 +1183,36 @@ func listing_card(v: VBoxContainer, L: Dictionary) -> void:
 		v.add_child(buys)
 	var rival := chip([label(rv.name, Color.WHITE, 12), label("Tier %d" % L.tier, Color(1, 1, 1, 0.8), 11)], Color(rv.color).darkened(0.1))
 	rival.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	v.add_child(label("Rival next door", MUTED))
-	v.add_child(rival)
+	var next := HBoxContainer.new()
+	next.add_theme_constant_override("separation", 8)
+	next.add_child(label("Next door", MUTED))
+	next.add_child(rival)
+	v.add_child(next)
+
+
+## The lot's picture on a plate in its district's colour: your konbini beside the rival chain's shopfront.
+func lot_picture(L: Dictionary) -> PanelContainer:
+	var tint: Color = DISTRICT_COLOR[L.district]
+	var front: int = Sim.RIVALS[L.rival].front
+	var theirs := picture("storefronts", front, 256, Vector2(96, 56))
+	theirs.texture.region = Rect2(front * 256 + 16, 42, 226, 144) if front % 2 == 1 else Rect2(front * 256 + 58, 66, 132, 124)  # odd frames are the big shops
+	var ours := intro_shop()
+	ours.custom_minimum_size = Vector2(60, 56)
+	var h := HBoxContainer.new()
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.add_theme_constant_override("separation", 14)
+	h.add_child(ours)
+	var vs := label("vs", tint.darkened(0.25), 13)
+	vs.add_theme_font_override("font", bold)
+	h.add_child(vs)
+	h.add_child(theirs)
+	var plate := PanelContainer.new()
+	var s := box(tint.lerp(PAPER, 0.8), 14, 8)
+	s.border_width_bottom = 2
+	s.border_color = tint.lerp(PAPER, 0.55)
+	plate.add_theme_stylebox_override("panel", s)
+	plate.add_child(h)
+	return plate
 
 
 ## The card's picture on a plate tinted by its rarity.
