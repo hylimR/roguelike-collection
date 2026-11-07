@@ -159,6 +159,57 @@ void fragment() {
 	ALBEDO = crop * texture(furrows, UV).rgb * light;
 }
 """
+# Open water on the map: the sea's blue, mottled in broad patches, with short wave crests over a darker trough
+# scattered across it at a steady size on screen at any zoom (two sizes crossfaded), slowly glinting in and out.
+const SWELL_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+uniform vec3 sea : source_color = vec3(0.23, 0.55, 0.78);
+uniform vec3 light = vec3(1.0);
+varying vec2 wp;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+float noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0)), f.x), f.y);
+}
+
+// x: crest, y: trough, for cells s metres across
+vec2 crests(vec2 p, float s, float aa) {
+	vec2 q = p / s;
+	vec2 c = floor(q);
+	float r = hash(c);
+	vec2 d = fract(q) - (vec2(hash(c + 3.1), hash(c + 7.7)) * 0.5 + 0.25);
+	float len = 0.16 + 0.14 * hash(c + 1.3);
+	float bow = d.y + 1.6 * d.x * d.x;
+	float along = 1.0 - smoothstep(len, len + aa, abs(d.x));
+	float on = step(0.42, r) * (0.55 + 0.45 * sin(TIME * 0.7 + r * 40.0));
+	float crest = along * (1.0 - smoothstep(0.045, 0.045 + aa, abs(bow))) * on;
+	float trough = along * (1.0 - smoothstep(0.035, 0.035 + aa, abs(bow - 0.08))) * on;
+	return vec2(crest, trough);
+}
+
+void vertex() {
+	vec2 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	wp = vec2(w.x - w.y, w.x + w.y) * 0.7071;  // crests lie across the view at the map's usual heading
+}
+
+void fragment() {
+	float px = max(length(fwidth(wp)), 1e-4);
+	float lv = log2(px * 16.0);
+	float s = exp2(floor(lv));
+	float aa = 0.5 / 16.0;
+	vec2 w = mix(crests(wp, s, aa), crests(wp, s * 2.0, aa * 0.5), fract(lv));
+	float m = noise(wp / 260.0) * 0.6 + noise(wp / 70.0) * 0.4;
+	vec3 col = sea * (0.92 + 0.14 * m);
+	col = mix(col, sea * 0.82, w.y * 0.6);
+	col = mix(col, mix(sea, vec3(1.0), 0.55), w.x * 0.85);
+	ALBEDO = col * light;
+}
+"""
 # Buildings: boxes in a MultiMesh. Custom data = size and facade style (-1: plain shaded colour, for roofs); colour =
 # wall tint, alpha = accent index / 8. A landmark's curved faces (no size) use alpha below 1 for floodlighting. Walls pick a 3-unit bay and floor tile from the facade atlas.
 const BUILDING_SHADER := """
@@ -428,6 +479,7 @@ var foot_mat: ShaderMaterial  # people's shadows
 var foot_mesh: PlaneMesh
 var sea_mat: StandardMaterial3D
 var field_mat: ShaderMaterial
+var swell_mat: ShaderMaterial  # the map's open sea and rivers
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
 var cam_base := 12.0
@@ -733,6 +785,7 @@ func update_light() -> void:
 	env.background_color = SEA * dusk_sea
 	if sea_mat:
 		sea_mat.albedo_color = dusk_sea
+		swell_mat.set_shader_parameter("light", Vector3(dusk_sea.r, dusk_sea.g, dusk_sea.b))
 	if field_mat:
 		field_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
 		field_mat.set_shader_parameter("night", night)
@@ -1193,7 +1246,12 @@ func build_static() -> void:
 	sea.texture_repeat = true
 	sea.albedo_color = light * Color.WHITE.lerp(SEA_NIGHT, night)
 	sea_mat = sea
-	var ws := surface(sea)
+	swell_mat = ShaderMaterial.new()
+	swell_mat.shader = Shader.new()
+	swell_mat.shader.code = SWELL_SHADER
+	swell_mat.set_shader_parameter("sea", Vector3(SEA.r, SEA.g, SEA.b))
+	swell_mat.set_shader_parameter("light", Vector3(sea.albedo_color.r, sea.albedo_color.g, sea.albedo_color.b))
+	var ws := surface(swell_mat)
 	poly_fill(ws, C.bay, -0.14)
 	poly_fill(ws, bay_mouth, -0.14)
 	for poly in C.river:
