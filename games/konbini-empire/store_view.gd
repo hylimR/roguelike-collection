@@ -783,6 +783,24 @@ func pavers() -> StandardMaterial3D:
 	return m
 
 
+## Poured concrete for a 1.8 m repeat: one slab a pixel short of the repeat each way, flecked, its score lines darker.
+func slabs() -> StandardMaterial3D:
+	var r := RandomNumberGenerator.new()
+	r.seed = 31
+	var base := Color("cbc6bb")
+	var img := Image.create(18, 18, false, Image.FORMAT_RGB8)
+	for y in 18:
+		for x in 18:
+			var v := r.randf_range(0.97, 1.01) if r.randf() < 0.86 else r.randf_range(0.92, 0.95)
+			if x == 17 or y == 17:
+				v = 0.84
+			img.set_pixel(x, y, Color(base.r * v, base.g * v, base.b * v))
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	return m
+
+
 func tiles(a: Color, b: Color) -> ImageTexture:
 	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
 	img.fill(a)
@@ -2459,6 +2477,9 @@ func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 		for o in open_spans(sd[0]):
 			rect_quad(deep, Rect2(o.x, sd[1], o.y - o.x, 3.5), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(-3.4, -16.0, 7.1, 8.8), -0.034, 0.0, false, 0.125)
+	var span := rival_span(branch.rival)
+	rect_quad(deep, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.034, 0.0, false, 0.125)
+	rect_quad(deep, Rect2(-16.5, -20.2, 20.2, 3.95), -0.034, 0.0, false, 0.125)
 	for band in [Vector2(-3.7, -3.05), Vector2(-2.25, -1.55), Vector2(-0.45, 0.45), Vector2(1.55, 2.25), Vector2(3.05, 3.7)]:
 		rect_quad(thin, Rect2(street_x.x, band.x, street_x.y - street_x.x, band.y - band.x), -0.034, 0.0, false, 0.125)
 	var mi := commit([deep, thin], set_node)
@@ -2799,7 +2820,14 @@ func build_set() -> void:
 	# a painted arrow in the aisle leads drivers in off the street
 	rect_quad(paint, Rect2(0.95, -9.6, 0.24, 1.5), -0.038)
 	poly_fill(paint, PackedVector2Array([Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55)]), -0.038)
-	commit([made, walk, tar, kerb, bay, paint, hatch, tactile, kerbs], set_node)
+	# the yard round the back of the car park and on to the rival, where the set's lots meet: poured concrete scored
+	# into slabs, with a drain grating along the sidewalk, rather than the bare district ground the set cleared
+	var yard := surface(slabs())
+	rect_quad(yard, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.043, 0.0, false, 1.0 / 1.8)
+	rect_quad(yard, Rect2(-16.5, -20.2, 20.2, 3.95), -0.043, 0.0, false, 1.0 / 1.8)
+	var grate := surface(mat(Color("6c6a66")))
+	rect_quad(grate, Rect2(3.75, -7.75, span.x - 3.8, 0.28), -0.04)
+	commit([made, walk, tar, kerb, bay, paint, hatch, tactile, kerbs, yard, grate], set_node)
 	quay(made_runs, side_roads)
 	snow_cover = settled_snow(far_gaps, near_gaps)
 	matsuri = matsuri_lanterns(far_gaps + under[0], near_gaps + under[1])
@@ -2826,6 +2854,30 @@ func build_set() -> void:
 	blob(set_node, foot, 1.3)
 	lit_sprites.append(car)
 	pole_sign(set_node)
+	# where a city street runs in under the yard and leaves it unbuilt: the block's garbage station at the sidewalk, a
+	# couple of bicycles along the car park's kerb and a tree at the back, all on the side the rival doesn't hide
+	if span.x > 8.0 and free_runs(5.35, span.x, -16.2, -7.2, roads + overhead).is_empty() and free_runs(3.7, span.x, -20.2, -7.2, overhead) == [Vector2(3.7, span.x)]:
+		var gs := Vector3(4.55, 0, -9.5)
+		block(set_node, Vector3(0.75, 0.9, 1.6), gs + Vector3(0, 0.45, 0), Color("4f8a5c"))
+		block(set_node, Vector3(0.81, 0.06, 1.66), gs + Vector3(0, 0.93, 0), Color("3c6e48"))
+		for k in 3:  # its net's frame
+			block(set_node, Vector3(0.79, 0.86, 0.05), gs + Vector3(0, 0.45, -0.8 + k * 0.8), Color("2f5a3a"))
+		block(set_node, Vector3(0.5, 0.32, 0.4), gs + Vector3(0.05, 0.16, -1.3), Color("3f7fc4"))  # a crate of bottles
+		block(set_node, Vector3(0.44, 0.04, 0.34), gs + Vector3(0.05, 0.33, -1.3), Color("cfe3ea"))
+		cast(set_node, Vector2(gs.x, gs.z), 0.0, 0.96, 0.75)
+		blob(set_node, Vector2(gs.x, gs.z - 0.3), 0.9)
+		for bz in [-12.4, -13.5]:
+			var bike := sprite("outdoor", Rect2(8 * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[8] * 0.55)
+			bike.position = Vector3(4.35, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[8] * 0.55 - 0.05, bz)
+			set_node.add_child(bike)
+			lit_sprites.append(bike)
+			blob(set_node, Vector2(4.35, bz), PROP_BLOB[8])
+		var tx := minf(6.6, span.x - 1.5)
+		var tree := sprite("outdoor", Rect2(OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * 0.8)
+		tree.position = Vector3(tx, OUTDOOR / 2.0 * OUTDOOR_PX * 0.8 - 0.05, -19.3)
+		set_node.add_child(tree)
+		lit_sprites.append(tree)
+		blob(set_node, Vector2(tx, -19.3), 1.3)
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
 		if mh.x < street_x.x + 0.6 or mh.x > street_x.y - 0.6:
 			continue
