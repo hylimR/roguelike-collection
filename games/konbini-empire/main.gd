@@ -1404,14 +1404,15 @@ func show_report(r: Dictionary) -> void:
 	till.custom_minimum_size.x = 340
 	foot.add_child(till)
 	var side := VBoxContainer.new()
+	side.add_theme_constant_override("separation", 8)
 	side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side.alignment = BoxContainer.ALIGNMENT_CENTER
 	if r.foreclosed != null:
 		side.add_child(para("You ran short: the bank took %s." % r.foreclosed.name, RED, 200))
-	side.add_child(label("Tomorrow's bills", MUTED, 11))
 	var due := sim.bills_due()
-	side.add_child(label("about %s" % yen(due), RED if due > sim.player.cash else INK, 16))
-	side.add_child(label("You can pay them." if due <= sim.player.cash else "Earn %s more by midnight." % yen(due - sim.player.cash), GREEN if due <= sim.player.cash else RED, 11))
+	var ok: bool = due <= sim.player.cash
+	var bt := stat_tile(picture("perks", 11, 80, Vector2(40, 40)), "Tomorrow's bills", "about %s" % yen(due), "You can pay them." if ok else "Earn %s more by midnight." % yen(due - sim.player.cash), GREEN if ok else RED, GREEN if ok else RED)
+	bt.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side.add_child(bt)
 	foot.add_child(side)
 	v.add_child(foot)
 	var go := func():
@@ -1525,12 +1526,12 @@ func rival_shop() -> TextureRect:
 	return r
 
 
-## One number of the run summary on its own sunken tile: its picture on a plate, its caption above it.
-func stat_tile(pic: Control, what: String, value: String, note: String) -> PanelContainer:
+## One number on its own sunken tile: its picture on a plate tinted like the card, its caption above it.
+func stat_tile(pic: Control, what: String, value: String, note: String, tint := RED, note_color := MUTED) -> PanelContainer:
 	var plate := PanelContainer.new()
-	var ps := box(RED.lerp(PAPER, 0.86), 12, 4)
+	var ps := box(tint.lerp(PAPER, 0.86), 12, 4)
 	ps.border_width_bottom = 2
-	ps.border_color = RED.lerp(PAPER, 0.7)
+	ps.border_color = tint.lerp(PAPER, 0.7)
 	plate.add_theme_stylebox_override("panel", ps)
 	plate.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	plate.add_child(pic)
@@ -1542,7 +1543,7 @@ func stat_tile(pic: Control, what: String, value: String, note: String) -> Panel
 	c.add_child(w)
 	c.add_child(label(value, INK, 22))
 	if note != "":
-		c.add_child(label(note, MUTED, 11))
+		c.add_child(label(note, note_color, 11))
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	h.custom_minimum_size.x = 176
