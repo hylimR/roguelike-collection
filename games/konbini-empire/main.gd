@@ -1491,14 +1491,14 @@ func show_over() -> void:
 	g.add_theme_constant_override("h_separation", 8)
 	g.add_theme_constant_override("v_separation", 8)
 	for t in [
-		["Days survived", str(rs.days), ""],
-		["Revenue", yen(rs.revenue), ""],
-		["Customers", Sim.money(rs.customers), ""],
-		["Rivals closed", str(rs.rivals_defeated), ""],
-		["Threats repelled", str(rs.threats_repelled), ""],
-		["Stores opened", str(rs.stores_opened), "peak %d at once%s" % [rs.peak_stores, "" if rs.foreclosed == 0 else ", %d foreclosed" % rs.foreclosed]],
+		[picture("decor", 9, 96, Vector2(40, 40)), "Days survived", str(rs.days), ""],
+		[picture("perks", 11, 80, Vector2(40, 40)), "Revenue", yen(rs.revenue), ""],
+		[picture("perks", 10, 80, Vector2(40, 40)), "Customers", Sim.money(rs.customers), ""],
+		[rival_shop(), "Rivals closed", str(rs.rivals_defeated), ""],
+		[picture("perks", 1, 80, Vector2(40, 40)), "Threats repelled", str(rs.threats_repelled), ""],
+		[intro_shop(), "Stores opened", str(rs.stores_opened), "peak %d at once%s" % [rs.peak_stores, "" if rs.foreclosed == 0 else ", %d foreclosed" % rs.foreclosed]],
 	]:
-		g.add_child(stat_tile(t[0], t[1], t[2]))
+		g.add_child(stat_tile(t[0], t[1], t[2], t[3]))
 	v.add_child(g)
 	var total := roll_line("Score", Sim.money(score), INK, 22)
 	var bl := label("New best!" if score > prev else "best %s" % Sim.money(prev), Color.WHITE if score > prev else MUTED, 12)
@@ -1519,19 +1519,38 @@ func show_over() -> void:
 	open_modal("Bankrupt", v, {KEY_SPACE: fresh, KEY_ENTER: fresh}, "over", RED)
 
 
-## One number of the run summary on its own sunken tile, its caption above it.
-func stat_tile(what: String, value: String, note: String) -> PanelContainer:
+func rival_shop() -> TextureRect:
+	var r := picture("storefronts", 4, 256, Vector2(40, 40))
+	r.texture.region = Rect2(4 * 256 + 58, 66, 132, 124)  # a rival chain's konbini in the fifth storefront frame
+	return r
+
+
+## One number of the run summary on its own sunken tile: its picture on a plate, its caption above it.
+func stat_tile(pic: Control, what: String, value: String, note: String) -> PanelContainer:
+	var plate := PanelContainer.new()
+	var ps := box(RED.lerp(PAPER, 0.86), 12, 4)
+	ps.border_width_bottom = 2
+	ps.border_color = RED.lerp(PAPER, 0.7)
+	plate.add_theme_stylebox_override("panel", ps)
+	plate.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	plate.add_child(pic)
 	var c := VBoxContainer.new()
 	c.add_theme_constant_override("separation", 0)
-	c.custom_minimum_size.x = 136
+	c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var w := label(what.to_upper(), MUTED, 10)
 	w.add_theme_font_override("font", bold)
 	c.add_child(w)
 	c.add_child(label(value, INK, 22))
 	if note != "":
 		c.add_child(label(note, MUTED, 11))
-	var p := sunken(c)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	h.custom_minimum_size.x = 176
+	h.add_child(plate)
+	h.add_child(c)
+	var p := sunken(h)
 	var st: StyleBoxFlat = p.get_theme_stylebox("panel")
+	st.content_margin_left = 8
 	st.content_margin_top = 8
 	st.content_margin_bottom = 8
 	return p
