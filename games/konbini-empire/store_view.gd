@@ -385,6 +385,7 @@ var tex := {}
 var sheet_imgs := {}  # sheet images read back for their cells' used rects
 var sim
 var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
+var floor_tex := {}  # shop floor texture by left wall
 var set_sig := ""
 var tarmac_m: StandardMaterial3D
 var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
@@ -961,6 +962,50 @@ func tarmac() -> StandardMaterial3D:
 	m.uv1_scale = Vector3(0.25, 1, 1)
 	tarmac_m = m
 	return m
+
+
+## The shop floor, 0.5 m vinyl tiles each a shade off the next under bevelled grout, polished to a sheen under the
+## ceiling lights over each aisle, scuffed grey where the traffic runs (in at the door, along the queue and the cross
+## aisle) and shaded where it meets the walls and the counter.
+func shop_floor(zl: float, a: Color, b: Color) -> ImageTexture:
+	const PX := 24
+	var wpx := roundi((6.5 - zl) * PX)
+	var img := Image.create(wpx, 9 * PX, false, Image.FORMAT_RGB8)
+	var r := RandomNumberGenerator.new()
+	r.seed = 7
+	var shade := {}
+	var mid := (zl + 6.5) / 2.0
+	var lanes: Array = [Rect2(4.6, 3.6, 0.0, 0.9), Rect2(3.5, -2.5, 0.0, 6.1), Rect2(Sim.AISLE_COLUMN, -2.3, 0.0, 5.9), Rect2(zl + 0.6, 3.3, 4.0 - zl, 0.0)]
+	var counter := Rect2(4.075, -3.4, 0.85, 5.3)
+	for py in img.get_height():
+		var z := (py + 0.5) / PX - 4.5
+		for px in wpx:
+			var x := zl + (px + 0.5) / PX
+			var t := Vector2i(floori(x * 2.0 + 20.0), floori(z * 2.0 + 20.0))
+			if not shade.has(t):
+				shade[t] = r.randf_range(-0.03, 0.03)
+			var sh: float = shade[t]
+			var c := a.lightened(sh) if sh > 0.0 else a.darkened(-sh)
+			var gx := posmod(px, PX / 2)
+			var gy := posmod(py, PX / 2)
+			if gx == PX / 2 - 1 or gy == PX / 2 - 1:
+				c = c.lerp(b, 0.75)
+			elif gx == 0 or gy == 0:
+				c = c.lightened(0.12)
+			elif r.randf() < 0.02:
+				c = c.darkened(0.08)
+			for row in Sim.ROWS:
+				var d := Vector2((x - mid) / ((6.5 - zl) * 0.45), (z - row) / 0.38)
+				c = c.lerp(Color("fffdf6"), 0.7 * clampf(1.0 - d.length_squared(), 0.0, 1.0))
+			for ln in lanes:
+				var dd := Vector2(x - clampf(x, ln.position.x, ln.end.x), z - clampf(z, ln.position.y, ln.end.y)).length()
+				if dd < 0.5:
+					c = c.lerp(Color("aa9f8c"), 0.3 * (1.0 - dd / 0.5) * (0.7 + 0.3 * r.randf()))
+			var near := minf(minf(x - zl, z + 4.5), Vector2(x - clampf(x, counter.position.x, counter.end.x), z - clampf(z, counter.position.y, counter.end.y)).length())
+			if near < 0.4:
+				c = c.darkened(0.2 * pow(1.0 - near / 0.4, 2.0))
+			img.set_pixel(px, py, c)
+	return ImageTexture.create_from_image(img)
 
 
 func tiles(a: Color, b: Color) -> ImageTexture:
@@ -4352,10 +4397,9 @@ func build_room() -> void:
 	var cx := (zl + 6.5) / 2
 	var L: Dictionary = LAYOUT
 	block(room, Vector3(w + 0.3, 0.2, 9.3), Vector3(cx, -0.1, 0.0), Color("8a6e4b"))
-	var fm := mat(Color.WHITE, tiles(L.floor[0], L.floor[1]), true)
-	fm.uv1_scale = Vector3(w, 9.0, 1)
-	fm.texture_repeat = true
-	plane(room, Vector2(w, 9.0), Vector3(cx, 0.002, 0.0), fm)
+	if not floor_tex.has(zl):
+		floor_tex[zl] = shop_floor(zl, L.floor[0], L.floor[1])
+	plane(room, Vector2(w, 9.0), Vector3(cx, 0.002, 0.0), mat(Color.WHITE, floor_tex[zl], true))
 	# back wall with the shop art, tiled to the width; the left wall plain with the stripes
 	var crop: Image = tex[L.bg].get_image().get_region(L.wall)
 	var wall_h := 3.0
