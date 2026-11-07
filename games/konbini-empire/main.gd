@@ -67,6 +67,7 @@ var seed_btn: Button
 var tabs: HBoxContainer
 var ability_row: HBoxContainer
 var pick_btn: Button
+var pick_badge: Label
 var info: Label
 var info_lines: Array = []
 var head: Label
@@ -252,6 +253,30 @@ func frame(sheet: String, i: int, cell: int) -> AtlasTexture:
 	return t
 
 
+## The pending-card key's picture: three cards fanned out from their foot, cream with an amber band, the front one starred.
+func card_fan() -> ImageTexture:
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var bands := [MINT, ORANGE, Color("e57fa4")]
+	for y in n:
+		for x in n:
+			var c := Color(0, 0, 0, 0)
+			for i in [0, 2, 1]:  # the middle card last, in front
+				var a := deg_to_rad((i - 1) * 20.0)
+				var q := Vector2(x + 0.5 - 32, y + 0.5 - 58).rotated(-a) + Vector2(0, 26)  # the card's own frame, its centre at 0
+				var d := Vector2(absf(q.x) - 11, absf(q.y) - 17)
+				var sd := Vector2(maxf(d.x, 0), maxf(d.y, 0)).length() + minf(maxf(d.x, d.y), 0.0) - 3.0  # rounded box, r 3
+				var cov := clampf(0.5 - sd, 0.0, 1.0)
+				if cov <= 0.0:
+					continue
+				var f: Color = INK if sd > -2.0 else (bands[i] if q.y < -8 else PAPER)
+				if i == 1 and q.y >= -8 and sd <= -2.0 and absf(q.x) + absf(q.y - 6) * 0.9 < 6:
+					f = ORANGE
+				c = c.blend(Color(f, cov))
+			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
+
+
 ## A key with its icon over a short caption: cream for abilities and shelves, colored (white caption) for the app dock.
 func key_button(cb: Callable, tip: String, ic: Texture2D, w: int, h: int, radius: int, c := PAPER) -> Button:
 	var b := button("", cb, tip)
@@ -431,11 +456,25 @@ func build() -> void:
 		wipe.set_anchors_preset(Control.PRESET_FULL_RECT)
 		k.add_child(wipe)
 		ability_row.add_child(k)
-	pick_btn = button("", open_pick, "Choose your level-up skill or reward  [P]")
-	pick_btn.custom_minimum_size = Vector2(92, 54)
-	pick_btn.size_flags_vertical = Control.SIZE_SHRINK_END
-	pick_btn.add_theme_stylebox_override("normal", box(YELLOW, 18, 6, 3, 3))
-	pick_btn.add_theme_stylebox_override("hover", box(YELLOW.lightened(0.3), 18, 6, 3, 3))
+	pick_btn = key_button(open_pick, "Choose your level-up skill or reward  [P]", card_fan(), 70, 54, 18, Color("ffc94a"))
+	pick_btn.add_theme_constant_override("icon_max_width", 32)
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+		pick_btn.add_theme_color_override(k, Color("6b4512"))
+	pick_btn.text = "New card"
+	pick_badge = label("", Color.WHITE, 11)
+	pick_badge.add_theme_font_override("font", bold)
+	pick_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var bs := box(RED, 10, 0, 0, 2)
+	bs.set_border_width_all(2)
+	bs.border_color = PAPER
+	pick_badge.add_theme_stylebox_override("normal", bs)
+	pick_badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	pick_badge.set_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_KEEP_SIZE)
+	pick_badge.offset_left = -14
+	pick_badge.offset_right = 7
+	pick_badge.offset_top = -7
+	pick_badge.offset_bottom = 14
+	pick_btn.add_child(pick_badge)
 	row.add_child(pick_btn)
 	var bubble := PanelContainer.new()
 	bubble.add_theme_stylebox_override("panel", box(PAPER, 20, 8, 0, 4))
@@ -829,7 +868,7 @@ func refresh_ui() -> void:
 			wipe.value = ab.cd
 		ability_look(a, "locked" if ab == null else ("cooling" if ab.cd > 0.0 else "ready"))
 	pick_btn.visible = not sim.pending.is_empty()
-	pick_btn.text = "New card!\n%d  [P]" % sim.pending.size()
+	pick_badge.text = str(sim.pending.size())
 	var lines := toasts.map(func(t): return t[0])
 	if lines.is_empty():
 		lines = [hint(b)]
