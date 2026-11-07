@@ -335,6 +335,7 @@ var sheet_imgs := {}  # sheet images read back for their cells' used rects
 var sim
 var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
 var set_sig := ""
+var tarmac_m: StandardMaterial3D
 var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
 var entries := []  # x of the side roads that meet the set's street, where cars come in when both its ends are quays
 var slot_icons := {}  # product -> [Sprite3D]: its stock on the shelf
@@ -859,6 +860,53 @@ func slabs() -> StandardMaterial3D:
 	img.generate_mipmaps()
 	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	return m
+
+
+## The set's street for a 32 m repeat across its whole 8 m width (uv x/8, z/8, scaled to a quarter along x): coarse
+## grain, both lanes' wheel paths worn darker and smoother with a drip line between them, dust along each kerb, two
+## utility cuts patched in fresher tarmac behind a sealed seam, and a few cracks.
+func tarmac() -> StandardMaterial3D:
+	if tarmac_m:
+		return tarmac_m
+	var r := RandomNumberGenerator.new()
+	r.seed = 41
+	var img := Image.create(256, 64, false, Image.FORMAT_RGB8)
+	var patches := [Rect2(40, 50, 56, 7), Rect2(150, 10, 12, 13)]  # pixels; rows 32-63 are the far lane (z < 0)
+	for py in 64:
+		var z := (py + 0.5) / 8.0
+		if z >= 4.0:
+			z -= 8.0
+		var lane_z := absf(absf(z) - 1.7)
+		for px in 256:
+			var grain := r.randf()
+			var v := r.randf_range(0.95, 1.03) if grain < 0.8 else (r.randf_range(1.07, 1.12) if grain < 0.9 else r.randf_range(0.86, 0.9))
+			var c := ASPHALT
+			if absf(lane_z - 0.62) < 0.24:
+				v = lerpf(v, 0.87, 0.75)
+			elif lane_z < 0.2 and r.randf() < 0.35:
+				v *= 0.88
+			if absf(z) > 3.3:
+				c = c.lerp(Color("8d8577"), (absf(z) - 3.3) * 0.5)
+			for p: Rect2 in patches:
+				if p.grow(1).has_point(Vector2(px, py)):
+					c = ASPHALT.darkened(0.16)
+					v = r.randf_range(0.97, 1.02)
+					if not p.has_point(Vector2(px, py)):
+						c = ASPHALT.darkened(0.3)
+			img.set_pixel(px, py, Color(c.r * v, c.g * v, c.b * v))
+	for k in 5:  # hairline cracks, wandering across a lane
+		var at := Vector2i(r.randi_range(0, 255), r.randi_range(0, 63))
+		for s in r.randi_range(6, 14):
+			var cc := img.get_pixelv(at)
+			img.set_pixelv(at, cc.darkened(0.3))
+			at = Vector2i(posmod(at.x + r.randi_range(0, 2) - (1 if k % 2 else 0), 256), posmod(at.y + r.randi_range(-1, 1), 64))
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	m.texture_repeat = true
+	m.uv1_scale = Vector3(0.25, 1, 1)
+	tarmac_m = m
 	return m
 
 
@@ -3308,7 +3356,8 @@ func build_set() -> void:
 	var under := [mouths(-8.2, -3.6, overhead), mouths(3.6, 8.2, overhead)]  # where a deck crosses each sidewalk
 	var walk := surface(pavers())
 	var tar := surface(tiled(speckle([ASPHALT, ASPHALT.darkened(0.05), ASPHALT.lightened(0.06), ASPHALT.darkened(0.08)]), Vector2.ONE))
-	rect_quad(tar, Rect2(street_x.x, -3.7, street_x.y - street_x.x, 7.4), -0.045, 0.0, false, 0.5)
+	var road := surface(tarmac())
+	rect_quad(road, Rect2(street_x.x, -3.7, street_x.y - street_x.x, 7.4), -0.045, 0.0, false, 0.125)
 	var kerb := surface(mat(Color("8f8b84")))
 	var kerb_m := mat(Color.WHITE)
 	kerb_m.vertex_color_use_as_albedo = true
@@ -3376,7 +3425,7 @@ func build_set() -> void:
 	rect_quad(yard, Rect2(-16.5, -20.2, 20.2, 3.95), -0.043, 0.0, false, 1.0 / 1.8)
 	var grate := surface(mat(Color("6c6a66")))
 	rect_quad(grate, Rect2(3.75, -7.75, span.x - 3.8, 0.28), -0.04)
-	commit([made, walk, tar, kerb, bay, paint, hatch, tactile, kerbs, yard, grate], set_node)
+	commit([made, walk, road, tar, kerb, bay, paint, hatch, tactile, kerbs, yard, grate], set_node)
 	quay(made_runs, side_roads)
 	snow_cover = settled_snow(far_gaps, near_gaps)
 	matsuri = matsuri_lanterns(far_gaps + under[0], near_gaps + under[1])
