@@ -71,7 +71,10 @@ var pick_badge: Label
 var info: Label
 var info_lines: Array = []
 var head: Label
-var sub: Label
+var kind_chip: PanelContainer
+var kind_lbl: Label
+var quirk_lbl: Label
+var card_stats := {}  # stat name -> its row on the store card's well
 var event_tag: PanelContainer
 var event_lbl: Label
 var rival_chip: PanelContainer
@@ -532,9 +535,37 @@ func build() -> void:
 	event_tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	heads.add_child(event_tag)
 	sv.add_child(heads)
-	sub = para("", MUTED, CARD_W - 20)
-	sub.add_theme_font_size_override("font_size", 11)
-	sv.add_child(sub)
+	# the lot's neighbourhood and quirk as tags, like its card in the listings, over a well of the day's numbers
+	var kinds := HFlowContainer.new()
+	kinds.add_theme_constant_override("h_separation", 6)
+	kinds.add_theme_constant_override("v_separation", 4)
+	kind_lbl = label("", Color.WHITE, 11)
+	kind_chip = chip([kind_lbl])
+	kinds.add_child(kind_chip)
+	quirk_lbl = label("", INK, 11)
+	kinds.add_child(chip([quirk_lbl], GROUND))
+	for c in kinds.get_children():
+		var cs: StyleBoxFlat = c.get_theme_stylebox("panel")
+		cs.content_margin_left = 8
+		cs.content_margin_right = 8
+	sv.add_child(kinds)
+	var stats := GridContainer.new()
+	stats.columns = 2
+	stats.add_theme_constant_override("h_separation", 14)
+	stats.add_theme_constant_override("v_separation", -2)
+	for k in ["Rent", "Served", "Wages", "Lost", "Regulars"]:
+		var r := roll_line(k, "", INK, 11)
+		r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card_stats[k] = r
+		stats.add_child(r)
+	var well := sunken(stats)
+	var ws: StyleBoxFlat = well.get_theme_stylebox("panel")
+	ws.set_corner_radius_all(12)
+	ws.content_margin_left = 10
+	ws.content_margin_right = 10
+	ws.content_margin_top = 4
+	ws.content_margin_bottom = 4
+	sv.add_child(well)
 	rival_name = label("", Color.WHITE, 12)
 	rival_tier = label("", Color(1, 1, 1, 0.8), 11)
 	rival_chip = chip([rival_name, rival_tier], RED)
@@ -882,7 +913,15 @@ func refresh_ui() -> void:
 	event_tag.visible = b.event != null
 	if b.event != null:
 		event_lbl.text = Sim.EVENTS[b.event.id].name
-	sub.text = "%s, %s\nRent %s + wages %s\n%d served, %d lost%s" % [d.name, Sim.QUIRKS[b.quirk].name.to_lower(), yen(sim.rent(b)), yen(sim.wages(b)), b.day_stats.customers, b.day_stats.lost, "" if b.regulars == 0 else "  ·  %d regulars due" % b.regulars]
+	kind_lbl.text = d.name
+	(kind_chip.get_theme_stylebox("panel") as StyleBoxFlat).bg_color = DISTRICT_COLOR[b.district]
+	quirk_lbl.text = Sim.QUIRKS[b.quirk].name
+	card_stat("Rent", yen(sim.rent(b)), INK)
+	card_stat("Wages", yen(sim.wages(b)), INK)
+	card_stat("Served", str(b.day_stats.customers), GREEN if b.day_stats.customers > 0 else INK)
+	card_stat("Lost", str(b.day_stats.lost), RED if b.day_stats.lost > 0 else INK)
+	card_stat("Regulars", "%d due" % b.regulars, BLUE)
+	card_stats.Regulars.visible = b.regulars > 0
 	var rv: Dictionary = b.rival
 	var chain := Color(Sim.RIVALS[rv.id].color)
 	rival_name.text = Sim.RIVALS[rv.id].name
@@ -908,6 +947,12 @@ func refresh_ui() -> void:
 	store_btn.tooltip_text = "Open another branch: from %s  [N]" % yen(sim.store_cost())
 	staff_btn.disabled = sim.phase != "playing"
 	city_btn.text = "Shop" if view.mode == "city" else "City"
+
+
+func card_stat(k: String, value: String, color: Color) -> void:
+	var a: Label = card_stats[k].get_child(1)
+	a.text = value
+	a.add_theme_color_override("font_color", color)
 
 
 func hint(b: Dictionary) -> String:
