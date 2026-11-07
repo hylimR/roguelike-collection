@@ -4427,9 +4427,7 @@ func build_room() -> void:
 	block(room, Vector3(1.26, 0.03, 0.08), Vector3(Sim.DOOR_IN.x, 0.012, 3.75), L.stripe[0])
 	block(room, Vector3(1.26, 0.03, 0.08), Vector3(Sim.DOOR_IN.x, 0.012, 3.87), L.stripe[1])
 	# counter and registers
-	block(room, Vector3(0.85, COUNTER_H, 5.3), Vector3(4.5, COUNTER_H / 2, -0.75), Color("f3ecdc"))
-	block(room, Vector3(0.87, 0.08, 5.32), Vector3(4.5, 0.47, -0.75), L.stripe[0])
-	block(room, Vector3(0.87, 0.08, 5.32), Vector3(4.5, 0.34, -0.75), L.stripe[1])
+	build_counter(L.stripe, st.registers.filter(func(r): return r.active).map(func(r): return Sim.REGISTERS[r.id].pos.y))
 	for reg in st.registers:
 		if reg.active:
 			var p: Vector2 = Sim.REGISTERS[reg.id].pos
@@ -4473,6 +4471,62 @@ func build_room() -> void:
 			var s := sprite(e[0], Rect2(e[1] * cell, 0, cell, cell), px)
 			s.position = e[2] + Vector3(0, cell / 2.0 * px, 0)
 			room.add_child(s)
+
+
+## The till counter (x 4.075-4.925, z -3.4-1.9) as one mesh, its clerks' side to the camera: open bays under a
+## striped fascia, two shelves each of carrier bags, receipt rolls, cartons and baskets (bags under each till, at z in
+## tills), between posts over a dark toe kick, and a worktop on a dark edge band.
+func build_counter(stripe: Array, tills: Array) -> void:
+	var m := mat(Color.WHITE, null, true)
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	var s := surface(m)
+	const Z0 := -3.4
+	const Z1 := 1.9
+	const XB := 4.74  # the bays' back
+	const XF := 4.925
+	var body := Color("f3ecdc")
+	box_into(s, Vector3(4.11, 0.0, Z0 + 0.05), Vector3(XF - 0.06, 0.08, Z1 - 0.05), Color("4a4540"))  # toe kick
+	box_into(s, Vector3(4.075, 0.08, Z0), Vector3(XB, 0.71, Z1), body)
+	box_into(s, Vector3(XB, 0.08, Z0), Vector3(XB + 0.01, 0.54, Z1), Color("6a6158"))
+	box_into(s, Vector3(XB, 0.08, Z0), Vector3(XF, 0.12, Z1), body.darkened(0.06))
+	box_into(s, Vector3(XB + 0.01, 0.3, Z0), Vector3(XF - 0.01, 0.32, Z1), body.darkened(0.06))
+	box_into(s, Vector3(XB, 0.54, Z0), Vector3(XF, 0.71, Z1), body)
+	box_into(s, Vector3(4.065, 0.63, Z0 - 0.01), Vector3(XF + 0.01, 0.68, Z1 + 0.01), stripe[0])
+	box_into(s, Vector3(4.065, 0.565, Z0 - 0.01), Vector3(XF + 0.01, 0.615, Z1 + 0.01), stripe[1])
+	box_into(s, Vector3(4.0, 0.71, Z0 - 0.04), Vector3(4.95, 0.725, Z1 + 0.04), Color("5b4632"))  # the worktop's edge band
+	box_into(s, Vector3(4.0, 0.725, Z0 - 0.04), Vector3(4.95, COUNTER_H, Z1 + 0.04), Color("d8d2c6"))
+	const BAYS := 4
+	var bw := (Z1 - Z0) / BAYS
+	for k in BAYS + 1:
+		var z := Z0 + bw * k
+		box_into(s, Vector3(XB, 0.08, clampf(z - 0.03, Z0, Z1 - 0.06)), Vector3(XF, 0.54, clampf(z + 0.03, Z0 + 0.06, Z1)), body)
+	var bag := Color("f6f5f0")
+	var card := Color("c79c62")
+	for k in BAYS:
+		var z0 := Z0 + bw * k + 0.06
+		var z1 := z0 + bw - 0.12
+		var till: bool = tills.any(func(t): return t > z0 - 0.06 and t < z1 + 0.06)
+		for y: float in [0.12, 0.32]:
+			var top: bool = y == 0.32
+			if till and top:  # carrier bags stacked by size, then a tray of receipt rolls
+				for i in 3:
+					var bz := z0 + 0.04 + i * 0.3
+					for j in 3 - i:
+						box_into(s, Vector3(XB + 0.02, y + j * 0.045, bz), Vector3(XF - 0.03, y + j * 0.045 + 0.04, bz + 0.26 - i * 0.03), bag.darkened(0.04 * (j % 2)))
+				for i in 4:
+					box_into(s, Vector3(XF - 0.1, y, z1 - 0.3 + i * 0.07), Vector3(XF - 0.04, y + 0.06, z1 - 0.24 + i * 0.07), Color("fbfbf8"))
+			elif (k + int(top)) % 2 == 0:  # cartons of stock
+				box_into(s, Vector3(XB + 0.02, y, z0 + 0.05), Vector3(XF - 0.02, y + 0.17, z0 + 0.5), card)
+				box_into(s, Vector3(XB + 0.02, y + 0.17, z0 + 0.05), Vector3(XF - 0.02, y + 0.175, z0 + 0.5), card.darkened(0.15))
+				box_into(s, Vector3(XB + 0.03, y, z0 + 0.56), Vector3(XF - 0.03, y + 0.12, z0 + 0.9), card.lightened(0.12))
+				box_into(s, Vector3(XB + 0.02, y, z1 - 0.2), Vector3(XF - 0.02, y + 0.06, z1 - 0.02), bag)
+			else:  # nested shopping baskets and a bin
+				for j in 3:
+					box_into(s, Vector3(XB + 0.03, y + j * 0.04, z0 + 0.06), Vector3(XF - 0.03, y + j * 0.04 + 0.05, z0 + 0.46), Color("3f7fc8").darkened(0.08 * j))
+				box_into(s, Vector3(XB + 0.03, y, z1 - 0.32), Vector3(XF - 0.03, y + 0.17, z1 - 0.06), Color("7d858d"))
+				box_into(s, Vector3(XB + 0.03, y + 0.17, z1 - 0.32), Vector3(XF - 0.03, y + 0.18, z1 - 0.06), Color("5d646b"))
+	commit([s], room)
 
 
 ## The glass front cut away at knee height from x0 to x1 (shop-local, z = 4.6): an aluminium sill, the glass's
