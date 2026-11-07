@@ -380,6 +380,7 @@ var lantern_glow_mat: StandardMaterial3D
 var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
 var tv: Node3D  # the set's TV crew, shown on a TV Feature day
+var health: Node3D  # the health centre's wagon and a sanitiser stand, shown on a Health Inspection day
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
@@ -2786,6 +2787,79 @@ func tv_crew() -> Node3D:
 	return node
 
 
+## Health Inspection: the ward health centre's white wagon nosed into your free bay, a green band round it and a green
+## cross on its roof sign, and a sanitiser stand set out by your door; the sign lights up after dark. Built hidden.
+func health_check() -> Node3D:
+	var node := Node3D.new()
+	node.visible = false
+	set_node.add_child(node)
+	var kit := mat(Color.WHITE)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var st := surface(kit)
+	var body := Color("f4f3ee")
+	var green := Color("2e9a5c")
+	var glass := Color("33414f")
+	var tyre := Color("232326")
+	# a compact wagon, nose to the street: wheels under the skirt, a low bonnet, a glass house over the cabin and the
+	# band along its sides, the centre's badge on the door you see
+	for z in [-14.4, -12.1]:
+		box_into(st, Vector3(-1.72, 0.0, z - 0.32), Vector3(-0.28, 0.5, z + 0.32), tyre)
+	box_into(st, Vector3(-1.7, 0.26, -14.95), Vector3(-0.3, 0.92, -11.35), body)
+	box_into(st, Vector3(-1.6, 0.92, -14.88), Vector3(-0.4, 1.5, -12.3), body)
+	box_into(st, Vector3(-1.72, 0.58, -14.97), Vector3(-0.28, 0.72, -11.33), green)
+	box_into(st, Vector3(-1.52, 0.97, -12.33), Vector3(-0.48, 1.43, -12.27), glass)
+	box_into(st, Vector3(-1.52, 0.99, -14.91), Vector3(-0.48, 1.4, -14.85), glass)
+	for x in [-1.62, -0.42]:  # side glass in two panes either side of a pillar
+		box_into(st, Vector3(x - 0.02, 0.98, -14.72), Vector3(x + 0.04, 1.43, -13.62), glass)
+		box_into(st, Vector3(x - 0.02, 0.98, -13.46), Vector3(x + 0.04, 1.43, -12.42), glass)
+	box_into(st, Vector3(-1.72, 0.22, -11.38), Vector3(-0.28, 0.4, -11.28), Color("9aa0a6"))
+	box_into(st, Vector3(-1.72, 0.22, -15.02), Vector3(-0.28, 0.4, -14.92), Color("9aa0a6"))
+	for x in [-1.55, -0.45]:
+		box_into(st, Vector3(x - 0.12, 0.74, -11.36), Vector3(x + 0.12, 0.84, -11.32), Color("fff3c4"))
+	box_into(st, Vector3(-0.3, 0.76, -13.3), Vector3(-0.27, 0.9, -12.95), Color("fbfaf5"))
+	box_into(st, Vector3(-0.27, 0.8, -13.18), Vector3(-0.26, 0.86, -13.07), green)
+	# the roof sign on two feet, side-on like a taxi's lamp
+	for z in [-13.85, -13.05]:
+		box_into(st, Vector3(-1.04, 1.5, z - 0.05), Vector3(-0.96, 1.6, z + 0.05), Color("8e9196"))
+	box_into(st, Vector3(-1.06, 1.6, -14.0), Vector3(-0.94, 1.95, -12.9), body)
+	# the sanitiser stand right of your door: a weighted foot, a white post, the pump bottle on its tray and a green card
+	var sa := Vector3(-3.4, 0, -6.55)
+	box_into(st, sa + Vector3(-0.17, 0, -0.17), sa + Vector3(0.17, 0.05, 0.17), Color("3a3b40"))
+	box_into(st, sa + Vector3(-0.03, 0.05, -0.03), sa + Vector3(0.03, 1.0, 0.03), Color("eceae4"))
+	box_into(st, sa + Vector3(-0.13, 1.0, -0.11), sa + Vector3(0.13, 1.04, 0.11), Color("eceae4"))
+	box_into(st, sa + Vector3(-0.06, 1.04, -0.06), sa + Vector3(0.06, 1.24, 0.06), Color("bfe3dc"))
+	box_into(st, sa + Vector3(-0.025, 1.24, -0.025), sa + Vector3(0.025, 1.31, 0.025), Color("fbfaf5"))
+	box_into(st, sa + Vector3(-0.025, 1.29, -0.025), sa + Vector3(0.025, 1.31, 0.09), Color("fbfaf5"))
+	box_into(st, sa + Vector3(-0.12, 0.62, 0.03), sa + Vector3(0.12, 0.88, 0.05), green)
+	box_into(st, sa + Vector3(-0.04, 0.72, 0.05), sa + Vector3(0.04, 0.78, 0.055), body)
+	commit([st], node)
+	# the sign's faces: a green cross on white, lit like a lightbox
+	var img := Image.create(16, 10, false, Image.FORMAT_RGB8)
+	img.fill(Color("fbfaf5"))
+	img.fill_rect(Rect2i(7, 1, 2, 8), green)
+	img.fill_rect(Rect2i(4, 4, 8, 2), green)
+	var fm := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	light_up(fm, 1.0)
+	var fq := QuadMesh.new()
+	fq.size = Vector2(1.04, 0.3)
+	for side in [1.0, -1.0]:
+		var face := MeshInstance3D.new()
+		face.mesh = fq
+		face.material_override = fm
+		face.rotation.y = PI / 2 * side
+		face.position = Vector3(-1.0 + 0.065 * side, 1.775, -13.45)
+		node.add_child(face)
+	var gm := multimesh(QuadMesh.new(), 1)
+	gm.set_instance_transform(0, Transform3D(Basis().scaled(Vector3(1.8, 1.8, 1.8)), Vector3(-0.9, 1.775, -13.45)))
+	mm_node(gm, halo_mat, node)
+	cast(node, Vector2(-1.0, -13.15), 0.26, 1.6, 1.5)
+	cast(node, Vector2(sa.x, sa.z), 0.0, 1.3, 0.12)
+	blob(node, Vector2(-1.0, -13.15), 1.5)
+	blob(node, Vector2(sa.x, sa.z), 0.3)
+	return node
+
+
 func speckle(colors: Array) -> ImageTexture:
 	var r := RandomNumberGenerator.new()
 	r.seed = 7
@@ -2947,6 +3021,7 @@ func build_set() -> void:
 	matsuri = matsuri_lanterns(far_gaps + under[0], near_gaps + under[1])
 	works = roadworks(near_gaps + under[1])
 	tv = tv_crew()
+	health = health_check()
 	for cx in [-1.0, 1.4]:  # wheel stops
 		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("d8d2c4"))
 	# a low planter along the back of the car park, below the till's sight line
@@ -4361,6 +4436,8 @@ func _process(delta: float) -> void:
 				works_glow_mat.albedo_color = Color(1.0, 0.45, 0.2, (0.9 if fmod(Time.get_ticks_msec() / 1000.0, 0.9) < 0.5 else 0.45) * night)
 		if tv:
 			tv.visible = branch.event != null and branch.event.id == "tv"
+		if health:
+			health.visible = branch.event != null and branch.event.id == "inspector"
 		refresh_stock()
 		sync_actors(delta)
 		street_traffic(delta)
