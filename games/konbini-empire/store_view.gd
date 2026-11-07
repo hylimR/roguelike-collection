@@ -140,7 +140,10 @@ uniform float night = 0.0;
 uniform vec3 light = vec3(1.0);
 uniform float golden = 0.0;
 uniform float dawn = 0.0;
+uniform float snow = 0.0;  // a cold snap: snow lying on every roof
+uniform sampler2D snow_tex : filter_nearest, repeat_enable;
 varying vec3 lpos;
+varying vec2 wxz;
 // per instance or face: flat, as the hashes below blow up the slightest drift across a triangle into patches
 varying flat vec3 lnrm;
 varying flat vec4 info;
@@ -155,6 +158,7 @@ void vertex() {
 	tint = COLOR;
 	lnrm = NORMAL;
 	lpos = (VERTEX + 0.5) * INSTANCE_CUSTOM.xyz;
+	wxz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
 	sunl = vec2(dot(normalize(MODEL_MATRIX[0].xz), vec2(-0.35, 0.6)), dot(normalize(MODEL_MATRIX[2].xz), vec2(-0.35, 0.6)));
 }
 
@@ -280,6 +284,10 @@ void fragment() {
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
 	} else if (info.x == 0.0 && tint.a < 0.99) {  // a landmark face packed with alpha under 1 is floodlit after dark
 		glow = vec3(1.0, 0.62, 0.3) * (1.0 - tint.a) * 2.0 * night;  // a warm floodlight, its strength in the alpha
+	}
+	if (snow > 0.0 && lnrm.y > 0.25 && !(info.w > -0.5 && info.y < 1.0)) {  // drifts as on the ground, not on the cut-down floors
+		vec4 s = texture(snow_tex, wxz * 0.125);
+		col = mix(col, s.rgb, s.a * snow);
 	}
 	float low_sun = max(dot(n, normalize(vec3(-0.5, 0.3, 0.8))), 0.0);
 	vec3 grade = mix(vec3(0.8, 0.84, 1.04), vec3(1.2, 1.02, 0.78), low_sun);
@@ -1445,6 +1453,7 @@ func build_buildings() -> void:
 	building_mat.set_shader_parameter("facades", atlas[0])
 	building_mat.set_shader_parameter("accents", atlas[1])
 	building_mat.set_shader_parameter("styles", float(Sim.City.STYLE_COUNT))
+	building_mat.set_shader_parameter("snow_tex", snow_tex)
 	var all: Array = Sim.City.buildings()
 	var boxes := []
 	var roofs := []
@@ -2481,6 +2490,7 @@ func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 	var span := rival_span(branch.rival)
 	rect_quad(deep, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(-16.5, -20.2, 20.2, 3.95), -0.034, 0.0, false, 0.125)
+	rect_quad(deep, Rect2(span.x + 0.2, -16.0, span.y - span.x - 0.4, 8.6), 4.27, 0.0, false, 0.125)  # the rival's roof, round its kit
 	for band in [Vector2(-3.7, -3.05), Vector2(-2.25, -1.55), Vector2(-0.45, 0.45), Vector2(1.55, 2.25), Vector2(3.05, 3.7)]:
 		rect_quad(thin, Rect2(street_x.x, band.x, street_x.y - street_x.x, band.y - band.x), -0.034, 0.0, false, 0.125)
 	var mi := commit([deep, thin], set_node)
@@ -3070,6 +3080,9 @@ func build_set() -> void:
 			block(set_node, Vector3(vw - 0.4, 0.05, 0.14), Vector3(vx, 3.62, sz), Color(Sim.City.FLAT_ROOFS[2]).darkened(0.18))
 			sz -= 1.4
 		block(set_node, Vector3(0.3, 0.05, 0.3), Vector3(xl + 0.45, 3.63, -7.95), Color("4d4a44"))
+		var drift := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
+		rect_quad(drift, Rect2(xl + 0.2, -15.95, vw - 0.4, 8.4), 3.665, 0.0, false, 0.125)
+		commit([drift], snow_cover)
 		var tank := Vector3(xl + 1.0, 3.6, -14.9)
 		for lg in [Vector2(-0.45, -0.45), Vector2(0.45, -0.45), Vector2(-0.45, 0.45), Vector2(0.45, 0.45)]:
 			block(set_node, Vector3(0.08, 0.5, 0.08), tank + Vector3(lg.x, 0.25, lg.y), Color("6e737d"))
@@ -4330,6 +4343,8 @@ func _gui_input(e: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if city_sig != "":
 		update_light()
+		var cold: bool = mode == "store" and not branch.is_empty() and branch.event != null and branch.event.id == "coldSnap"
+		building_mat.set_shader_parameter("snow", 1.0 if cold else 0.0)
 	if paused or city_sig == "":
 		return
 	street_life(delta)
