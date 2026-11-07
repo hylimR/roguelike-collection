@@ -3630,8 +3630,11 @@ func build_set() -> void:
 	var mine: float = -10.0 + Sim.ZONE_LEFT[st.size]
 	for seg in [[SET.position.x, -27.75], [-26.25, -16.5], [span.y, 29.75], [31.25, SET.end.x]]:
 		set_row(seg[0], seg[1], -7.2, 13.0, mix, r, boxes, roofs, 0.7, roads + overhead)
+	var low := boxes.size()
 	set_row(5.35, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 0.9, roads + overhead)  # one floor, so it hides neither your till nor the car park
+	var low_roofs := boxes.slice(low).filter(func(e): return not roofs.any(func(rf): return is_equal_approx(rf[1].x, e[1].x)))
 	set_row(SET.position.x, SET.end.x, -20.5, 11.0, mix, r, boxes, roofs, 1.0, roads + overhead)
+	shop_roofs(low_roofs)
 	var bm := multimesh(BoxMesh.new(), boxes.size(), true, true)
 	for k in boxes.size():
 		var e: Array = boxes[k]
@@ -3871,6 +3874,65 @@ func fill_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: 
 			var rh := minf(fp.size.x, fp.size.y) * 0.32
 			roofs.append([Vector3(fp.size.x, rh, fp.size.y), Vector3(fp.get_center().x, h + rh / 2, fp.get_center().y), Color(bd.roof)])
 		pos += w
+
+
+## The one-floor shops between your car park and the rival, seen from above: a parapet with a coping round a membrane
+## laid in strips, its drain, AC condensers on pads piped to the edge, a vent stack and a roof hatch, all low.
+func shop_roofs(list: Array) -> void:
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var kit := surface(km)
+	var drift := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
+	var r := RandomNumberGenerator.new()
+	r.seed = branch.lot * 131 + 7
+	for e in list:
+		var sz: Vector3 = e[0]
+		var x0: float = e[1].x - sz.x / 2
+		var x1: float = e[1].x + sz.x / 2
+		var z0: float = e[1].z - sz.z / 2
+		var z1: float = e[1].z + sz.z / 2
+		var y := sz.y
+		var wall_c := Color(e[2].r, e[2].g, e[2].b).lightened(0.12)
+		var coping := Color("d6d1c6")
+		var skin := Color(Sim.City.FLAT_ROOFS[[1, 2, 5, 6][r.randi() % 4]]).darkened(0.08)
+		box_into(kit, Vector3(x0 + 0.15, y, z0 + 0.15), Vector3(x1 - 0.15, y + 0.03, z1 - 0.15), skin)
+		for pr in [[x0, z0, x1, z0 + 0.15], [x0, z1 - 0.15, x1, z1], [x0, z0, x0 + 0.15, z1], [x1 - 0.15, z0, x1, z1]]:
+			box_into(kit, Vector3(pr[0], y, pr[1]), Vector3(pr[2], y + 0.3, pr[3]), wall_c)
+			box_into(kit, Vector3(pr[0] - 0.02, y + 0.3, pr[1] - 0.02), Vector3(pr[2] + 0.02, y + 0.36, pr[3] + 0.02), coping)
+		var along_z := sz.z >= sz.x
+		var long_ := maxf(sz.x, sz.z)
+		var at := func(t: float, side: float) -> Vector3:  # t from the street end along the roof, side across it from its centre
+			return Vector3(e[1].x + side, y + 0.03, z1 - t) if along_z else Vector3(x0 + t, y + 0.03, e[1].z + side)
+		var t := 1.0
+		while t < long_ - 0.4:  # the membrane's lapped seams across the roof
+			var sp: Vector3 = at.call(t, 0.0)
+			var hw := (minf(sz.x, sz.z) - 0.3) / 2
+			var half := Vector3(hw, 0, 0.05) if along_z else Vector3(0.05, 0, hw)
+			box_into(kit, sp - half, sp + half + Vector3(0, 0.015, 0), skin.darkened(0.16))
+			t += 1.0
+		var drain: Vector3 = at.call(long_ - 0.5, -minf(sz.x, sz.z) / 2 + 0.45)
+		box_into(kit, drain + Vector3(-0.13, 0, -0.13), drain + Vector3(0.13, 0.02, 0.13), Color("4d4a44"))
+		rect_quad(drift, Rect2(x0 + 0.15, z0 + 0.15, sz.x - 0.3, sz.z - 0.3), y + 0.06, 0.0, false, 0.125)
+		var units := 1 if long_ < 5.0 else 2
+		for k in units:
+			var ac: Vector3 = at.call(long_ * 0.3 + k * 1.25, r.randf_range(-0.2, 0.2))
+			box_into(kit, ac + Vector3(-0.55, 0, -0.4), ac + Vector3(0.55, 0.1, 0.4), Color("8e8d88"))
+			box_into(kit, ac + Vector3(-0.47, 0.1, -0.32), ac + Vector3(0.47, 0.62, 0.32), Color("d2cfc4"))
+			box_into(kit, ac + Vector3(-0.32, 0.18, 0.32), ac + Vector3(0.32, 0.54, 0.34), Color("7a8088"))
+			box_into(kit, ac + Vector3(-0.47, 0.18, -0.25), ac + Vector3(-0.49, 0.54, 0.25), Color("9a9d9f"))
+		var pipe: Vector3 = at.call(long_ * 0.3, 0.0)  # their pipes run along the roof to drop down the back
+		var end_: Vector3 = at.call(long_ - 0.15, 0.0)
+		var off := Vector3(0.62, 0, 0) if along_z else Vector3(0, 0, 0.5)
+		box_into(kit, pipe + off - Vector3(0.05, 0, 0.05), end_ + off + Vector3(0.05, 0.1, 0.05), Color("bdb8ad"))
+		var hatch: Vector3 = at.call(long_ * 0.72, -0.1)
+		box_into(kit, hatch + Vector3(-0.45, 0, -0.45), hatch + Vector3(0.45, 0.28, 0.45), Color("a9a49a"))
+		box_into(kit, hatch + Vector3(-0.38, 0.28, -0.38), hatch + Vector3(0.38, 0.32, 0.38), Color("8c949b"))
+		var vent: Vector3 = at.call(0.9 + r.randf_range(0.0, 0.5), minf(sz.x, sz.z) / 2 - 0.55)
+		box_into(kit, vent + Vector3(-0.09, 0, -0.09), vent + Vector3(0.09, 0.6, 0.09), Color("9aa0a6"))
+		box_into(kit, vent + Vector3(-0.17, 0.6, -0.17), vent + Vector3(0.17, 0.67, 0.17), Color("6e737d"))
+	commit([kit], set_node)
+	commit([drift], snow_cover)
 
 
 ## The city's streets (rects) and avenue pieces ([a, b, half width]) that cross the set, in the street frame.
