@@ -361,7 +361,7 @@ var shadow_mat: ShaderMaterial
 var env: Environment
 var light := Color.WHITE  # the hour's tint (DAYLIGHT)
 var night := 0.0  # 0 by day, 1 from 22:00, fading out at first light: lit windows and lamp pools
-var lit_mats: Array = []  # [weakref to an outdoor material, its own colour, how far it lights up after dark (lightboxes)]
+var lit_mats: Array = []  # [weakref to an outdoor material (or a sign's Label3D), its own colour, how far it lights up after dark (lightboxes)]
 var lit_sprites: Array = []  # outdoor sprites that stand still, relit when the light changes
 var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the street after dark
 var pool_mat: StandardMaterial3D
@@ -663,7 +663,8 @@ func update_light() -> void:
 	night = n
 	lit_mats = lit_mats.filter(func(e): return e[0].get_ref() != null)
 	for e in lit_mats:
-		e[0].get_ref().albedo_color = e[1] * light.lerp(Color.WHITE, e[2] * night)
+		var o: Object = e[0].get_ref()
+		o.set("modulate" if o is Label3D else "albedo_color", e[1] * light.lerp(Color.WHITE, e[2] * night))
 	fascia_glows = fascia_glows.filter(func(e): return e[0].get_ref() != null)
 	for e in fascia_glows:
 		e[0].get_ref().albedo_color = e[1] * Color(1, 1, 1, 0.85 * night)
@@ -3646,6 +3647,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		glow.material_override = gm
 		glow.position = Vector3(cx, 3.55, -6.98)
 		parent.add_child(glow)
+	rival_sign(parent, rv, cx, c)
 	plane(parent, Vector2(w - 0.4, 8.6), Vector3(cx, 4.245, -11.7), rival_roof(span))
 	for e in [[Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -7.3)], [Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -16.1)],
 			[Vector3(0.2, 0.34, 9.0), Vector3(span.x + 0.1, 4.37, -11.7)], [Vector3(0.2, 0.34, 9.0), Vector3(span.y - 0.1, 4.37, -11.7)]]:
@@ -3705,6 +3707,54 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	if not rv.defeated:
 		light_up(awning, 0.5)
 		spill(parent, cx, w + 1.6, -7.05)
+
+
+## The chain's lightbox on its fascia: a cream plate with its mascot's head in a roundel ringed in the chain's colour
+## and its name beside it, lit after dark; a beaten chain's goes grey and dark.
+func rival_sign(parent: Node3D, rv: Dictionary, cx: float, c: Color) -> void:
+	var font: Font = bold if bold else get_theme_default_font()
+	var label := Label3D.new()
+	label.text = Sim.RIVALS[rv.id].name
+	label.font = font
+	label.font_size = 64
+	label.outline_size = 0
+	label.pixel_size = 0.0072
+	label.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
+	label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	var tw := font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 64).x * label.pixel_size
+	var pw := tw + 1.7
+	var x0 := cx - pw / 2
+	var cream := Color("cfccc4") if rv.defeated else Color("fbfaf5")
+	block(parent, Vector3(pw, 0.72, 0.08), Vector3(cx, 3.65, -6.95), cream)
+	var blank := Image.create(1, 1, false, Image.FORMAT_RGB8)
+	blank.fill(cream)
+	var plate := art_panel(parent, blank, Vector2(pw - 0.04, 0.68), Vector3(cx, 3.65, -6.906), Color.WHITE, 1.0, false)  # the face flat, not shaded as the box's side
+	block(parent, Vector3(pw + 0.06, 0.05, 0.1), Vector3(cx, 3.27, -6.95), c.darkened(0.2))
+	var face: Image = (load("res://art/walk.png") as Texture2D).get_image().get_region(
+			Rect2i(4, (WALK_ROW.mascot + Sim.RIVALS.keys().find(rv.id)) * PERSON.y, 64, 54))
+	face.convert(Image.FORMAT_RGBA8)
+	face.resize(48, 40, Image.INTERPOLATE_LANCZOS)
+	var disc := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	for y in 64:
+		for x in 64:
+			var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(32, 32))
+			var px := cream if d > 31.0 else (c if d > 26.5 else cream.lightened(0.3))
+			if d < 26.5 and x >= 8 and x < 56 and y >= 12 and y < 52:
+				var f := face.get_pixel(x - 8, y - 12)
+				if rv.defeated:
+					f = Color(f.get_luminance(), f.get_luminance(), f.get_luminance(), f.a)
+				px = px.lerp(Color(f.r, f.g, f.b), f.a)
+			disc.set_pixel(x, y, px)
+	var roundel := art_panel(parent, disc, Vector2(0.66, 0.66), Vector3(x0 + 0.52, 3.65, -6.9), Color.WHITE, 1.0, false)
+	label.position = Vector3(x0 + 1.05 + tw / 2, 3.64, -6.895)
+	parent.add_child(label)
+	var ink := c.darkened(0.15)
+	label.modulate = ink * light
+	lit_mats.append([weakref(label), ink, 0.0])
+	if not rv.defeated:
+		light_up(plate, 1.3)  # past 1 so the plate reads white before full night
+		light_up(roundel, 1.3)
+		lit_mats[-1][2] = 1.3
 
 
 ## The rival's skylights, 20 px a metre (the glow 10): [four panes in a pale frame, darker sky reflected toward the far edge with a
