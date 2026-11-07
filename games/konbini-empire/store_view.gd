@@ -113,6 +113,37 @@ void fragment() {
 	ALPHA = texture(mask, uv).a * strength * inside.x * inside.y;
 }
 """
+# A person's shadow, metres from the feet (y away from the sun): a soft contact patch, and while the sun is up a
+# body-length shadow tapering away from it, as the poles cast theirs, but not across your shop's roofed floor.
+const FOOT_SHADER := """
+shader_type spatial;
+render_mode unshaded, depth_draw_never, cull_disabled;
+uniform vec4 tint : source_color;
+uniform float core;
+uniform float sun;
+uniform float reach;
+uniform vec2 size;
+uniform float back;
+uniform vec4 indoor;
+varying vec2 wpos;
+
+void vertex() {
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+}
+
+void fragment() {
+	vec2 p = vec2((UV.x - 0.5) * size.x, UV.y * size.y - back);
+	float contact = core * (1.0 - smoothstep(0.08, 0.3, length(p * vec2(1.0, 1.25))));
+	float t = p.y / reach;
+	float hw = mix(0.17, 0.08, clamp(t, 0.0, 1.0));
+	float body = sun * smoothstep(-0.05, 0.12, p.y) * (1.0 - smoothstep(0.5, 1.0, t)) * (1.0 - smoothstep(hw * 0.45, hw, abs(p.x)));
+	vec2 in_shop = step(indoor.xy, wpos) * step(wpos, indoor.xy + indoor.zw);
+	body *= 1.0 - in_shop.x * in_shop.y;
+	ALBEDO = tint.rgb;
+	ALPHA = 1.0 - (1.0 - contact) * (1.0 - body);
+}
+"""
+const FOOT := Vector3(0.7, 0.35, 1.6)  # a person's shadow plane: width, behind the feet, and the height it casts
 # Farmland: each field's crop colour, furrowed, under the hour's light; after dark the crops fade into one dark green
 # so the lit city stands out rather than a patchwork of maroon, olive and green round it.
 const FIELD_SHADER := """
@@ -390,6 +421,8 @@ var soft_mat: StandardMaterial3D  # soft contact shadows under people, cars and 
 var ao_mat: StandardMaterial3D  # the dark seam where a building meets the sidewalk
 var cast_mat: StandardMaterial3D  # the sun's shadow of a pole or post laid on the street
 var casts: Array = []  # those shadows, stretched as the sun goes down
+var foot_mat: ShaderMaterial  # people's shadows
+var foot_mesh: PlaneMesh
 var sea_mat: StandardMaterial3D
 var field_mat: ShaderMaterial
 var cam_target := Vector3.ZERO
@@ -496,6 +529,16 @@ func _ready() -> void:
 	fade.gradient.offsets = PackedFloat32Array([0.0, 0.75, 1.0])
 	fade.gradient.colors = PackedColorArray([Color(0.1, 0.08, 0.14), Color(0.1, 0.08, 0.14, 0.7), Color(0.1, 0.08, 0.14, 0)])
 	cast_mat.albedo_texture = fade
+	var reach_max := FOOT.z * Vector2(SUN.x, SUN.z).length() / SUN.y * 1.9
+	foot_mesh = PlaneMesh.new()
+	foot_mesh.size = Vector2(FOOT.x, FOOT.y + reach_max)
+	foot_mesh.center_offset = Vector3(0, 0, foot_mesh.size.y / 2 - FOOT.y)
+	foot_mat = ShaderMaterial.new()
+	foot_mat.shader = Shader.new()
+	foot_mat.shader.code = FOOT_SHADER
+	foot_mat.set_shader_parameter("tint", Color(0.1, 0.08, 0.14))
+	foot_mat.set_shader_parameter("size", foot_mesh.size)
+	foot_mat.set_shader_parameter("back", FOOT.y)
 	cam = Camera3D.new()
 	cam.fov = 38.0
 	vp.add_child(cam)
@@ -676,6 +719,9 @@ func update_light() -> void:
 	if shadow_mat:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	cast_mat.albedo_color.a = 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
+	foot_mat.set_shader_parameter("core", 0.5 - 0.15 * night)
+	foot_mat.set_shader_parameter("sun", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
+	foot_mat.set_shader_parameter("reach", FOOT.z * Vector2(SUN.x, SUN.z).length() / SUN.y * (1.0 + 0.9 * golden_at(h)))
 	casts = casts.filter(func(s): return is_instance_valid(s))
 	for s in casts:
 		s.scale.z = 1.0 + 0.9 * golden_at(h)
@@ -2243,7 +2289,7 @@ func spawn_mover(is_car: bool, mid := false) -> void:
 		m.a = randi() % 7
 		m.lat = (1.0 if randf() < 0.5 else -1.0) * (p.w / 2 - Sim.City.SIDEWALK / 2 + randf_range(-0.4, 0.4))
 		node = sprite("walk", Rect2(PERSON.x, m.a * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
-		node.add_child(shadow())
+		node.add_child(foot())
 		m.v = dir * randf_range(1.4, 2.4)
 		m.y = 0.82
 		m.step = randf() * 4.0
@@ -2300,6 +2346,17 @@ func shadow(drop := 0.8, r := 0.5) -> MeshInstance3D:
 	sh.mesh = pm
 	sh.material_override = soft_mat
 	sh.position = Vector3(0, 0.02 - drop, 0)
+	return sh
+
+
+## A person's shadow at the feet of a sprite standing sc tall: a contact patch and its cast away from the sun.
+func foot(sc := 1.0) -> MeshInstance3D:
+	var sh := MeshInstance3D.new()
+	sh.mesh = foot_mesh
+	sh.material_override = foot_mat
+	sh.position = Vector3(0, 0.04 - 0.82 * sc, 0)
+	sh.rotation.y = atan2(-SUN.x, -SUN.z)
+	sh.scale = Vector3.ONE * sc
 	return sh
 
 
@@ -2997,6 +3054,7 @@ func build_set() -> void:
 	var type: String = sim.districts[sim.lots[b.lot].block].type
 	var zl: float = Sim.ZONE_LEFT[st.size]
 	shop_area = Rect2(site.position.x + Sim.ORIGIN.x + zl, site.position.z + Sim.ORIGIN.y - 4.7, 6.6 - zl, 9.4)
+	foot_mat.set_shader_parameter("indoor", Color(shop_area.position.x, shop_area.position.y, shop_area.size.x, shop_area.size.y))
 	# ground: the sidewalks, the road with its centre line and crossing. Either side the city's own blocks and roads
 	# show, so the side streets and avenues that cross the set run on through it.
 	var span := rival_span(b.rival)
@@ -4197,7 +4255,7 @@ func sync_actors(delta: float) -> void:
 		var e = agent_nodes.get(a.id)
 		if e == null:
 			var node := sprite("walk", Rect2(0, (a.look % 7) * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
-			node.add_child(shadow())
+			node.add_child(foot())
 			if a.kind == "fan":
 				node.set_meta("base", Color(1.0, 0.86, 0.93))
 			actors.add_child(node)
@@ -4237,7 +4295,7 @@ func sync_actors(delta: float) -> void:
 			else:
 				var row: int = WALK_ROW.get(s.role, 7)
 				node = sprite("walk", Rect2(0, row * PERSON.y, PERSON.x, PERSON.y), PERSON_PX)
-				node.add_child(shadow())
+				node.add_child(foot())
 				e = {"node": node, "a": row, "step": 0.0}
 			actors.add_child(node)
 			staff_nodes[s.id] = e
@@ -4295,7 +4353,7 @@ func make_threat(t: Dictionary) -> Dictionary:
 			row += Sim.RIVALS.keys().find(branch.rival.id)
 		var sc := MASCOT_SCALE if t.type == "mascot" else 1.0
 		var node := sprite("walk", Rect2(0, row * PERSON.y, PERSON.x, PERSON.y), PERSON_PX * sc)
-		node.add_child(shadow(0.82 * sc - 0.02, 0.5 * sc))
+		node.add_child(foot(sc))
 		e = {"node": node, "a": row, "step": 0.0, "scale": sc}
 		if t.type == "review":  # stands on the sidewalk typing at your door
 			e.erase("a")
