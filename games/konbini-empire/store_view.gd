@@ -406,8 +406,9 @@ var fascia_glows: Array = []  # [weakref to the glow round a rival's lit fascia,
 var fascia_glow_tex: ImageTexture
 var snow_tex: ImageTexture  # patchy settled snow, tiled 8 m
 var snow_cover: MeshInstance3D  # the set's snowy ground, shown on a cold snap
-var matsuri: Node3D  # the set's festival lanterns, shown on a Summer Matsuri
+var matsuri: Node3D  # the set's festival lanterns and yatai, shown on a Summer Matsuri
 var lantern_glow_mat: StandardMaterial3D
+var stall_glow_mat: StandardMaterial3D  # the yatai's lamplight on the bay after dark
 var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
 var tv: Node3D  # the set's TV crew, shown on a TV Feature day
@@ -479,6 +480,7 @@ func _ready() -> void:
 	flood_mat = pool_mat.duplicate()
 	sign_glow_mat = halo_mat.duplicate()
 	lantern_glow_mat = halo_mat.duplicate()
+	stall_glow_mat = pool_mat.duplicate()
 	works_glow_mat = halo_mat.duplicate()
 	var fall := Image.create(64, 32, false, Image.FORMAT_RGBA8)
 	for y in 32:
@@ -739,6 +741,7 @@ func update_light() -> void:
 	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night)
 	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night)
 	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.75 * night)
+	stall_glow_mat.albedo_color = Color(1.0, 0.6, 0.3, 0.95 * night)
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
 	if car_glass:
 		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
@@ -2621,7 +2624,96 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 	cap.vertex_color_is_srgb = true
 	mm_node(cm, cap, node)
 	mm_node(gm, lantern_glow_mat, node)
+	yatai(node, paper)
 	return node
+
+
+## A yakisoba yatai in your free bay, its counter to the street: a wooden frame under a red and white striped canopy, a
+## noren of three cream panels, a red and white skirt round the counter, noodles on the griddle, red lanterns at the
+## front corners and a bare bulb, lit after dark with their warm light thrown on the bay.
+func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
+	var kit := mat(Color.WHITE)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var st := surface(kit)
+	var under := mat(Color.WHITE)  # what the bulb and lanterns light: the counter, its griddle and the noren
+	under.vertex_color_use_as_albedo = true
+	under.vertex_color_is_srgb = true
+	light_up(under, 0.7)
+	var lt := surface(under)
+	var wood := Color("8a5a34")
+	var red := Color("d6402e")
+	var cream := Color("f4ead6")
+	const X0 := -1.5
+	const X1 := 0.4
+	const ZB := -13.7  # the back
+	const ZF := -11.35  # the counter's front
+	for c in [Vector2(X0, ZB), Vector2(X1, ZB), Vector2(X0, ZF), Vector2(X1, ZF)]:
+		box_into(st, Vector3(c.x, 0, c.y) + Vector3(-0.05, 0, -0.05), Vector3(c.x, 0, c.y) + Vector3(0.05, 2.3, 0.05), wood)
+	box_into(st, Vector3(X0, 0.05, ZB), Vector3(X1, 0.85, ZB + 0.06), wood.darkened(0.15))  # the back board
+	# the counter, skirted in red and white stripes on the faces you see
+	box_into(st, Vector3(X0 + 0.05, 0.05, ZF - 0.5), Vector3(X1 - 0.05, 0.9, ZF), Color("b8955a"))
+	var n := 8
+	for k in n:
+		var x := lerpf(X0 + 0.05, X1 - 0.05, float(k) / n)
+		box_into(st, Vector3(x, 0.08, ZF), Vector3(x + (X1 - X0 - 0.1) / n, 0.86, ZF + 0.02), red if k % 2 == 0 else cream)
+	for k in 6:
+		var z := lerpf(ZB + 0.06, ZF, float(k) / 6)
+		box_into(st, Vector3(X1, 0.08, z), Vector3(X1 + 0.02, 0.86, z + (ZF - ZB - 0.06) / 6), cream if k % 2 == 0 else red)
+	box_into(lt, Vector3(X0 - 0.02, 0.9, ZF - 0.58), Vector3(X1 + 0.04, 0.96, ZF + 0.1), Color("c9a26b"))
+	# the griddle with its noodles, cabbage and pickled ginger, a squeeze bottle and a stack of trays
+	box_into(lt, Vector3(X0 + 0.25, 0.96, ZF - 0.48), Vector3(X1 - 0.75, 1.0, ZF - 0.04), Color("2b2c30"))
+	for lump in [[0.3, 0.22, Color("c98a45")], [0.62, 0.3, Color("b5773a")], [0.48, 0.12, Color("6aa84f")], [0.8, 0.16, Color("e0607a")]]:
+		var lx: float = X0 + 0.25 + lump[0]
+		box_into(lt, Vector3(lx - 0.09, 1.0, ZF - 0.36), Vector3(lx + 0.09, 1.04, ZF - 0.36 + lump[1]), lump[2])
+	box_into(lt, Vector3(X1 - 0.6, 0.96, ZF - 0.35), Vector3(X1 - 0.3, 1.06, ZF - 0.12), cream)
+	box_into(lt, Vector3(X1 - 0.22, 0.96, ZF - 0.3), Vector3(X1 - 0.14, 1.18, ZF - 0.22), Color("e2a63a"))
+	box_into(st, Vector3(X0 + 0.3, 0.05, ZB + 0.3), Vector3(X0 + 0.9, 0.5, ZB + 0.75), Color("3f6fb8"))  # a cool box
+	box_into(st, Vector3(X0 + 0.28, 0.5, ZB + 0.28), Vector3(X0 + 0.92, 0.56, ZB + 0.77), Color("fbfaf5"))
+	# the canopy, striped front to back, and the noren hung from its front edge
+	var m := 6
+	for k in m:
+		var x := lerpf(X0 - 0.12, X1 + 0.12, float(k) / m)
+		box_into(st, Vector3(x, 2.3, ZB - 0.15), Vector3(x + (X1 - X0 + 0.24) / m, 2.38, ZF + 0.3), red if k % 2 == 0 else cream)
+	box_into(st, Vector3(X0 - 0.12, 2.18, ZF + 0.26), Vector3(X1 + 0.12, 2.3, ZF + 0.3), red)
+	for k in 3:
+		var x := lerpf(X0 + 0.02, X1 - 0.02, float(k) / 3)
+		box_into(lt, Vector3(x + 0.02, 1.72, ZF + 0.22), Vector3(x + (X1 - X0 - 0.04) / 3 - 0.02, 2.18, ZF + 0.25), cream)
+		box_into(lt, Vector3(x + 0.02, 2.06, ZF + 0.25), Vector3(x + (X1 - X0 - 0.04) / 3 - 0.02, 2.12, ZF + 0.26), red)
+		box_into(lt, Vector3(x + 0.2, 1.84, ZF + 0.25), Vector3(x + (X1 - X0 - 0.04) / 3 - 0.2, 1.98, ZF + 0.26), Color("8f2a22"))
+	box_into(st, Vector3((X0 + X1) / 2 - 0.01, 1.98, ZF - 0.6), Vector3((X0 + X1) / 2 + 0.01, 2.3, ZF - 0.58), Color("3b2f2b"))
+	for c in [X0, X1]:  # a lantern's cord at each front corner
+		box_into(st, Vector3(c - 0.01, 1.8, ZF + 0.33), Vector3(c + 0.01, 2.3, ZF + 0.35), Color("3b2f2b"))
+	commit([st, lt], node)
+	var hung := [Vector3(X0, 1.56, ZF + 0.34), Vector3(X1, 1.56, ZF + 0.34)]
+	var bulb := Vector3((X0 + X1) / 2, 1.92, ZF - 0.59)
+	var body := SphereMesh.new()
+	body.radius = 0.17
+	body.height = 0.44
+	body.radial_segments = 10
+	body.rings = 6
+	var bm := multimesh(body, hung.size(), true)
+	for i in hung.size():
+		bm.set_instance_transform(i, Transform3D(Basis(), hung[i]))
+		bm.set_instance_color(i, Color("d6402e"))
+	mm_node(bm, paper, node)
+	var bl := MeshInstance3D.new()
+	bl.mesh = shaded_box()
+	bl.scale = Vector3(0.09, 0.11, 0.09)
+	bl.position = bulb
+	var lm := mat(Color("fff1c8"))
+	light_up(lm, 1.0)
+	bl.material_override = lm
+	node.add_child(bl)
+	var gm := multimesh(QuadMesh.new(), hung.size() + 1)
+	for i in hung.size():
+		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.2, 1.2, 1.2)), hung[i]))
+	gm.set_instance_transform(hung.size(), Transform3D(Basis().scaled(Vector3(1.6, 1.6, 1.6)), bulb))
+	mm_node(gm, lantern_glow_mat, node)
+	plane(node, Vector2(4.4, 4.4), Vector3((X0 + X1) / 2, -0.031, ZF + 0.4), stall_glow_mat)
+	plane(node, Vector2(2.4, 2.4), Vector3((X0 + X1) / 2, -0.03, ZF - 0.4), stall_glow_mat)
+	cast(node, Vector2((X0 + X1) / 2, (ZB + ZF) / 2), 0.0, 2.38, 2.1)
+	blob(node, Vector2((X0 + X1) / 2, (ZB + ZF) / 2), 1.5)
 
 
 ## Roadworks: a stretch of the near kerb lane fenced off with striped barricades, cones on a striped bar, steel plates
