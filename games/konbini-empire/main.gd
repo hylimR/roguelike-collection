@@ -1260,18 +1260,23 @@ func show_staff() -> void:
 		member_cells(rows, m, 100)
 		rows.add_child(small_button("Fire", staff_act.bind("fire", m.id)))
 	crew.add_child(staff_well(rows if st.crew.size() > 0 else label("No crew yet: you ring up alone.", MUTED, 12)))
-	crew.add_child(label("Who does what", INK, 15))
+	var key := VBoxContainer.new()
+	key.add_theme_constant_override("separation", 4)
+	key.add_child(label("Who does what", INK, 15))
 	var roles := GridContainer.new()
-	roles.columns = 2
+	roles.columns = 3
 	roles.add_theme_constant_override("h_separation", 10)
-	roles.add_theme_constant_override("v_separation", 6)
+	roles.add_theme_constant_override("v_separation", 4)
 	for r in [["cashier", "Runs a till of their own."], ["stocker", "Refills low shelves, but keeps tonight's bills in the till."],
 			["cleaner", "Mops spills and bags trash."], ["guard", "Sees off flyers, mascots, thieves, suits and blackouts."], ["promoter", "Pulls walkers in off the street."]]:
+		roles.add_child(role_plate(r[0]))
 		roles.add_child(role_tag(r[0]))
 		var l := para(r[1], MUTED, 196)
 		l.add_theme_font_size_override("font_size", 11)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		roles.add_child(l)
-	crew.add_child(staff_well(roles))
+	key.add_child(staff_well(roles))
 	cols.add_child(crew)
 	var apps := staff_grid()
 	for role in Sim.ROLES:
@@ -1303,6 +1308,7 @@ func show_staff() -> void:
 	right.add_child(label("Applicants today", INK, 15))
 	right.add_child(staff_well(apps))
 	cols.add_child(right)
+	(crew if st.crew.size() <= st.applicants.size() else right).add_child(key)  # under the shorter list
 	v.add_child(button("Close  [Esc]", close_staff))
 	open_modal("Staff  ·  %s" % b.name, v, {KEY_ESCAPE: close_staff, KEY_S: close_staff}, "staff")
 
@@ -1336,6 +1342,20 @@ func role_tag(role: String) -> PanelContainer:
 	p.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return p
+
+
+## The staffer as they walk the street, standing on a plate tinted their role's color.
+func role_plate(role: String) -> PanelContainer:
+	var r := picture("walk", 0, 72, Vector2(18, 24))
+	r.texture.region = Rect2(0, StoreView.WALK_ROW[role] * StoreView.PERSON.y, StoreView.PERSON.x, StoreView.PERSON.y)
+	var plate := PanelContainer.new()
+	var ps := box(ROLE_COLOR[role].lerp(PAPER, 0.82), 8, 2)
+	ps.border_width_bottom = 2
+	ps.border_color = ROLE_COLOR[role].lerp(PAPER, 0.6)
+	plate.add_theme_stylebox_override("panel", ps)
+	plate.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	plate.add_child(r)
+	return plate
 
 
 func small_button(text: String, cb: Callable) -> Button:
