@@ -413,6 +413,7 @@ var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
 var tv: Node3D  # the set's TV crew, shown on a TV Feature day
 var health: Node3D  # the health centre's wagon and a sanitiser stand, shown on a Health Inspection day
+var heat: Node3D  # a shaved-ice stand and a splashed sidewalk, shown on a Heatwave day
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
@@ -3010,6 +3011,143 @@ func health_check() -> Node3D:
 	return node
 
 
+## Heatwave: a kakigōri stand in your free bay, a table under a striped parasol with the red shaved-ice machine, a
+## bowl of ice and the syrups, a cool box of drinks on ice and a 氷 flag on its pole at the kerb end; the sidewalk at
+## your door is splashed dark against the heat, the bucket and ladle left by the step. Built hidden.
+func ice_stand() -> Node3D:
+	var node := Node3D.new()
+	node.visible = false
+	set_node.add_child(node)
+	var kit := mat(Color.WHITE)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var st := surface(kit)
+	var steel := Color("8e9196")
+	var red := Color("d6402e")
+	var blue := Color("2f6fd0")
+	var white := Color("fbfaf5")
+	var ice := Color("dff1f7")
+	const X0 := -1.75
+	const X1 := -0.35
+	const ZB := -13.3
+	const ZF := -12.3  # the table's front, to the street
+	for c in [Vector2(X0 + 0.06, ZB + 0.06), Vector2(X1 - 0.06, ZB + 0.06), Vector2(X0 + 0.06, ZF - 0.06), Vector2(X1 - 0.06, ZF - 0.06)]:
+		box_into(st, Vector3(c.x - 0.025, 0, c.y - 0.025), Vector3(c.x + 0.025, 0.72, c.y + 0.025), steel)
+	box_into(st, Vector3(X0, 0.72, ZB), Vector3(X1, 0.76, ZF), Color("e9e4d8"))
+	# a cloth over its front and the side you see, white with a blue hem of waves
+	box_into(st, Vector3(X0, 0.3, ZF), Vector3(X1, 0.76, ZF + 0.02), white)
+	box_into(st, Vector3(X1, 0.3, ZB), Vector3(X1 + 0.02, 0.76, ZF + 0.02), white)
+	var n := 7
+	for k in n:
+		var x := lerpf(X0, X1, float(k) / n)
+		box_into(st, Vector3(x, 0.3, ZF + 0.02), Vector3(x + (X1 - X0) / n, 0.42 if k % 2 == 0 else 0.38, ZF + 0.03), blue)
+	for k in 5:
+		var z := lerpf(ZB, ZF, float(k) / 5)
+		box_into(st, Vector3(X1 + 0.02, 0.3, z), Vector3(X1 + 0.03, 0.42 if k % 2 == 0 else 0.38, z + (ZF - ZB) / 5), blue)
+	# the shaved-ice machine: a cast red frame on a foot, the wheel and crank on top, a bowl of ice heaped under the blade
+	var mx := X0 + 0.38
+	var mz := (ZB + ZF) / 2
+	box_into(st, Vector3(mx - 0.2, 0.76, mz - 0.17), Vector3(mx + 0.2, 0.8, mz + 0.17), red)
+	box_into(st, Vector3(mx - 0.2, 0.8, mz - 0.17), Vector3(mx - 0.14, 1.28, mz - 0.11), red)
+	box_into(st, Vector3(mx - 0.2, 0.8, mz + 0.11), Vector3(mx - 0.14, 1.28, mz + 0.17), red)
+	box_into(st, Vector3(mx - 0.2, 1.1, mz - 0.17), Vector3(mx + 0.14, 1.16, mz + 0.17), red)
+	box_into(st, Vector3(mx - 0.2, 1.28, mz - 0.17), Vector3(mx + 0.08, 1.33, mz + 0.17), red)
+	box_into(st, Vector3(mx - 0.08, 1.33, mz - 0.13), Vector3(mx + 0.01, 1.46, mz + 0.13), Color("c9a24a"))
+	box_into(st, Vector3(mx - 0.05, 1.46, mz - 0.02), Vector3(mx + 0.2, 1.49, mz + 0.02), Color("3b2f2b"))
+	box_into(st, Vector3(mx + 0.17, 1.49, mz - 0.02), Vector3(mx + 0.21, 1.6, mz + 0.02), Color("3b2f2b"))
+	box_into(st, Vector3(mx - 0.08, 0.8, mz - 0.09), Vector3(mx + 0.1, 0.86, mz + 0.09), Color("a9cdd6"))
+	box_into(st, Vector3(mx - 0.06, 0.86, mz - 0.07), Vector3(mx + 0.08, 0.95, mz + 0.07), ice)
+	box_into(st, Vector3(mx - 0.03, 0.95, mz - 0.04), Vector3(mx + 0.05, 1.0, mz + 0.04), ice)
+	# the syrups in a row along the front, strawberry, melon, blue Hawaii and lemon, and a stack of cups
+	var sx := X1 - 0.62
+	for col in [Color("e2384a"), Color("4cbf56"), Color("2fa3e0"), Color("f2cf3a")]:
+		box_into(st, Vector3(sx, 0.76, ZF - 0.2), Vector3(sx + 0.08, 0.98, ZF - 0.12), col)
+		box_into(st, Vector3(sx + 0.02, 0.98, ZF - 0.18), Vector3(sx + 0.06, 1.03, ZF - 0.14), white)
+		sx += 0.12
+	box_into(st, Vector3(X1 - 0.24, 0.76, ZB + 0.2), Vector3(X1 - 0.12, 0.98, ZB + 0.32), white)
+	# the parasol's pole through the table into a weighted base
+	box_into(st, Vector3(-1.2, 0, -12.95), Vector3(-0.9, 0.1, -12.65), Color("4a4b50"))
+	box_into(st, Vector3(-1.07, 0.1, -12.82), Vector3(-1.03, 2.32, -12.78), white)
+	# the cool box on the kerb side of the table, lid off, its ice bristling with cans and bottles
+	var c0 := Vector3(-1.9, 0, -12.0)
+	var c1 := Vector3(-1.15, 0.5, -11.5)
+	box_into(st, c0, c1, Color("f2f0ea"))
+	box_into(st, Vector3(c0.x - 0.01, 0.34, c0.z - 0.01), Vector3(c1.x + 0.01, 0.42, c1.z + 0.01), blue)
+	box_into(st, Vector3(c0.x + 0.05, 0.5, c0.z + 0.05), Vector3(c1.x - 0.05, 0.53, c1.z - 0.05), ice)
+	var cans := [Color("e8392c"), Color("3fae49"), Color("f2f0ea"), Color("2f6fd0"), Color("f08a24"), Color("8fd0e8")]
+	for i in 6:
+		var at := Vector3(c0.x + 0.17 + (i % 3) * 0.2, 0.53, c0.z + 0.15 + (i / 3) * 0.2)
+		box_into(st, at - Vector3(0.05, 0, 0.05), at + Vector3(0.05, 0.1 if i % 2 == 0 else 0.16, 0.05), cans[i])
+	box_into(st, Vector3(c1.x + 0.04, 0, c0.z + 0.02), Vector3(c1.x + 0.1, 0.48, c1.z - 0.02), Color("2f6fd0"))  # its lid, leant against it
+	# the flag's pole at the kerb end of the bay, an arm along its top
+	var fp := Vector3(-2.05, 0, -11.15)
+	box_into(st, fp + Vector3(-0.12, 0, -0.12), fp + Vector3(0.12, 0.12, 0.12), Color("4a4b50"))
+	box_into(st, fp + Vector3(-0.025, 0, -0.025), fp + Vector3(0.025, 2.55, 0.025), Color("d8d2c4"))
+	box_into(st, fp + Vector3(-0.02, 2.4, -0.6), fp + Vector3(0.02, 2.44, 0.0), Color("d8d2c4"))
+	# the bucket and ladle by your door
+	var bk := Vector3(-7.55, 0, -6.45)
+	box_into(st, bk + Vector3(-0.15, 0, -0.15), bk + Vector3(0.15, 0.3, 0.15), Color("a8794a"))
+	for y in [0.06, 0.22]:
+		box_into(st, bk + Vector3(-0.16, y, -0.16), bk + Vector3(0.16, y + 0.03, 0.16), Color("3b2f2b"))
+	box_into(st, bk + Vector3(-0.12, 0.26, -0.12), bk + Vector3(0.12, 0.28, 0.12), Color("6f9fb4"))
+	box_into(st, bk + Vector3(-0.01, 0.28, -0.02), bk + Vector3(0.01, 0.62, 0.02), Color("c9a26b"))
+	box_into(st, bk + Vector3(-0.06, 0.24, -0.06), bk + Vector3(0.06, 0.3, 0.06), Color("c9a26b"))
+	commit([st], node)
+	# the parasol: eight panels, blue and white
+	var img := Image.create(8, 1, false, Image.FORMAT_RGB8)
+	for i in 8:
+		img.set_pixel(i, 0, blue if i % 2 == 0 else white)
+	var top := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.05
+	cm.bottom_radius = 1.3
+	cm.height = 0.4
+	cm.radial_segments = 8
+	cm.rings = 1
+	cm.cap_top = false
+	cm.cap_bottom = false
+	top.mesh = cm
+	top.material_override = mat(Color.WHITE, ImageTexture.create_from_image(img))
+	top.position = Vector3(-1.05, 2.18, -12.8)
+	node.add_child(top)
+	# the flag: a red 氷 on white between a blue band and a hem of waves, hung from the arm
+	var fl := Image.create(10, 30, false, Image.FORMAT_RGB8)
+	fl.fill(white)
+	fl.fill_rect(Rect2i(0, 0, 10, 3), blue)
+	fl.fill_rect(Rect2i(0, 25, 10, 5), blue)
+	for x in 10:
+		fl.set_pixel(x, 24, blue if x % 4 < 2 else white)
+		fl.set_pixel(x, 23, blue if x % 4 == 1 else white)
+	var glyph := ["....#...", "#...#...", ".#..#.#.", "..####..", "..#.#.#.", ".#..#..#", "#...#...", "...##..."]
+	for y in glyph.size():
+		for x in 8:
+			if glyph[y][x] == "#":
+				fl.fill_rect(Rect2i(1 + x, 6 + y * 2, 1, 2), red)
+	var fm := mat(Color.WHITE, ImageTexture.create_from_image(fl))
+	var fq := QuadMesh.new()
+	fq.size = Vector2(0.52, 1.56)
+	for side in [1.0, -1.0]:
+		var face := MeshInstance3D.new()
+		face.mesh = fq
+		face.material_override = fm
+		face.rotation.y = PI / 2 * side
+		face.position = fp + Vector3(0.01 * side, 1.6, -0.3)
+		node.add_child(face)
+	# the splashed sidewalk, darker where the water lies thickest
+	var wet := mat(Color(0.18, 0.22, 0.3, 0.62), radial([Color.WHITE, Color.WHITE, Color(1, 1, 1, 0)], [0.0, 0.45, 1.0]))
+	wet.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	plane(node, Vector2(3.4, 1.5), Vector3(-5.5, -0.031, -5.95), wet)
+	plane(node, Vector2(1.4, 1.0), Vector3(-7.5, -0.031, -5.6), wet)
+	cast(node, Vector2(-1.05, -12.8), 1.98, 2.38, 2.5)
+	cast(node, Vector2(-1.05, -12.8), 0.0, 1.98, 0.05)
+	cast(node, Vector2(fp.x, fp.z - 0.3), 0.82, 2.44, 0.52)
+	cast(node, Vector2(fp.x, fp.z), 0.0, 0.82, 0.05)
+	blob(node, Vector2((X0 + X1) / 2, (ZB + ZF) / 2), 0.9)
+	blob(node, Vector2(-1.5, -11.75), 0.5)
+	blob(node, Vector2(bk.x, bk.z), 0.22)
+	return node
+
+
 ## The block's garbage station: a green cage on a kerbed slab, its net walls showing the night's bags heaped inside
 ## under a hinged lid, the ward's collection-day board on a post at the sidewalk end and a crate of empties beside it.
 func garbage_station(gs: Vector3) -> void:
@@ -3245,6 +3383,7 @@ func build_set() -> void:
 	works = roadworks(near_gaps + under[1])
 	tv = tv_crew()
 	health = health_check()
+	heat = ice_stand()
 	for cx in [-1.0, 1.4]:  # wheel stops
 		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("d8d2c4"))
 	# a low planter along the back of the car park, below the till's sight line
@@ -4723,6 +4862,8 @@ func _process(delta: float) -> void:
 			tv.visible = branch.event != null and branch.event.id == "tv"
 		if health:
 			health.visible = branch.event != null and branch.event.id == "inspector"
+		if heat:
+			heat.visible = branch.event != null and branch.event.id == "heatwave"
 		refresh_stock()
 		sync_actors(delta)
 		street_traffic(delta)
