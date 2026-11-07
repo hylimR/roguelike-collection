@@ -863,18 +863,21 @@ func ground_mat(tex_: ImageTexture) -> StandardMaterial3D:
 	return m
 
 
-## A 4 m square of 2 m paving slabs, white so the district's colour tints it: each slab a shade off, joints darker.
+## A 4 m square of 1 m paving slabs, white so the district's colour tints it, each row set half a slab along: each
+## slab a shade off and flecked, a few weathered darker, bevelled light on its sunny edges, joints darker.
 func paving() -> ImageTexture:
 	var r := RandomNumberGenerator.new()
 	r.seed = 11
-	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
-	for sy in 2:
-		for sx in 2:
-			var base := r.randf_range(0.94, 1.0)
+	var img := Image.create(32, 32, false, Image.FORMAT_RGB8)
+	for sy in 4:
+		for sx in 4:
+			var base := r.randf_range(0.95, 1.01) if r.randf() < 0.85 else r.randf_range(0.88, 0.92)
 			for y in 8:
 				for x in 8:
-					var v := base * r.randf_range(0.97, 1.0) * (0.9 if x == 7 or y == 7 else 1.0)
-					img.set_pixel(sx * 8 + x, sy * 8 + y, Color(v, v, v))
+					var fleck := r.randf_range(0.98, 1.01) if r.randf() < 0.9 else r.randf_range(0.93, 0.96)
+					var edge := 0.86 if x == 7 or y == 7 else (1.03 if x == 0 or y == 0 else 1.0)
+					var v := minf(base * fleck * edge, 1.0)
+					img.set_pixel(posmod(sx * 8 + x + 4 * (sy % 2), 32), sy * 8 + y, Color(v, v, v))
 	return ImageTexture.create_from_image(img)
 
 
@@ -1304,9 +1307,10 @@ func build_static() -> void:
 	for p in moat_ring(C.parks[0]):
 		ws.set_uv(p * 0.125)
 		ws.add_vertex(Vector3(p.x, -0.14, p.y))
-	var land := surface(mat(Color(Sim.City.GROUND.hub)))
+	var land := surface(ground_mat(paving()))  # paved like the blocks it covers, rather than a bare sheet
+	land.set_color(Color(Sim.City.GROUND.hub))
 	for isl in C.islands:
-		poly_fill(land, isl, -0.135)
+		poly_fill(land, isl, -0.135, 0.25)
 	var park_tex := tiled(speckle([Color("68a84a"), Color("76b656"), Color("5c9c42"), Color("86c262")]), Vector2.ONE)
 	park_tex.texture_repeat = true
 	var ps := surface(park_tex)
@@ -3445,12 +3449,13 @@ func build_set() -> void:
 	var side_roads := roads.filter(func(rd): return rd is Array or rd.size.y > rd.size.x)  # avenues and cross streets
 	# where the set runs out over water (the bay, a canal) it stands on made ground: its street with a strip either
 	# side, and the lots of your shop and the rival. Elsewhere the water stays and the neighbours keep out of it.
-	var made := surface(mat(Color(Sim.City.GROUND[type])))
+	var made := surface(ground_mat(paving()))
+	made.set_color(Color(Sim.City.GROUND[type]))
 	var made_runs := []
 	if near_water():
 		made_runs = made_ground(C, here, street_x, span)
 		for w in made_runs:
-			rect_quad(made, w, -0.125)  # over the water, under any bridge
+			rect_quad(made, w, -0.125, 0.0, false, 0.25)  # over the water, under any bridge
 		roads.append_array(water_runs(C, here, SET.position.y, -20.2) + water_runs(C, here, -20.2, -7.2, SET.position.x, -16.5) + water_runs(C, here, -20.2, -7.2, span.y, SET.end.x))
 	var far_gaps := mouths(-8.2, -3.6, side_roads, Vector2(-16.5, span.y))  # none between your shop and the rival
 	var near_gaps := mouths(3.6, 8.2, side_roads)
