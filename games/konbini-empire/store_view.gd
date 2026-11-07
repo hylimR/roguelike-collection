@@ -2860,6 +2860,78 @@ func health_check() -> Node3D:
 	return node
 
 
+## The block's garbage station: a green cage on a kerbed slab, its net walls showing the night's bags heaped inside
+## under a hinged lid, the ward's collection-day board on a post at the sidewalk end and a crate of empties beside it.
+func garbage_station(gs: Vector3) -> void:
+	var kit := mat(Color.WHITE)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var st := surface(kit)
+	var frame := Color("2f5a3a")
+	var h := Vector3(0.38, 0, 0.8)
+	box_into(st, gs - h - Vector3(0.06, 0, 0.06), gs + h + Vector3(0.06, 0.07, 0.06), Color("b4afa4"))
+	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1), Vector2(-1, 0), Vector2(1, 0)]:
+		var at := gs + Vector3(c.x * (h.x - 0.025), 0, c.y * (h.z - 0.025))
+		box_into(st, at + Vector3(-0.025, 0.07, -0.025), at + Vector3(0.025, 0.9, 0.025), frame)
+	for x in [-1, 1]:  # the top and foot rails along each side
+		for y in [0.1, 0.88]:
+			box_into(st, gs + Vector3(x * h.x - 0.02, y - 0.02, -h.z), gs + Vector3(x * h.x + 0.02, y + 0.02, h.z), frame)
+	for z in [-1, 1]:
+		box_into(st, gs + Vector3(-h.x, 0.86, z * h.z - 0.02), gs + Vector3(h.x, 0.9, z * h.z + 0.02), frame)
+	# the bags heaped inside, each a lumpy sack with its neck tied off
+	for bag in [[Vector3(-0.12, 0, -0.45), 0.5, Color("e9edf0")], [Vector3(0.13, 0, -0.38), 0.42, Color("d6e4ec")],
+			[Vector3(-0.08, 0, 0.05), 0.46, Color("f1efe6")], [Vector3(0.14, 0, 0.42), 0.38, Color("e9edf0")], [Vector3(-0.15, 0, 0.5), 0.3, Color("efe3b4")]]:
+		var bc: Vector3 = gs + bag[0] + Vector3(0, 0.07, 0)
+		var r: float = bag[1] / 2
+		box_into(st, bc + Vector3(-r, 0, -r), bc + Vector3(r, r * 1.3, r), bag[2])
+		box_into(st, bc + Vector3(-r * 0.7, r * 1.3, -r * 0.7), bc + Vector3(r * 0.7, r * 1.75, r * 0.7), bag[2].darkened(0.04))
+		box_into(st, bc + Vector3(-0.03, r * 1.75, -0.03), bc + Vector3(0.03, r * 1.75 + 0.07, 0.03), bag[2].darkened(0.2))
+	# the lid, lipped over the frame, with a grab bar on the sidewalk end
+	box_into(st, gs + Vector3(-h.x - 0.04, 0.9, -h.z - 0.04), gs + Vector3(h.x + 0.04, 0.95, h.z + 0.04), Color("4f8a5c"))
+	box_into(st, gs + Vector3(-0.2, 0.86, h.z + 0.04), gs + Vector3(0.2, 0.9, h.z + 0.08), Color("c9c6be"))
+	# the collection-day board: white, a blue header, a row of coloured days for burnables, plastics and cans
+	var sp := gs + Vector3(-0.15, 0, h.z + 0.32)
+	box_into(st, sp + Vector3(-0.03, 0, -0.03), sp + Vector3(0.03, 1.2, 0.03), Color("9aa0a6"))
+	box_into(st, sp + Vector3(-0.28, 0.82, 0.03), sp + Vector3(0.28, 1.24, 0.05), Color("fbfaf5"))
+	box_into(st, sp + Vector3(-0.28, 1.15, 0.05), sp + Vector3(0.28, 1.24, 0.055), Color("3f6fb8"))
+	for k in 3:
+		var row: Color = [Color("d8493a"), Color("2e9a5c"), Color("e2a63a")][k]
+		var y := 1.08 - k * 0.085
+		box_into(st, sp + Vector3(-0.23, y - 0.025, 0.05), sp + Vector3(-0.14, y + 0.025, 0.055), row)
+		box_into(st, sp + Vector3(-0.1, y - 0.012, 0.05), sp + Vector3(0.22, y + 0.012, 0.055), Color("8a8780"))
+	# a crate of empty bottles at the back end, their caps in rows
+	var cr := gs + Vector3(0.05, 0, -h.z - 0.42)
+	box_into(st, cr + Vector3(-0.25, 0, -0.2), cr + Vector3(0.25, 0.3, 0.2), Color("3f7fc4"))
+	box_into(st, cr + Vector3(-0.22, 0.3, -0.17), cr + Vector3(0.22, 0.31, 0.17), Color("2c5c96"))
+	for i in 4:
+		for j in 3:
+			var bt := cr + Vector3(-0.165 + i * 0.11, 0.3, -0.11 + j * 0.11)
+			box_into(st, bt + Vector3(-0.03, 0, -0.03), bt + Vector3(0.03, 0.08, 0.03), Color("5c8f6a") if (i + j) % 2 else Color("8a5a3a"))
+	# the net: a diamond mesh, see-through, on all four sides
+	var img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	for y in 8:
+		for x in 8:
+			if (x + y) % 8 < 2 or (x - y + 8) % 8 < 2:
+				img.set_pixel(x, y, Color("3a6b47"))
+	var nm := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	nm.vertex_color_use_as_albedo = true
+	nm.vertex_color_is_srgb = true
+	nm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	var net := surface(nm)
+	var lo := gs + Vector3(0, 0.1, 0)
+	for f in [[Vector3(-h.x, 0, h.z), Vector3(h.x, 0, h.z), 0.9], [Vector3(h.x, 0, h.z), Vector3(h.x, 0, -h.z), 0.75],
+			[Vector3(-h.x, 0, -h.z), Vector3(h.x, 0, -h.z), 0.75], [Vector3(-h.x, 0, h.z), Vector3(-h.x, 0, -h.z), 0.9]]:
+		var a: Vector3 = lo + f[0]
+		var b: Vector3 = lo + f[1]
+		var len_ := (b - a).length() / 0.3
+		net.set_color(Color(f[2], f[2], f[2]))
+		add_quad(net, [a, b, b + Vector3(0, 0.78, 0), a + Vector3(0, 0.78, 0)], [Vector2(0, 2.6), Vector2(len_, 2.6), Vector2(len_, 0), Vector2.ZERO])
+	commit([st, net], set_node)
+	cast(set_node, Vector2(gs.x, gs.z), 0.0, 0.96, 0.8)
+	cast(set_node, Vector2(sp.x, sp.z), 0.0, 1.24, 0.1)
+	blob(set_node, Vector2(gs.x, gs.z - 0.3), 1.0)
+
+
 func speckle(colors: Array) -> ImageTexture:
 	var r := RandomNumberGenerator.new()
 	r.seed = 7
@@ -3047,15 +3119,7 @@ func build_set() -> void:
 	# where a city street runs in under the yard and leaves it unbuilt: the block's garbage station at the sidewalk, a
 	# couple of bicycles along the car park's kerb and a tree at the back, all on the side the rival doesn't hide
 	if span.x > 8.0 and free_runs(5.35, span.x, -16.2, -7.2, roads + overhead).is_empty() and free_runs(3.7, span.x, -20.2, -7.2, overhead) == [Vector2(3.7, span.x)]:
-		var gs := Vector3(4.55, 0, -9.5)
-		block(set_node, Vector3(0.75, 0.9, 1.6), gs + Vector3(0, 0.45, 0), Color("4f8a5c"))
-		block(set_node, Vector3(0.81, 0.06, 1.66), gs + Vector3(0, 0.93, 0), Color("3c6e48"))
-		for k in 3:  # its net's frame
-			block(set_node, Vector3(0.79, 0.86, 0.05), gs + Vector3(0, 0.45, -0.8 + k * 0.8), Color("2f5a3a"))
-		block(set_node, Vector3(0.5, 0.32, 0.4), gs + Vector3(0.05, 0.16, -1.3), Color("3f7fc4"))  # a crate of bottles
-		block(set_node, Vector3(0.44, 0.04, 0.34), gs + Vector3(0.05, 0.33, -1.3), Color("cfe3ea"))
-		cast(set_node, Vector2(gs.x, gs.z), 0.0, 0.96, 0.75)
-		blob(set_node, Vector2(gs.x, gs.z - 0.3), 0.9)
+		garbage_station(Vector3(4.55, 0, -9.5))
 		for bz in [-12.4, -13.5]:
 			var bike := sprite("outdoor", Rect2(8 * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[8] * 0.55)
 			bike.position = Vector3(4.35, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[8] * 0.55 - 0.05, bz)
