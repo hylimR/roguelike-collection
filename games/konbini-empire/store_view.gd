@@ -3400,17 +3400,38 @@ func build_set() -> void:
 		block(set_node, Vector3(vw - 0.3, 0.55, 0.12), Vector3(vx, 3.1, -7.16), Color("cfc7b6"))
 		block(set_node, Vector3(vw - 1.1, 0.4, 0.06), Vector3(vx, 3.1, -7.08), Color("e9e4d8"))  # where the old sign hung
 		block(set_node, Vector3(vw - 0.5, 0.3, 0.32), Vector3(vx, 2.62, -7.05), Color("9aa0a6"))
-		var slats := Image.create(1, 4, false, Image.FORMAT_RGB8)
-		slats.fill(Color("c4c8cb"))
-		slats.set_pixel(0, 3, Color("8f959b"))
+		# the shutter, 14 ribbed slats at 23 px a metre: road grime climbing from the foot, rust run down from the box
+		var sw := vw - 0.8
+		var slats := Image.create(maxi(8, roundi(sw * 23.0)), 56, false, Image.FORMAT_RGB8)
+		var rr := RandomNumberGenerator.new()
+		rr.seed = 7
+		var runs := {}
+		for k in roundi(sw * 1.2):
+			runs[rr.randi_range(1, slats.get_width() - 2)] = rr.randi_range(10, 34)
+		for px in slats.get_width():
+			for y in 56:
+				var c := Color("8f959b") if y % 4 == 3 else (Color("d3d7d9") if y % 4 == 0 else Color("c4c8cb"))
+				c = c.lerp(Color("7c7366"), 0.75 * pow(clampf((y - 20.0) / 36.0, 0.0, 1.0), 1.3))
+				if runs.has(px) and y < runs[px]:
+					c = c.lerp(Color("94603e"), 0.7 * (1.0 - float(y) / runs[px]))
+				slats.set_pixel(px, y, c)
 		var shutter := MeshInstance3D.new()
 		var q := QuadMesh.new()
-		q.size = Vector2(vw - 0.8, 2.45)
+		q.size = Vector2(sw, 2.45)
 		shutter.mesh = q
-		shutter.material_override = tiled(ImageTexture.create_from_image(slats), Vector2(1, 14))
+		shutter.material_override = mat(Color.WHITE, ImageTexture.create_from_image(slats))
 		shutter.position = Vector3(vx, 1.235, -7.17)
 		set_node.add_child(shutter)
 		block(set_node, Vector3(vw - 0.7, 0.1, 0.1), Vector3(vx, 0.05, -7.13), Color("7d8389"))
+		for side in [-1, 1]:
+			block(set_node, Vector3(0.12, 2.5, 0.14), Vector3(vx + side * (sw / 2 + 0.02), 1.25, -7.13), Color("7d8389"))  # guide rails
+			block(set_node, Vector3(0.07, 0.1, 0.05), Vector3(vx + side * (sw / 2 - 0.45), 0.13, -7.06), Color("c9a24a"))  # padlocked to the kerb
+		# old flyers taped up and peeling, and the post nobody collects heaped at the foot
+		for f in [[Vector2(0.45 - sw / 2, 1.3), Vector2(0.42, 0.58), Color("efe2a4")], [Vector2(0.9 - sw / 2, 1.05), Vector2(0.36, 0.5), Color("cfe0ec")]]:
+			block(set_node, Vector3(f[1].x, f[1].y, 0.02), Vector3(vx + f[0].x, f[0].y, -7.15), f[2])
+			block(set_node, Vector3(f[1].x * 0.6, 0.05, 0.025), Vector3(vx + f[0].x, f[0].y + f[1].y * 0.22, -7.145), Color("6b6359"))
+		for m in [[Vector3(0.42, 0.04, 0.24), Vector3(-0.3, 0.02, -6.98), Color("f2efe6")], [Vector3(0.3, 0.03, 0.2), Vector3(-0.05, 0.045, -6.95), Color("e7c9a0")], [Vector3(0.26, 0.03, 0.18), Vector3(-0.45, 0.05, -6.92), Color("d9e4ee")]]:
+			block(set_node, m[0], Vector3(vx, 0, 0) + m[1], m[2])
 		block(set_node, Vector3(1.04, 0.76, 0.03), Vector3(vx + 0.4, 1.55, -7.15), Color("d8493a"))  # to-let notice
 		block(set_node, Vector3(0.9, 0.5, 0.04), Vector3(vx + 0.4, 1.5, -7.14), Color("fbfaf5"))
 		block(set_node, Vector3(0.6, 0.06, 0.05), Vector3(vx + 0.4, 1.56, -7.13), Color("3d3a36"))
