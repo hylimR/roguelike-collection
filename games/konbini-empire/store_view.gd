@@ -371,6 +371,7 @@ var matsuri: Node3D  # the set's festival lanterns, shown on a Summer Matsuri
 var lantern_glow_mat: StandardMaterial3D
 var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
+var tv: Node3D  # the set's TV crew, shown on a TV Feature day
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
@@ -2672,6 +2673,109 @@ func roadworks(near_gaps: Array) -> Node3D:
 	return node
 
 
+## TV Feature: an outside-broadcast van in the station's livery backed into your free bay with a dish on its roof, a
+## camera on a tripod at the kerb and a light on a stand by the shopfront, both on your door; the camera's red tally
+## and the light glow after dark. Built hidden.
+func tv_crew() -> Node3D:
+	var node := Node3D.new()
+	node.visible = false
+	set_node.add_child(node)
+	var kit := mat(Color.WHITE)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var st := surface(kit)
+	var body := Color("f1efe8")
+	var dark := Color("2b2c30")
+	var glass := Color("33414f")
+	var blue := Color("2f6fd0")
+	# the van, nose to the street: a high box with a stepped bonnet, wheels showing under its skirt, the station's
+	# blue band and orange pinstripe right round it and its badge on the side you see
+	box_into(st, Vector3(-1.88, 0.0, -14.75), Vector3(-0.12, 0.55, -14.05), Color("232326"))
+	box_into(st, Vector3(-1.88, 0.0, -12.35), Vector3(-0.12, 0.55, -11.65), Color("232326"))
+	box_into(st, Vector3(-1.85, 0.3, -15.25), Vector3(-0.15, 2.0, -11.6), body)
+	box_into(st, Vector3(-1.85, 0.3, -11.6), Vector3(-0.15, 1.12, -11.05), body)
+	box_into(st, Vector3(-1.87, 0.72, -15.27), Vector3(-0.13, 1.0, -11.03), blue)
+	box_into(st, Vector3(-1.87, 1.0, -15.27), Vector3(-0.13, 1.07, -11.6), Color("f08a24"))
+	box_into(st, Vector3(-1.75, 1.18, -11.63), Vector3(-0.25, 1.88, -11.57), glass)
+	for x in [-1.88, -0.14]:
+		box_into(st, Vector3(x, 1.24, -12.45), Vector3(x + 0.02, 1.86, -11.75), glass)
+	box_into(st, Vector3(-1.86, 0.26, -11.06), Vector3(-0.14, 0.46, -10.96), Color("9aa0a6"))
+	box_into(st, Vector3(-1.86, 0.26, -15.36), Vector3(-0.14, 0.46, -15.24), Color("9aa0a6"))
+	for x in [-1.7, -0.3]:
+		box_into(st, Vector3(x - 0.13, 0.8, -11.06), Vector3(x + 0.13, 0.92, -11.02), Color("fff3c4"))
+	box_into(st, Vector3(-0.14, 1.28, -14.0), Vector3(-0.11, 1.86, -12.85), blue)
+	box_into(st, Vector3(-0.11, 1.42, -13.68), Vector3(-0.1, 1.72, -13.17), Color("fbfaf5"))
+	box_into(st, Vector3(-0.1, 1.51, -13.5), Vector3(-0.09, 1.63, -13.35), Color("e8392c"))
+	for x in [-1.72, -0.28]:  # roof rails, a folded mast and the dish's turntable
+		box_into(st, Vector3(x - 0.05, 2.0, -15.0), Vector3(x + 0.05, 2.07, -11.9), Color("8e9196"))
+	box_into(st, Vector3(-1.52, 2.07, -14.9), Vector3(-1.36, 2.2, -12.2), Color("b9bcc0"))
+	box_into(st, Vector3(-1.52, 2.07, -12.2), Vector3(-1.36, 2.24, -11.98), Color("e8392c"))
+	box_into(st, Vector3(-0.95, 2.0, -14.3), Vector3(-0.55, 2.14, -13.9), Color("6e737d"))
+	box_into(st, Vector3(-0.8, 2.14, -14.15), Vector3(-0.7, 2.42, -14.05), Color("6e737d"))
+	# the camera at the kerb, aimed at your door: tripod legs on a spreader, a head, the body with its lens, hood and
+	# viewfinder, a pan bar reaching back to the operator
+	var cam_at := Vector3(-5.6, 0, -4.8)
+	for leg in [Vector2(0, -0.32), Vector2(-0.28, 0.17), Vector2(0.28, 0.17)]:
+		box_into(st, cam_at + Vector3(leg.x - 0.025, 0, leg.y - 0.025), cam_at + Vector3(leg.x + 0.025, 1.0, leg.y + 0.025), Color("3a3b40"))
+		box_into(st, cam_at + Vector3(minf(leg.x, 0) - 0.02, 0.18, minf(leg.y, 0) - 0.02), cam_at + Vector3(maxf(leg.x, 0) + 0.02, 0.22, maxf(leg.y, 0) + 0.02), Color("3a3b40"))
+	box_into(st, cam_at + Vector3(-0.12, 0.98, -0.12), cam_at + Vector3(0.12, 1.08, 0.12), Color("4a4b50"))
+	box_into(st, cam_at + Vector3(-0.13, 1.08, -0.3), cam_at + Vector3(0.13, 1.38, 0.25), dark)
+	box_into(st, cam_at + Vector3(-0.08, 1.13, -0.55), cam_at + Vector3(0.08, 1.31, -0.3), Color("18191b"))
+	box_into(st, cam_at + Vector3(-0.12, 1.1, -0.63), cam_at + Vector3(0.12, 1.34, -0.55), Color("18191b"))
+	box_into(st, cam_at + Vector3(-0.2, 1.3, -0.18), cam_at + Vector3(-0.13, 1.44, 0.05), Color("4a4b50"))
+	box_into(st, cam_at + Vector3(0.1, 1.02, 0.25), cam_at + Vector3(0.14, 1.06, 0.62), Color("4a4b50"))
+	box_into(st, cam_at + Vector3(-0.13, 1.2, -0.3), cam_at + Vector3(0.13, 1.25, 0.25), blue)
+	# the light, on a stand against your shopfront left of the door: three feet, a pole and a framed soft panel
+	# turned along the front to light whoever stands at the door
+	var lt_at := Vector3(-8.4, 0, -6.1)
+	for f in [Vector2(-0.3, 0), Vector2(0.15, -0.26), Vector2(0.15, 0.26)]:
+		box_into(st, lt_at + Vector3(minf(f.x, 0) - 0.02, 0, minf(f.y, 0) - 0.02), lt_at + Vector3(maxf(f.x, 0) + 0.02, 0.05, maxf(f.y, 0) + 0.02), Color("3a3b40"))
+	box_into(st, lt_at + Vector3(-0.025, 0, -0.025), lt_at + Vector3(0.025, 1.62, 0.025), Color("8e9196"))
+	box_into(st, lt_at + Vector3(-0.1, 1.55, -0.42), lt_at + Vector3(0.0, 2.12, 0.42), dark)
+	commit([st], node)
+	var face := MeshInstance3D.new()
+	var fq := QuadMesh.new()
+	fq.size = Vector2(0.74, 0.47)
+	face.mesh = fq
+	var fm := mat(Color("fff4dc"))
+	light_up(fm, 1.0)
+	face.material_override = fm
+	face.rotation.y = PI / 2
+	face.position = lt_at + Vector3(0.01, 1.835, 0)
+	node.add_child(face)
+	var tally := MeshInstance3D.new()
+	tally.mesh = shaded_box()
+	tally.scale = Vector3(0.07, 0.06, 0.07)
+	tally.position = cam_at + Vector3(0.08, 1.41, -0.24)
+	var tm := mat(Color("e8392c"))
+	light_up(tm, 1.0)
+	tally.material_override = tm
+	node.add_child(tally)
+	var disc := MeshInstance3D.new()
+	var dm := CylinderMesh.new()
+	dm.top_radius = 0.5
+	dm.bottom_radius = 0.42
+	dm.height = 0.07
+	dm.radial_segments = 16
+	dm.rings = 1
+	disc.mesh = dm
+	disc.material_override = mat(Color("d9d8d2"))
+	disc.basis = Basis(Vector3(1, 0, -1).normalized(), 0.8)
+	disc.position = Vector3(-0.75, 2.55, -14.1)
+	node.add_child(disc)
+	var gm := multimesh(QuadMesh.new(), 2)
+	gm.set_instance_transform(0, Transform3D(Basis().scaled(Vector3(2.4, 2.4, 2.4)), face.position))
+	gm.set_instance_transform(1, Transform3D(Basis().scaled(Vector3(0.6, 0.6, 0.6)), tally.position))
+	mm_node(gm, halo_mat, node)
+	cast(node, Vector2(-1.0, -13.15), 0.3, 2.1, 1.7)
+	cast(node, Vector2(cam_at.x, cam_at.z), 0.0, 1.4, 0.4)
+	cast(node, Vector2(lt_at.x, lt_at.z), 1.55, 2.12, 0.84)
+	cast(node, Vector2(lt_at.x, lt_at.z), 0.0, 1.55, 0.06)
+	blob(node, Vector2(-1.0, -13.15), 1.6)
+	blob(node, Vector2(cam_at.x, cam_at.z), 0.5)
+	return node
+
+
 func speckle(colors: Array) -> ImageTexture:
 	var r := RandomNumberGenerator.new()
 	r.seed = 7
@@ -2832,6 +2936,7 @@ func build_set() -> void:
 	snow_cover = settled_snow(far_gaps, near_gaps)
 	matsuri = matsuri_lanterns(far_gaps + under[0], near_gaps + under[1])
 	works = roadworks(near_gaps + under[1])
+	tv = tv_crew()
 	for cx in [-1.0, 1.4]:  # wheel stops
 		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("d8d2c4"))
 	# a low planter along the back of the car park, below the till's sight line
@@ -4239,6 +4344,8 @@ func _process(delta: float) -> void:
 			works.visible = branch.event != null and branch.event.id == "roadworks"
 			if works.visible:
 				works_glow_mat.albedo_color = Color(1.0, 0.45, 0.2, (0.9 if fmod(Time.get_ticks_msec() / 1000.0, 0.9) < 0.5 else 0.45) * night)
+		if tv:
+			tv.visible = branch.event != null and branch.event.id == "tv"
 		refresh_stock()
 		sync_actors(delta)
 		street_traffic(delta)
