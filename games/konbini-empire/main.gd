@@ -1620,8 +1620,8 @@ func show_new_run() -> void:
 	seed_now.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var tiles := HBoxContainer.new()
 	tiles.add_theme_constant_override("separation", 8)
-	tiles.add_child(seed_tile("This run", seed_now, "Day %d  ·  Level %d" % [sim.day, sim.player.level], button("Replay", func(): new_run(sim.seed_text))))
-	tiles.add_child(seed_tile("New run", edit, "Type a seed to share a street", go))
+	tiles.add_child(seed_tile(intro_shop(), "This run", seed_now, "Day %d  ·  Level %d" % [sim.day, sim.player.level], button("Replay", func(): new_run(sim.seed_text))))
+	tiles.add_child(seed_tile(picture("decor", 3, 96, Vector2(40, 40)), "New run", edit, "Type a seed to share a street", go))
 	v.add_child(tiles)
 	var prev := modal_kind
 	var cancel := func():
@@ -1639,11 +1639,20 @@ func show_new_run() -> void:
 	edit.grab_focus.call_deferred()
 
 
-## A seed on its own sunken tile: caption, the seed (or a field for one), a note and the button that starts it.
-func seed_tile(what: String, value: Control, note: String, b: Button) -> PanelContainer:
+## A seed on its own sunken tile: its picture on a mint plate, caption, the seed (or a field for one), a note and the
+## button that starts it.
+func seed_tile(pic: Control, what: String, value: Control, note: String, b: Button) -> PanelContainer:
+	var plate := PanelContainer.new()
+	var ps := box(MINT.lerp(PAPER, 0.75), 12, 4)
+	ps.border_width_bottom = 2
+	ps.border_color = MINT.lerp(PAPER, 0.5)
+	plate.add_theme_stylebox_override("panel", ps)
+	plate.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	plate.add_child(pic)
 	var c := VBoxContainer.new()
 	c.add_theme_constant_override("separation", 4)
 	c.custom_minimum_size.x = 208
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var w := label(what.to_upper(), MUTED, 10)
 	w.add_theme_font_override("font", bold)
 	c.add_child(w)
@@ -1651,7 +1660,11 @@ func seed_tile(what: String, value: Control, note: String, b: Button) -> PanelCo
 	c.add_child(label(note, MUTED, 11))
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	c.add_child(b)
-	var p := sunken(c)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	h.add_child(plate)
+	h.add_child(c)
+	var p := sunken(h)
 	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var st: StyleBoxFlat = p.get_theme_stylebox("panel")
 	st.content_margin_top = 10
