@@ -459,6 +459,7 @@ var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
 var floor_tex := {}  # shop floor texture by left wall
 var set_sig := ""
 var tarmac_m: StandardMaterial3D
+var car_park_m: StandardMaterial3D
 var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
 var entries := []  # x of the side roads that meet the set's street, where cars come in when both its ends are quays
 var slot_icons := {}  # product -> [Sprite3D]: its stock on the shelf
@@ -1046,6 +1047,64 @@ func tarmac() -> StandardMaterial3D:
 	m.texture_repeat = true
 	m.uv1_scale = Vector3(0.25, 1, 1)
 	tarmac_m = m
+	return m
+
+
+## Your car park across its whole 7.1 x 8.8 m (uv 0-1 over Rect2(-3.4, -16, 7.1, 8.8)), 16 px a metre: the street's
+## coarse grain a shade paler, tyre paths polished darker into each bay and scuffed across the aisle, an oil stain
+## where each car's engine stands, dust along the kerbs, and the bay lines and arrow painted in, worn thin at
+## their ends and wherever the tyres run over them.
+func car_park() -> StandardMaterial3D:
+	if car_park_m:
+		return car_park_m
+	const PX := 16.0
+	var r := RandomNumberGenerator.new()
+	r.seed = 53
+	var img := Image.create(114, 141, false, Image.FORMAT_RGB8)
+	var base := ASPHALT.lightened(0.08)
+	var paint := Color("ebe7dc")
+	var noise := FastNoiseLite.new()
+	noise.seed = 53
+	noise.frequency = 0.9
+	var lines := [Rect2(-2.2, -15.6, 0.12, 4.6), Rect2(0.2, -15.6, 0.12, 4.6), Rect2(2.6, -15.6, 0.12, 4.6), Rect2(-2.2, -15.6, 4.92, 0.12), Rect2(0.95, -9.6, 0.24, 1.5)]
+	var head := PackedVector2Array([Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55)])
+	var grain := {}
+	for py in img.get_height():
+		var z := -16.0 + (py + 0.5) / PX
+		for px in img.get_width():
+			var x := -3.4 + (px + 0.5) / PX
+			var cell := Vector2i(px / 2, py / 2)  # the grain at the street's 8 px a metre
+			if not grain.has(cell):
+				var g := r.randf()
+				grain[cell] = r.randf_range(0.96, 1.03) if g < 0.8 else (r.randf_range(1.06, 1.1) if g < 0.9 else r.randf_range(0.87, 0.91))
+			var v: float = grain[cell]
+			var c := base
+			var tyre := 0.0
+			for bx in [-1.0, 1.4]:
+				for wx in [-0.72, 0.72]:
+					var d := absf(x - bx - wx)
+					if d < 0.16 and z > -15.2:
+						tyre = maxf(tyre, clampf((z + 15.2) / 2.0, 0.25, 1.0))
+			if z > -11.0:  # the aisle, where every car turns in
+				tyre = maxf(tyre, 0.45 + 0.25 * noise.get_noise_2d(x * 0.7, z * 0.7))
+			v = lerpf(v, 0.84, tyre * 0.7)
+			for bx in [-1.0, 1.4]:  # an oil stain under each engine, ragged at its edge
+				var e := Vector2((x - bx) / 0.42, (z + 14.35) / 0.55).length() + 0.35 * noise.get_noise_2d(x * 3.0, z * 3.0)
+				if e < 1.0:
+					c = c.lerp(Color("2c2f38"), 0.55 * (1.0 - e * e))
+			if z < -15.75 or x > 3.45:
+				c = c.lerp(Color("8d8577"), 0.35 + 0.25 * noise.get_noise_2d(x * 2.0, z * 2.0))
+			var col := Color(c.r * v, c.g * v, c.b * v)
+			var at := Vector2(x, z)
+			if lines.any(func(l: Rect2): return l.has_point(at)) or Geometry2D.is_point_in_polygon(at, head):
+				var wear := 0.03 + tyre * 0.22 + (0.12 if z > -12.0 and z < -11.0 else 0.0) + 0.2 * noise.get_noise_2d(x * 4.0, z * 4.0)
+				if r.randf() > wear:
+					col = paint.lerp(col, clampf(wear, 0.0, 0.5))
+			img.set_pixel(px, py, col)
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	car_park_m = m
 	return m
 
 
@@ -3663,13 +3722,10 @@ func build_set() -> void:
 				rect_quad(paint, Rect2(zx, sd[2], 0.45, 2.9), -0.04)
 				zx += 0.9
 	# your parking: bays and bicycles between your shop and the alley, nothing tall to hide the till
-	var bay := surface(tiled(speckle([ASPHALT.lightened(0.1), ASPHALT.lightened(0.06), ASPHALT.lightened(0.14), ASPHALT.lightened(0.03)]), Vector2.ONE))
-	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042, 0.0, false, 0.5)
+	var bay := surface(car_park())  # its lines and the arrow leading drivers in off the street are painted on it
+	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042, 1.0)
 	for kb in [Rect2(-3.4, -16.25, 7.1, 0.25), Rect2(3.45, -16.25, 0.25, 9.05)]:  # kerb round the back and side
 		rect_quad(kerb, kb, -0.036)
-	for bx in [-2.2, 0.2, 2.6]:
-		rect_quad(paint, Rect2(bx, -15.6, 0.12, 4.6), -0.038)
-	rect_quad(paint, Rect2(-2.2, -15.6, 4.92, 0.12), -0.038)  # the bays' back line
 	var hatch := surface(mat(Color("e2c048")))
 	var hz := -15.4
 	while hz < -11.2:  # yellow hatching keeps the strip along your wall clear for bicycles
@@ -3677,9 +3733,6 @@ func build_set() -> void:
 		hz += 0.7
 	for hr in [Rect2(-3.3, -15.6, 1.04, 0.1), Rect2(-3.3, -11.1, 1.04, 0.1), Rect2(-3.3, -15.6, 0.1, 4.6)]:
 		rect_quad(hatch, hr, -0.038)
-	# a painted arrow in the aisle leads drivers in off the street
-	rect_quad(paint, Rect2(0.95, -9.6, 0.24, 1.5), -0.038)
-	poly_fill(paint, PackedVector2Array([Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55)]), -0.038)
 	# the yard round the back of the car park and on to the rival, where the set's lots meet: poured concrete scored
 	# into slabs, with a drain grating along the sidewalk, rather than the bare district ground the set cleared
 	var yard := surface(slabs())
