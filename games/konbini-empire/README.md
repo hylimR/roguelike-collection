@@ -9,7 +9,7 @@ The rival fights back. It warns a few seconds ahead, then launches an attack:
 - a price war;
 - fake reviews, typed on the sidewalk at your door;
 - shoplifters in a hood and mask;
-- a blackout that stops the tills;
+- a blackout that stops the tills and puts your shop's lights, pole sign and floodlights out, dim in daylight and near dark at night, while the tripped board on the back wall flashes its red lamp;
 - a hostile takeover by three suits who each grab 15% of your cash at the door.
 
 Click a threat to chase it off. Click the till to ring up a waiting customer; fast ring-ups build a combo that multiplies XP. Click a shelf to restock it. Customers who find an empty shelf, a full queue or a slow till leave angry, and your rating drops.

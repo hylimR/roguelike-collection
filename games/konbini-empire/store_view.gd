@@ -82,6 +82,7 @@ const GOLDEN := [16.0, 17.8, 19.2]  # golden hour's rise, peak and end: walls fa
 const DAWN := [6.0, 6.5, 7.8]  # the same for sunrise, from the other side and rosier
 const LAMP := Color(1.0, 0.85, 0.58)
 const SHOP_LIGHT := Color(0.86, 0.95, 1.0)  # a konbini's cool white strip lights
+const BLACKOUT := [Color(0.62, 0.65, 0.74), Color(0.17, 0.2, 0.32)]  # your shop with its power cut: by daylight through the glass, after dark
 const SEA := Color("3a8cc8")
 const SEA_NIGHT := Color(0.5, 0.48, 0.46)  # water goes darker than the land after dark instead of glowing blue under the night tint
 const ROOF_TINT := 0.3  # how much of its walls' tint a flat roof takes over its membrane
@@ -453,6 +454,10 @@ var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after da
 var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
 var beam_mat: StandardMaterial3D  # the cone of light falling from a lit lamp head to its pool
 var spill_mat: StandardMaterial3D  # shop light falling out of a glass front across the sidewalk
+var shop_spill_mat: StandardMaterial3D  # the same out of your own shop, which a blackout puts out
+var room_dim := Color.WHITE  # your shop's lighting, dimmed while a blackout has cut its power
+var set_sign_mats: Array = []  # your pole sign's lightbox faces on the set
+var breaker_lamp: Array = []  # [the tripped board's lamp, its glow]
 var flood_mat: StandardMaterial3D  # your car park's floodlight on the bays
 var sign_glow_mat: StandardMaterial3D  # the glow round your lit pole sign
 var fascia_glows: Array = []  # [weakref to the glow round a rival's lit fascia, its chain's colour]
@@ -543,6 +548,7 @@ func _ready() -> void:
 			var u := x / 63.0
 			fall.set_pixel(x, y, Color(1, 1, 1, (exp(-2.2 * y / 31.0) - exp(-2.2)) / (1.0 - exp(-2.2)) * smoothstep(0.0, 0.2, u) * smoothstep(0.0, 0.2, 1.0 - u)))
 	spill_mat.albedo_texture = ImageTexture.create_from_image(fall)
+	shop_spill_mat = spill_mat.duplicate()
 	var halo := Image.create(64, 16, false, Image.FORMAT_RGBA8)
 	for y in 16:
 		for x in 64:
@@ -794,8 +800,10 @@ func update_light() -> void:
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
-	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night)
-	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night)
+	var on := 1.0 if room_dim == Color.WHITE or mode != "store" else 0.0
+	shop_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night * on)
+	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night * on)
+	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night * on)
 	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.75 * night)
 	stall_glow_mat.albedo_color = Color(1.0, 0.6, 0.3, 0.95 * night)
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
@@ -823,7 +831,7 @@ func light_at(p: Vector3) -> Color:
 	if mode != "store":
 		return light
 	if shop_area.has_point(Vector2(p.x, p.z)):
-		return Color.WHITE
+		return room_dim
 	var k := 0.0
 	if night > 0.0:
 		for q in pools:
@@ -843,8 +851,8 @@ func pool(parent: Node3D, at: Vector3, size_: Vector2) -> void:
 
 
 ## Shop light falling out of a glass front at face_z across the sidewalk to the kerb, faded in after dusk.
-func spill(parent: Node3D, cx: float, w: float, face_z: float) -> void:
-	plane(parent, Vector2(w, 4.6), Vector3(cx, -0.028, face_z + 2.3), spill_mat)
+func spill(parent: Node3D, cx: float, w: float, face_z: float, m: Material = null) -> void:
+	plane(parent, Vector2(w, 4.6), Vector3(cx, -0.028, face_z + 2.3), m if m else spill_mat)
 	if parent != set_node:
 		return  # a shop on the city map: its glow only, the lamp pools that light sprites belong to the set
 	var x := cx - w / 2 + 1.5
@@ -3433,6 +3441,8 @@ func build_set() -> void:
 	slot_icons.clear()
 	slot_goods.clear()
 	pools.clear()
+	set_sign_mats.clear()
+	room_dim = Color.WHITE  # the new fittings are built lit; update_power dims them again if the power is still out
 	set_cars.clear()
 	var b := branch
 	var st: Dictionary = b.store
@@ -3766,7 +3776,7 @@ func build_set() -> void:
 		set_node.add_child(s)
 		lit_sprites.append(s)
 		blob(set_node, p[1], PROP_BLOB.get(p[0], OUTDOOR_SCALE[p[0]] * 1.5))
-	spill(set_node, Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7)  # your shop's open front
+	spill(set_node, Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7, shop_spill_mat)  # your shop's open front
 	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6], [5, Vector2(-8.3, -6.2), 0.7]]:
 		var s := sprite("decor", Rect2(d[0] * DECOR, 0, DECOR, DECOR), DECOR_PX * d[2])
 		s.position = Vector3(d[1].x, DECOR / 2.0 * DECOR_PX * d[2], d[1].y)
@@ -4399,6 +4409,8 @@ func pole_sign(parent: Node3D) -> void:
 		var lf := MeshInstance3D.new()
 		lf.mesh = face
 		lf.material_override = mat(Color.WHITE, sign_face(), true)
+		if parent == set_node:
+			set_sign_mats.append(lf.material_override)
 		lf.position = ps + Vector3(0, 6.7, 0.175 * side)
 		lf.rotation.y = 0.0 if side > 0 else PI
 		parent.add_child(lf)
@@ -4753,7 +4765,7 @@ func refresh_stock() -> void:
 		for k in icons.size():
 			var s: Sprite3D = icons[k]
 			s.visible = k < n or (p.stock == 0 and k == floori(icons.size() / 2.0))
-			s.modulate = Color(0.4, 0.4, 0.45, 0.8) if p.stock == 0 else Color.WHITE
+			s.modulate = (Color(0.4, 0.4, 0.45, 0.8) if p.stock == 0 else Color.WHITE) * room_dim
 
 
 # ---------- actors: the sim's pedestrians, threats and staff as sprites ----------
@@ -4841,6 +4853,83 @@ func sync_actors(delta: float) -> void:
 				shine(d[id].node)
 
 
+## A blackout dims your shop to daylight through the glass, or near dark after dusk: every fitting and the shoppers
+## inside, the pole sign and the light it throws on the car park and sidewalk, while the tripped board's lamp flashes.
+func update_power() -> void:
+	var cut: bool = branch.threats.any(func(t): return t.type == "breaker")
+	if not breaker_lamp.is_empty() and is_instance_valid(breaker_lamp[0]):
+		var on := fmod(Time.get_ticks_msec() / 1000.0, 0.8) < 0.45
+		breaker_lamp[0].material_override.albedo_color = Color("ff4a3d") if on else Color("6e2a26")
+		breaker_lamp[1].material_override.albedo_color = Color(1.0, 0.25, 0.2, 0.7 if on else 0.0)
+	var d: Color = BLACKOUT[0].lerp(BLACKOUT[1], snappedf(clampf(night, 0.0, 1.0), 0.05)) if cut else Color.WHITE
+	if d == room_dim:
+		return
+	if (d == Color.WHITE) != (room_dim == Color.WHITE):
+		night = -1.0  # relight the sign's glow, floodlight and spill
+	room_dim = d
+	var mats := set_sign_mats.duplicate()
+	for n in room.find_children("*", "", true, false):
+		if n is Sprite3D:
+			if not n.has_meta("own"):
+				n.set_meta("own", n.modulate)
+			n.modulate = n.get_meta("own") * d
+		elif n is GeometryInstance3D:
+			if n.material_override is StandardMaterial3D:
+				mats.append(n.material_override)
+			if n is MeshInstance3D and n.mesh:
+				for i in n.mesh.get_surface_count():
+					if n.mesh.surface_get_material(i) is StandardMaterial3D:
+						mats.append(n.mesh.surface_get_material(i))
+	for m: StandardMaterial3D in mats:
+		if not m.has_meta("own"):
+			m.set_meta("own", m.albedo_color)
+		m.albedo_color = m.get_meta("own") * d
+
+
+## The tripped distribution board on the back wall (its face to +z): a steel case with its door swung open on rows of
+## breakers, the main one thrown down in red, and a warning lamp over it, in the dark shop's own light.
+func breaker_board(mi: MeshInstance3D) -> void:
+	mi.position.y = 1.7
+	var d: Color = BLACKOUT[0].lerp(BLACKOUT[1], clampf(night, 0.0, 1.0))
+	block(mi, Vector3(0.55, 0.7, 0.14), Vector3(0, 0, -0.03), Color("9aa3ab") * d, true)
+	block(mi, Vector3(0.47, 0.62, 0.02), Vector3(0, 0, 0.045), Color("353a41") * d, true)
+	for r in 2:
+		block(mi, Vector3(0.43, 0.025, 0.02), Vector3(0, 0.08 - r * 0.24, 0.055), Color("6c737b") * d, true)  # the DIN rail
+		for k in 6:
+			var main := r == 0 and k == 0
+			var h := 0.13 if main else 0.1
+			block(mi, Vector3(0.055, h, 0.04), Vector3(-0.185 + k * 0.074, 0.14 - r * 0.24, 0.065), Color("eceae4") * d, true)
+			block(mi, Vector3(0.025, 0.035, 0.03), Vector3(-0.185 + k * 0.074, 0.14 - r * 0.24 + (-0.03 if main else 0.025), 0.095), (Color("e05a4e") if main else Color("3b4047")) * d, true)
+	var door := MeshInstance3D.new()
+	door.mesh = shaded_box()
+	door.scale = Vector3(0.5, 0.66, 0.025)
+	door.rotation.y = -1.1
+	door.position = Vector3(0.275, 0, 0.05) + Vector3(cos(-1.1), 0, -sin(-1.1)) * 0.25
+	var dm := mat(Color("aab3ba") * d, null, true)
+	dm.vertex_color_use_as_albedo = true
+	dm.vertex_color_is_srgb = true
+	door.material_override = dm
+	mi.add_child(door)
+	block(door, Vector3(0.5, 0.18, 1.2), Vector3(0, 0.3, 0.0), Color("f2c230") * d, true)  # the hazard label inside the door
+	var lamp := MeshInstance3D.new()
+	lamp.mesh = shaded_box()
+	lamp.scale = Vector3(0.1, 0.07, 0.06)
+	lamp.position = Vector3(0, 0.43, 0.0)
+	var lm := mat(Color("ff4a3d"), null, true)
+	lm.vertex_color_use_as_albedo = true
+	lm.vertex_color_is_srgb = true
+	lamp.material_override = lm
+	mi.add_child(lamp)
+	var glow := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(1.6, 1.2)
+	glow.mesh = q
+	glow.material_override = halo_mat.duplicate()
+	glow.position = Vector3(0, 0.43, 0.12)
+	mi.add_child(glow)
+	breaker_lamp = [lamp, glow]
+
+
 ## Turns a standing sprite's profile toward a spot, in screen terms (the art faces screen-right).
 func turn_to(node: Sprite3D, from: Vector2, to: Vector2) -> void:
 	var sx := Vector3(to.x - from.x, 0, to.y - from.y).dot(cam.global_transform.basis.x)
@@ -4912,11 +5001,7 @@ func make_threat(t: Dictionary) -> Dictionary:
 				mi.material_override = mat(Color(0.53, 0.78, 0.94, 0.8))
 				mi.position.y = 0.02
 			"breaker":
-				var m := BoxMesh.new()
-				m.size = Vector3(0.55, 0.7, 0.2)
-				mi.mesh = m
-				mi.material_override = mat(Color("f2c230"))
-				mi.position.y = 1.7
+				breaker_board(mi)
 		e = {"node": mi}
 	actors.add_child(e.node)
 	e.node.position = Vector3(t.x, e.node.position.y, t.z)
@@ -5138,6 +5223,7 @@ func _process(delta: float) -> void:
 			heat.visible = branch.event != null and branch.event.id == "heatwave"
 		refresh_stock()
 		sync_actors(delta)
+		update_power()
 		street_traffic(delta)
 		for f in floaters:
 			f.at.y += 0.6 * delta
@@ -5358,7 +5444,7 @@ func draw_street() -> void:
 		if t.fleeing:
 			continue
 		var label: String = {"flyer": "Flyers", "mascot": "Mascot", "trash": "Trash", "review": "1★ review", "shoplifter": "Thief!", "breaker": "Breaker", "suit": "Suit", "spill": "Spill"}[t.type]
-		var top := at + Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit", "review"] else (-36 if t.type == "mascot" else -12))
+		var top := at + Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit", "review"] else (-36 if t.type == "mascot" else (-30 if t.type == "breaker" else -12)))
 		pill(top, label, 11, Color("e05a4e") if t.type != "spill" else Color("3a9bd9"))
 		if t.max_clicks > 1:
 			for k in t.max_clicks:
@@ -5367,8 +5453,6 @@ func draw_street() -> void:
 				overlay.draw_circle(dot, 2.8, Color("e05a4e") if k < t.clicks else Color("dccca4"))
 		if t.type == "review":
 			bar(Rect2(top + Vector2(-16, 7), Vector2(32, 4)), t.ttl / (7.0 + 3.0 * sim.mods().thick_skin), Color("e05a4e"))
-		if t.type == "breaker":
-			overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.05, 0.12, 0.15))
 	# pedestrians: angry ones and what they carry
 	for a in b.agents:
 		if not in_view(a):
