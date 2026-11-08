@@ -3890,37 +3890,61 @@ func build_set() -> void:
 
 ## A row of district buildings fronting z = zf (northwards into the block), shoulder to shoulder from x0 to x1.
 ## Gaps are left wherever a city road crosses the row, so the road runs on between the buildings.
-## A street lamp at the kerb: a tapered pole on a base, an arm reaching out over the road and a head that lights after
-## dark, with a halo round it, a cone of light under it and a pool on the ground below.
+## A street lamp at the kerb: a pole on a plinth with its inspection hatch, stepping in at collars as it rises, a
+## gooseneck arm curving out over the road and a slim luminaire whose lens lights after dark, with a halo round it, a
+## cone of light under it and a pool on the ground below.
 func street_lamp(at: Vector3) -> void:
 	var out := 1.0 if at.z < 0.0 else -1.0
-	block(set_node, Vector3(0.26, 0.4, 0.26), at + Vector3(0, 0.2, 0), Color("5c616b"))
-	block(set_node, Vector3(0.14, 4.2, 0.14), at + Vector3(0, 2.1, 0), Color("6e737d"))
-	block(set_node, Vector3(0.1, 0.1, 1.1), at + Vector3(0, 4.15, 0.5 * out), Color("6e737d"))
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var kit := surface(km)
+	var steel := Color("7a808a")
+	var dark := Color("4f535c")
+	box_into(kit, at + Vector3(-0.15, 0, -0.15), at + Vector3(0.15, 0.55, 0.15), dark)
+	box_into(kit, at + Vector3(-0.17, 0.5, -0.17), at + Vector3(0.17, 0.58, 0.17), Color("5c616b"))
+	box_into(kit, at + Vector3(-0.07, 0.12, 0.15 * out), at + Vector3(0.07, 0.42, 0.16 * out), Color("6a6f79"))
+	var y := 0.58
+	for seg in [[0.17, 1.9], [0.14, 3.2], [0.11, 4.15]]:
+		var h: float = seg[0] / 2
+		box_into(kit, at + Vector3(-h, y, -h), at + Vector3(h, seg[1], h), steel)
+		box_into(kit, at + Vector3(-h - 0.02, seg[1] - 0.06, -h - 0.02), at + Vector3(h + 0.02, seg[1], h + 0.02), dark)
+		y = seg[1]
+	box_into(kit, at + Vector3(-0.1, 2.35, 0.07 * out), at + Vector3(0.1, 2.6, 0.08 * out), Color("2f6fb0"))  # the ward's number plate
+	box_into(kit, at + Vector3(-0.08, 2.44, 0.072 * out), at + Vector3(0.08, 2.52, 0.085 * out), Color("eef0ee"))
+	for i in 7:  # the gooseneck, a quarter turn from upright to level
+		var a := i / 6.0 * PI / 2
+		var c := at + Vector3(0, 4.1 + 0.42 * sin(a), 0.42 * (1.0 - cos(a)) * out)
+		box_into(kit, c - Vector3(0.05, 0.05, 0.05), c + Vector3(0.05, 0.05, 0.05), steel)
+	var ay := 4.52
+	box_into(kit, at + Vector3(-0.045, ay - 0.045, 0.42 * out), at + Vector3(0.045, ay + 0.045, 0.78 * out), steel)
+	var z0 := minf(0.72 * out, 1.32 * out)
+	box_into(kit, at + Vector3(-0.17, ay - 0.05, z0), at + Vector3(0.17, ay + 0.06, z0 + 0.6), Color("8c929b"))
+	box_into(kit, at + Vector3(-0.15, ay + 0.06, z0 + 0.04), at + Vector3(0.15, ay + 0.09, z0 + 0.5), dark)
+	commit([kit], set_node)
 	var head := MeshInstance3D.new()
 	head.mesh = shaded_box()
-	head.scale = Vector3(0.34, 0.12, 0.56)
-	head.position = at + Vector3(0, 4.06, 1.0 * out)
+	head.scale = Vector3(0.28, 0.04, 0.5)
+	head.position = at + Vector3(0, ay - 0.07, 1.02 * out)
 	head.material_override = lamp_mat
 	set_node.add_child(head)
-	block(set_node, Vector3(0.38, 0.06, 0.6), at + Vector3(0, 4.15, 1.0 * out), Color("4f535c"))
 	var halo := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = Vector2(1.6, 1.6)
 	halo.mesh = q
 	halo.material_override = halo_mat
-	halo.position = at + Vector3(0, 3.8, 1.0 * out)  # below the head, so its housing doesn't hide the bright core
+	halo.position = at + Vector3(0, 4.2, 1.02 * out)  # below the head, so its housing doesn't hide the bright core
 	set_node.add_child(halo)
 	var beam := MeshInstance3D.new()
 	var bq := QuadMesh.new()
 	bq.size = Vector2(3.0, 4.0)
 	beam.mesh = bq
 	beam.material_override = beam_mat
-	beam.position = at + Vector3(0, 2.0, 1.0 * out)
+	beam.position = at + Vector3(0, 2.25, 1.02 * out)
 	set_node.add_child(beam)
 	blob(set_node, Vector2(at.x, at.z), 0.25)
-	cast(set_node, Vector2(at.x, at.z), 0.0, 4.2, 0.14)
-	cast(set_node, Vector2(at.x, at.z + 1.0 * out), 4.0, 4.2, 0.36)
+	cast(set_node, Vector2(at.x, at.z), 0.0, 4.15, 0.15)
+	cast(set_node, Vector2(at.x, at.z + 1.02 * out), 4.45, 4.6, 0.34)
 	pool(set_node, at + Vector3(0, 0, 0.9 * out), Vector2(7.0, 7.0))
 
 
