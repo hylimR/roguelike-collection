@@ -250,6 +250,13 @@ float switched(float at, float dark) {
 	return smoothstep(0.08 + 0.6 * at, 0.12 + 0.6 * at, dark) * mix(0.8, 1.0, dark);
 }
 
+// a cut-down wall's window in this bay (wall 0, 1: along x at the near and far z; 2, 3: along z): how far in from its jambs
+float window_in(float along, float bay, float wall, float seed) {
+	float n = floor(along / bay);
+	float r = fract(sin(dot(vec2(n, wall) + seed * 19.0, vec2(12.9898, 78.233))) * 43758.5453);
+	return r < 0.8 ? min(0.75, bay * 0.28) - abs(along - (n + 0.5) * bay) : -1.0;
+}
+
 void fragment() {
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	// the house's three tones, shared with shaded_box: roofs full, walls turned to the sun 0.9, walls away 0.75 (the
@@ -270,6 +277,12 @@ void fragment() {
 				vec2 bay = info.xz / max(vec2(1.0), floor(info.xz / vec2(3.0, 4.0) + 0.5));
 				vec2 rc = lpos.xz / bay;
 				vec2 wd = min(fract(rc), 1.0 - fract(rc)) * bay;
+				// a doorway in each wall between rooms, placed by that wall's own hash so the rooms either side agree
+				vec2 bnd = floor(rc + 0.5);
+				float dx = fract(sin(dot(vec2(bnd.x, floor(rc.y)) + seed * 23.0, vec2(39.35, 11.13))) * 43758.5453);
+				float dz = fract(sin(dot(vec2(floor(rc.x), bnd.y) + seed * 29.0, vec2(17.71, 51.37))) * 43758.5453);
+				wd.x = abs(fract(rc.y) - 0.3 - 0.4 * dx) * bay.y < 0.4 ? 1.0 : wd.x;
+				wd.y = abs(fract(rc.x) - 0.3 - 0.4 * dz) * bay.x < 0.4 ? 1.0 : wd.y;
 				float wall = min(min(e.x, e.y) - 0.3, min(wd.x, wd.y) - 0.06);
 				float r = fract(sin(dot(floor(rc) + seed * 37.0, vec2(12.9898, 78.233))) * 43758.5453);
 				int k = int(r * 4.0);
@@ -320,6 +333,12 @@ void fragment() {
 				}
 				fl *= mix(0.72, 1.0, smoothstep(0.0, 0.5, wall));
 				col = wall < 0.0 ? tint.rgb * 1.08 : fl;
+				// windows cut through the outer walls below the cut: the reveal down to the sill, the glass's section across it
+				bool along_x = e.y < e.x;
+				float win = window_in(along_x ? lpos.x : lpos.z, along_x ? bay.x : bay.y, along_x ? step(info.z * 0.5, lpos.z) : 2.0 + step(info.x * 0.5, lpos.x), seed);
+				if (min(e.x, e.y) < 0.3 && win > 0.0) {
+					col = win < 0.05 ? vec3(0.78, 0.8, 0.82) : (abs(min(e.x, e.y) - 0.15) < 0.035 ? vec3(0.72, 0.86, 0.92) : tint.rgb * 0.8);
+				}
 				glow = wall < 0.0 ? vec3(0.0) : fl * vec3(1.0, 0.86, 0.62) * step(0.5, fract(r * 13.0)) * 0.45 * switched(fract(r * 29.0), night);
 			} else {  // a flat roof: coping round a parapet that shades the roof on its sunny sides, membrane in strips, a hatch
 				vec2 q = lpos.xz;
@@ -360,6 +379,14 @@ void fragment() {
 			lit_in = mix(t.rgb * vec3(1.06, 0.96, 0.8), vec3(1.0, 0.9, 0.68), m.g);  // goods and shelves on a warm glow
 			if (info.y < 1.0) {  // cut down: the wall's solid section on a dark plinth, not a slice of its windows
 				col = tint.rgb * (lpos.y < 0.16 ? 0.62 : (lpos.y > info.y - 0.06 ? 1.08 : 0.96));
+				// its windows from the sill up, glazed in an aluminium frame, the sky caught in a streak across the glass
+				vec2 bay = info.xz / max(vec2(1.0), floor(info.xz / vec2(3.0, 4.0) + 0.5));
+				float along = front ? lpos.x : lpos.z;
+				float win = window_in(along, front ? bay.x : bay.y, front ? step(0.0, lnrm.z) : 2.0 + step(0.0, lnrm.x), seed);
+				if (win > 0.0 && lpos.y > 0.46) {
+					float streak = fract((along + lpos.y * 1.5) * 0.9);
+					col = win < 0.05 || lpos.y < 0.52 ? vec3(0.78, 0.8, 0.82) : mix(vec3(0.34, 0.46, 0.56), vec3(0.6, 0.74, 0.83), lpos.y / info.y) * (streak < 0.18 ? 1.18 : 1.0);
+				}
 				glow = vec3(0.0);
 				inside = 0.0;
 			}
