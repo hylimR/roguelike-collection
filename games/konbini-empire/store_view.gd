@@ -288,6 +288,25 @@ void fragment() {
 				int k = int(r * 4.0);
 				vec2 g = fract(lpos.xz * (k == 0 ? vec2(0.0, 4.0) : (k == 1 ? vec2(1.1, 0.55) : vec2(1.0))));
 				float seam = min(k == 0 ? 1.0 : min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)) < 0.05 ? 0.86 : 1.0;
+				// laid piece by piece: boards a shade apart and staggered at their butt joints, tatami edged in dark cloth
+				// down their long sides and each mat's rush catching the light its own way, concrete mottled, tiles each a shade
+				vec2 pc = floor(lpos.xz * (k == 0 ? vec2(0.0, 4.0) : (k == 1 ? vec2(1.1, 0.55) : vec2(1.0))));
+				float ph = fract(sin(dot(pc + seed * 41.0, vec2(78.233, 12.9898))) * 43758.5453);
+				if (k == 0) {
+					float bu = lpos.x / 1.8 + ph;
+					float bh = fract(sin((pc.y * 7.0 + floor(bu) + seed * 13.0) * 12.9898) * 43758.5453);
+					seam *= (0.9 + 0.16 * bh) * (min(fract(bu), 1.0 - fract(bu)) < 0.018 ? 0.84 : 1.0);
+				} else if (k == 1) {
+					seam = min(g.x, 1.0 - g.x) < 0.04 ? 0.42 : seam * (mod(pc.x + pc.y, 2.0) < 0.5 ? 1.06 : 0.93) * (0.97 + 0.06 * ph);
+				} else if (k == 2) {
+					vec2 cp = lpos.xz * 0.9 + seed * 7.0;
+					vec2 ci = floor(cp);
+					vec2 cf = smoothstep(0.0, 1.0, fract(cp));
+					vec4 h = fract(sin(vec4(dot(ci, vec2(12.9898, 78.233)), dot(ci + vec2(1.0, 0.0), vec2(12.9898, 78.233)), dot(ci + vec2(0.0, 1.0), vec2(12.9898, 78.233)), dot(ci + 1.0, vec2(12.9898, 78.233)))) * 43758.5453);
+					seam *= 0.91 + 0.14 * mix(mix(h.x, h.y, cf.x), mix(h.z, h.w, cf.x), cf.y);
+				} else {
+					seam *= 0.95 + 0.09 * ph;
+				}
 				vec3 fl = FLOOR[k] * seam;
 				// furnished to suit the floor: a piece against one wall (sofa, futon, steel racking, a kitchen counter)
 				// and one in the room (a rug, a low table, boxes, a dining table), the standing ones shadowed off the sun
@@ -316,15 +335,30 @@ void fragment() {
 				if (min(max(sa.x, sa.y), tb > 0.0 ? max(sb.x, sb.y) : 1.0) < 0.0 && min(ina, inb) > 0.0) {
 					fl *= 0.78;
 				}
+				if (k == 1 && fract(r * 17.0) < 0.8) {  // a zabuton on the floor at each long side of the low table
+					vec2 off = hb.x >= hb.y ? vec2(0.0, hb.y + 0.3) : vec2(hb.x + 0.3, 0.0);
+					vec2 z1 = abs(lpos.xz - cb - off) - 0.24;
+					vec2 z2 = abs(lpos.xz - cb + off) - 0.24;
+					float inz = min(max(z1.x, z1.y), max(z2.x, z2.y));
+					fl = inz < 0.0 ? mix(ACCENT[(pick + 2) % 8], vec3(0.55, 0.3, 0.3), 0.35) * (inz > -0.04 ? 0.8 : (inz > -0.2 ? 1.0 : 0.88)) : fl;
+				}
 				if (inb < 0.0) {
-					fl = BCol[k] * (inb > -0.05 ? 0.82 : (k == 0 && inb > -0.14 ? 1.15 : 1.0));
+					fl = BCol[k] * (inb > -0.05 ? 0.82 : (k == 0 && inb > -0.14 ? 1.15 : (k == 1 && inb < -0.08 ? 1.3 : 1.0)));
 					if (k == 2) {  // a strip of tape across each box
 						fl *= abs(lpos.x - cb.x) < 0.04 ? 1.2 : 1.0;
 					}
 				}
 				if (ina < 0.0) {
 					fl = ACol[k] * (ina > -0.05 ? 0.8 : 1.0);
-					if (k == 1) {  // a futon: a blue quilt up to the pillow at its head
+					if (k == 0) {  // a sofa: its back to the wall and an arm at each end, the seat in cushions
+						vec2 lc = lpos.xz - ca;
+						float across = (side % 2 == 0 ? 1.0 : -1.0) * (side / 2 == 0 ? lc.x : lc.y) + (side / 2 == 0 ? ha.x : ha.y);
+						float along = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
+						float n = run > 1.5 ? 3.0 : 2.0;
+						float cu = (along - 0.12) / (run - 0.24) * n;
+						bool frame = across < 0.13 || along < 0.12 || along > run - 0.12;
+						fl = ina > -0.05 ? fl : ACol[k] * (frame ? 1.12 : (min(fract(cu), 1.0 - fract(cu)) < 0.06 ? 0.8 : 0.95));
+					} else if (k == 1) {  // a futon: a blue quilt up to the pillow at its head
 						fl = dot(lpos.xz - ca, side / 2 == 0 ? vec2(0.0, 1.0) : vec2(1.0, 0.0)) < run * 0.28 && ina < -0.04 ? vec3(0.45, 0.58, 0.8) : fl;
 					} else if (k == 3) {  // a steel sink let into the counter
 						vec2 sk = abs(lpos.xz - ca) - min(ha, vec2(0.18));
