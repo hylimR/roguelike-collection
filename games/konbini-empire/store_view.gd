@@ -2748,34 +2748,41 @@ func street_traffic(delta: float) -> void:
 	set_cars = set_cars.filter(func(o): return not gone.has(o))
 
 
-## Settled snow for an 8 m repeat: drifts at three scales on wrapping value noise, in whole pixels like the pavers.
+## Settled snow for an 8 m repeat at 32 px a metre: drifts on seamless noise, a shaded lip where a drift's edge faces
+## the street, powder dithered out round its rim, a crust of fine grain and the odd glint.
 func snow_patches() -> ImageTexture:
-	var r := RandomNumberGenerator.new()
-	r.seed = 23
-	var grids := []
-	for n in [4, 8, 16]:
-		var g := PackedFloat32Array()
-		for i in n * n:
-			g.append(r.randf())
-		grids.append([n, g])
-	var img := Image.create(64, 64, false, Image.FORMAT_RGBA8)
-	for y in 64:
-		for x in 64:
-			var v := 0.0
-			for k in grids.size():
-				var n: int = grids[k][0]
-				var g: PackedFloat32Array = grids[k][1]
-				var fx := x * n / 64.0
-				var fy := y * n / 64.0
-				var ix := int(fx)
-				var iy := int(fy)
-				var tx := smoothstep(0.0, 1.0, fx - ix)
-				var ty := smoothstep(0.0, 1.0, fy - iy)
-				var a := lerpf(g[iy * n + ix], g[iy * n + (ix + 1) % n], tx)
-				var b := lerpf(g[(iy + 1) % n * n + ix], g[(iy + 1) % n * n + (ix + 1) % n], tx)
-				v += lerpf(a, b, ty) * [0.5, 0.3, 0.2][k]
-			v += r.randf_range(-0.03, 0.03)
-			var c := Color(0.94, 0.96, 1.0, 0.92) if v > 0.42 else (Color(0.86, 0.9, 0.98, 0.62) if v > 0.3 else Color(1, 1, 1, 0))
+	const N := 256
+	var fn := FastNoiseLite.new()
+	fn.seed = 23
+	fn.noise_type = FastNoiseLite.TYPE_VALUE_CUBIC
+	fn.frequency = 0.02
+	fn.fractal_octaves = 4
+	var drifts := fn.get_seamless_image(N, N).get_data()
+	fn.seed = 29
+	fn.frequency = 0.25
+	fn.fractal_octaves = 1
+	var grain := fn.get_seamless_image(N, N).get_data()
+	var bayer := [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
+	var img := Image.create(N, N, false, Image.FORMAT_RGBA8)
+	for y in N:
+		for x in N:
+			var v := drifts[y * N + x] / 255.0
+			var g := grain[y * N + x] / 255.0 - 0.5
+			var c := Color(1, 1, 1, 0)
+			if v > 0.5:
+				var lip := 0
+				for k in [1, 2, 3]:
+					if lip == 0 and drifts[(y + k) % N * N + x] / 255.0 <= 0.5:
+						lip = k
+				c = Color(0.95, 0.97, 1.0, 0.94).darkened(0.05 * g)
+				if lip > 0:
+					c = Color(0.76, 0.82, 0.94, 0.94) if lip == 1 else Color(0.85, 0.89, 0.97, 0.94)
+				elif drifts[(y + N - 1) % N * N + x] / 255.0 <= 0.5:
+					c = Color(1, 1, 1, 0.96)  # the drift's crest, caught by the light
+				elif g > 0.46:
+					c = Color(1, 1, 1, 1)
+			elif v > 0.42 and (v - 0.42) / 0.08 * 16.0 > bayer[y % 4 * 4 + x % 4] + g * 6.0:
+				c = Color(0.88, 0.92, 0.99, 0.8)
 			img.set_pixel(x, y, c)
 	return ImageTexture.create_from_image(img)
 
