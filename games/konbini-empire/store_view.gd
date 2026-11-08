@@ -3873,10 +3873,7 @@ func build_set() -> void:
 		if in_gaps(pole.x, gaps) or in_gaps(pole.x, under[0] if pole.z < 0.0 else under[1]):
 			continue
 		light_poles.append(pole + Vector3(0, 2.5, 0))
-		block(set_node, Vector3(0.12, 2.6, 0.12), pole + Vector3(0, 1.3, 0), Color("4a4d57"))
-		block(set_node, Vector3(0.36, 0.7, 0.3), pole + Vector3(0, 2.5, 0), Color("2b2d42"))
-		cast(set_node, Vector2(pole.x, pole.z), 0.0, 2.85, 0.12)
-		cast(set_node, Vector2(pole.x, pole.z), 2.15, 2.85, 0.32)
+		crossing_signal(pole)
 	# outside facilities
 	var outside := {"vending": Vector3(Sim.VENDING_X, 0, -7.2 + 0.375), "gacha": Vector3(Sim.GACHA_X - 0.1, 0, -7.2 + 0.25), "bench": Vector3(-13.6, 0, -6.6)}
 	for f in st.facilities:
@@ -3901,6 +3898,51 @@ func build_set() -> void:
 	update_fade()
 	set_sig = scene_signature()
 	night = -1.0  # relight the new set
+
+
+## A crossing light's pole: a footing collar, the yellow push-button box at hand height, the pedestrian head in its
+## backplate with a visor over each lamp (the lamps themselves are drawn on the overlay), and the blue crossing sign
+## with its walking figure up top, all turned to the view, in one mesh per pole.
+func crossing_signal(at: Vector3) -> void:
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var kit := surface(km)
+	var steel := Color("80868f")
+	var dark := Color("4f535c")
+	var body := Color("33363f")
+	box_into(kit, at + Vector3(-0.12, 0, -0.12), at + Vector3(0.12, 0.28, 0.12), dark)
+	box_into(kit, at + Vector3(-0.065, 0.28, -0.065), at + Vector3(0.065, 1.9, 0.065), steel)
+	box_into(kit, at + Vector3(-0.075, 1.84, -0.075), at + Vector3(0.075, 1.9, 0.075), dark)
+	box_into(kit, at + Vector3(-0.055, 1.9, -0.055), at + Vector3(0.055, 3.56, 0.055), steel)
+	box_into(kit, at + Vector3(-0.07, 3.56, -0.07), at + Vector3(0.07, 3.6, 0.07), dark)
+	# the push-button box, its white face and the button
+	box_into(kit, at + Vector3(-0.09, 0.98, 0.065), at + Vector3(0.09, 1.34, 0.17), Color("f2c230"))
+	box_into(kit, at + Vector3(-0.065, 1.04, 0.17), at + Vector3(0.065, 1.24, 0.18), Color("f4f1e8"))
+	box_into(kit, at + Vector3(-0.03, 1.1, 0.18), at + Vector3(0.03, 1.16, 0.2), Color("d8432f"))
+	# the head round the pole: a backplate a size larger, the lamp box and a visor over each lamp
+	box_into(kit, at + Vector3(-0.2, 2.12, -0.16), at + Vector3(0.2, 2.88, -0.13), dark)
+	box_into(kit, at + Vector3(-0.17, 2.15, -0.13), at + Vector3(0.17, 2.85, 0.1), body)
+	for y in [2.5, 2.84]:
+		box_into(kit, at + Vector3(-0.15, y - 0.03, 0.1), at + Vector3(0.15, y, 0.22), body)
+	# the crossing sign: a white rim round blue, the figure and the stripes under its feet
+	var c := Color("f4f1e8")
+	var face := func(x0: float, y0: float, x1: float, y1: float, d: float, col: Color) -> void:
+		box_into(kit, at + Vector3(x0, y0, 0.05 + d), at + Vector3(x1, y1, 0.06 + d), col)
+	face.call(-0.24, 3.04, 0.24, 3.52, -0.02, c)
+	face.call(-0.21, 3.07, 0.21, 3.49, 0.0, Color("2f6fb0"))
+	face.call(-0.03, 3.38, 0.03, 3.44, 0.01, c)
+	face.call(-0.04, 3.22, 0.03, 3.36, 0.01, c)
+	face.call(-0.09, 3.16, -0.02, 3.22, 0.01, c)
+	face.call(0.01, 3.16, 0.08, 3.22, 0.01, c)
+	for i in 3:
+		var x := -0.16 + i * 0.12
+		face.call(x, 3.1, x + 0.07, 3.13, 0.01, c)
+	commit([kit], set_node)
+	blob(set_node, Vector2(at.x, at.z), 0.2)
+	cast(set_node, Vector2(at.x, at.z), 0.0, 3.6, 0.12)
+	cast(set_node, Vector2(at.x, at.z), 2.12, 2.88, 0.4)
+	cast(set_node, Vector2(at.x, at.z), 3.04, 3.52, 0.3)
 
 
 ## A row of district buildings fronting z = zf (northwards into the block), shoulder to shoulder from x0 to x1.
