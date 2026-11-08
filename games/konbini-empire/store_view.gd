@@ -21,6 +21,15 @@ const OUTDOOR_PX := 0.03
 # per-prop size: trees full, street furniture smaller (art/outdoor.png draws every prop the same size)
 const OUTDOOR_SCALE := [1.0, 1.0, 0.95, 1.05, 0.45, 0.45, 0.6, 0.84, 0.66, 0.38, 0.5, 1.23]
 const PROP_BLOB := {7: 0.35, 8: 0.5, 10: 0.6, 11: 0.25}  # street props whose shadow is narrower than their art
+# each art/outdoor.png prop's sun shadow, as [from, to, width] fractions of its drawn size, soft all round when marked:
+# a tree's trunk and crown, a bush, the lamp, the post box, a bicycle, the stone lantern, the planter, the bus stop's
+# pole and its disc
+const OUTDOOR_CAST := [[[0.0, 0.3, 0.08], [0.12, 1.02, 0.95, true]], [[0.0, 0.3, 0.08], [0.12, 1.02, 0.95, true]],
+	[[0.0, 0.3, 0.08], [0.12, 1.02, 0.98, true]], [[0.0, 0.2, 0.06], [0.05, 1.05, 0.65, true]], [[-0.1, 0.6, 0.8, true]],
+	[[-0.1, 0.6, 0.75, true]], [[0.0, 0.9, 0.06]], [[0.0, 0.74, 0.3]], [[0.0, 0.62, 0.42]], [[0.0, 0.85, 0.36]],
+	[[0.0, 0.42, 0.72]], [[0.0, 0.72, 0.04], [0.7, 0.96, 0.22]]]
+const DECOR_CAST := {0: [0.0, 0.85, 0.42], 5: [0.0, 0.9, 0.42]}  # the potted plant and the A-board, the same way
+const FACILITY_CAST := {"vending": [0.0, 1.8, 1.0], "gacha": [0.0, 1.35, 1.3], "bench": [0.3, 0.85, 1.2]}  # metres
 const VEHICLE_CELL := Vector2i(128, 96)
 const VEHICLE_PX := 0.025
 # atlas cells (art is cut at 2x its own pixel grid)
@@ -542,6 +551,7 @@ var plate_tex: ImageTexture
 var soft_mat: StandardMaterial3D  # soft contact shadows under people, cars and street things
 var ao_mat: StandardMaterial3D  # the dark seam where a building meets the sidewalk
 var cast_mat: StandardMaterial3D  # the sun's shadow of a pole or post laid on the street
+var crown_mat: StandardMaterial3D  # the same for a tree's crown or a bush, soft all round
 var casts: Array = []  # those shadows, stretched as the sun goes down
 var foot_mat: ShaderMaterial  # people's shadows
 var foot_mesh: PlaneMesh
@@ -654,6 +664,7 @@ func _ready() -> void:
 	fade.gradient.offsets = PackedFloat32Array([0.0, 0.75, 1.0])
 	fade.gradient.colors = PackedColorArray([Color(0.1, 0.08, 0.14), Color(0.1, 0.08, 0.14, 0.7), Color(0.1, 0.08, 0.14, 0)])
 	cast_mat.albedo_texture = fade
+	crown_mat = soft_mat.duplicate()
 	var reach_max := FOOT.z * Vector2(SUN.x, SUN.z).length() / SUN.y * 1.9
 	foot_mesh = PlaneMesh.new()
 	foot_mesh.size = Vector2(FOOT.x, FOOT.y + reach_max)
@@ -844,6 +855,7 @@ func update_light() -> void:
 	if shadow_mat:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	cast_mat.albedo_color.a = 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
+	crown_mat.albedo_color.a = 0.62 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
 	foot_mat.set_shader_parameter("core", 0.5 - 0.15 * night)
 	foot_mat.set_shader_parameter("sun", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	foot_mat.set_shader_parameter("reach", FOOT.z * Vector2(SUN.x, SUN.z).length() / SUN.y * (1.0 + 0.9 * golden_at(h)))
@@ -2610,19 +2622,26 @@ func blob(parent: Node3D, at: Vector2, r: float) -> void:
 
 ## The sun's shadow of whatever stands w wide between heights h0 and h1 over `at`, laid along the ground away from
 ## SUN (as the city's buildings cast theirs), lengthening through golden hour.
-func cast(parent: Node3D, at: Vector2, h0: float, h1: float, w: float) -> void:
+func cast(parent: Node3D, at: Vector2, h0: float, h1: float, w: float, round := false) -> void:
 	var d := Vector2(-SUN.x, -SUN.z) / SUN.y
 	var mi := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(w, (h1 - h0) * d.length())
 	pm.center_offset = Vector3(0, 0, (h0 + h1) / 2 * d.length())
 	mi.mesh = pm
-	mi.material_override = cast_mat
+	mi.material_override = crown_mat if round else cast_mat
 	mi.position = Vector3(at.x, -0.033, at.y)
 	mi.rotation.y = atan2(d.x, d.y)
 	mi.scale.z = 1.0 + 0.9 * golden_at(sim.hour())
 	parent.add_child(mi)
 	casts.append(mi)
+
+
+## The sun's shadow of art/outdoor.png prop `id` standing at `at`, drawn at scale k of its sheet cell.
+func outdoor_cast(parent: Node3D, id: int, at: Vector2, k: float) -> void:
+	var size: float = OUTDOOR * OUTDOOR_PX * k
+	for c in OUTDOOR_CAST[id]:
+		cast(parent, at, c[0] * size, c[1] * size, c[2] * size, c.size() > 3)
 
 
 ## City walkers and traffic round the view (walkers only when close enough to see), kept out of the street set.
@@ -3704,12 +3723,14 @@ func build_set() -> void:
 			set_node.add_child(bike)
 			lit_sprites.append(bike)
 			blob(set_node, Vector2(4.35, bz), PROP_BLOB[8])
+			outdoor_cast(set_node, 8, Vector2(4.35, bz), OUTDOOR_SCALE[8] * 0.55)
 		var tx := minf(6.6, span.x - 1.5)
 		var tree := sprite("outdoor", Rect2(OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * 0.8)
 		tree.position = Vector3(tx, OUTDOOR / 2.0 * OUTDOOR_PX * 0.8 - 0.05, -19.3)
 		set_node.add_child(tree)
 		lit_sprites.append(tree)
 		blob(set_node, Vector2(tx, -19.3), 1.3)
+		outdoor_cast(set_node, 1, Vector2(tx, -19.3), 0.8)
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
 		if mh.x < street_x.x + 0.6 or mh.x > street_x.y - 0.6:
 			continue
@@ -3899,6 +3920,7 @@ func build_set() -> void:
 		set_node.add_child(s)
 		lit_sprites.append(s)
 		blob(set_node, p[1], PROP_BLOB.get(p[0], OUTDOOR_SCALE[p[0]] * 1.5))
+		outdoor_cast(set_node, p[0], p[1], OUTDOOR_SCALE[p[0]] * 0.55)
 	spill(set_node, Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7, shop_spill_mat)  # your shop's open front
 	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6], [5, Vector2(-8.3, -6.2), 0.7]]:
 		var s := sprite("decor", Rect2(d[0] * DECOR, 0, DECOR, DECOR), DECOR_PX * d[2])
@@ -3906,6 +3928,8 @@ func build_set() -> void:
 		set_node.add_child(s)
 		lit_sprites.append(s)
 		blob(set_node, d[1], 0.45)
+		var dc: Array = DECOR_CAST[d[0]]
+		cast(set_node, d[1], dc[0] * DECOR * DECOR_PX * d[2], dc[1] * DECOR * DECOR_PX * d[2], dc[2] * DECOR * DECOR_PX * d[2])
 	# the crossing lights stand at its corners; where a side road opens there, at that road's corner instead
 	light_poles = []
 	for pole in [Vector3(Sim.CROSS_X - 1.8, 0, -4.0), Vector3(Sim.CROSS_X + 1.8, 0, 4.0)]:
@@ -3924,6 +3948,8 @@ func build_set() -> void:
 			var at: Vector3 = outside[f]
 			lit_sprites.append(prop(set_node, f, at))
 			blob(set_node, Vector2(at.x, at.z), 0.8)
+			var fc: Array = FACILITY_CAST[f]
+			cast(set_node, Vector2(at.x, at.z), fc[0], fc[1], fc[2])
 			if f in ["vending", "gacha"]:
 				pool(set_node, at + Vector3(0, 0, 0.6), Vector2(3.5, 3.5))
 	if st.facilities.has("delivery"):  # the courier waits on the car park's apron, nose to the street
