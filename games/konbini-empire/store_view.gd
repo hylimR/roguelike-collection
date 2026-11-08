@@ -504,6 +504,7 @@ var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
 var box_mesh: ArrayMesh
 var sign_tex: ImageTexture
+var plate_tex: ImageTexture
 var soft_mat: StandardMaterial3D  # soft contact shadows under people, cars and street things
 var ao_mat: StandardMaterial3D  # the dark seam where a building meets the sidewalk
 var cast_mat: StandardMaterial3D  # the sun's shadow of a pole or post laid on the street
@@ -1117,6 +1118,20 @@ func sign_face() -> ImageTexture:
 				img.fill_rect(Rect2i(25 + g * 12 + (i % 3) * 3, 5 + floori(i / 3.0) * 3, 3, 3), LAYOUT.stripe[1])
 	sign_tex = ImageTexture.create_from_image(img)
 	return sign_tex
+
+
+## The car park's plate in pixels: a white P on blue inside a white rule, as on the pole of every konbini lot.
+func park_face() -> ImageTexture:
+	if plate_tex:
+		return plate_tex
+	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
+	img.fill(Color("2a62b8"))
+	for e in [Rect2i(1, 1, 14, 1), Rect2i(1, 14, 14, 1), Rect2i(1, 1, 1, 14), Rect2i(14, 1, 1, 14)]:
+		img.fill_rect(e, Color("f4f6f8"))
+	for e in [Rect2i(5, 4, 2, 9), Rect2i(5, 4, 5, 2), Rect2i(5, 8, 5, 2), Rect2i(9, 5, 2, 4)]:
+		img.fill_rect(e, Color("f4f6f8"))
+	plate_tex = ImageTexture.create_from_image(img)
+	return plate_tex
 
 
 func tiled(tex_: Texture2D, reps: Vector2) -> StandardMaterial3D:
@@ -4487,7 +4502,25 @@ func roof_mat(t: ImageTexture) -> StandardMaterial3D:
 ## with a glow round its lightbox and a pair of floodlights under it washing the bays in shop light.
 func pole_sign(parent: Node3D) -> void:
 	var ps := Vector3(3.0, 0, -16.5)
-	block(parent, Vector3(0.22, 6.2, 0.22), ps + Vector3(0, 3.1, 0), Color("9aa0a6"))
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var kit := surface(km)
+	var steel := Color("9aa0a6")
+	var frame := Color("5a6068")
+	box_into(kit, ps + Vector3(-0.34, 0, -0.34), ps + Vector3(0.34, 0.2, 0.34), Color("c3beb4"))  # the footing
+	box_into(kit, ps + Vector3(-0.28, 0.2, -0.28), ps + Vector3(0.28, 0.26, 0.28), Color("aca79d"))
+	for i in 6:  # a guard sleeve in hazard bands where bumpers reach
+		box_into(kit, ps + Vector3(-0.16, 0.26 + i * 0.17, -0.16), ps + Vector3(0.16, 0.43 + i * 0.17, 0.16), Color("e3c34a") if i % 2 == 0 else Color("3b3c40"))
+	box_into(kit, ps + Vector3(-0.13, 1.28, -0.13), ps + Vector3(0.13, 3.3, 0.13), steel)
+	box_into(kit, ps + Vector3(-0.15, 3.24, -0.15), ps + Vector3(0.15, 3.32, 0.15), frame)
+	box_into(kit, ps + Vector3(-0.1, 3.32, -0.1), ps + Vector3(0.1, 5.65, 0.1), steel)
+	box_into(kit, ps + Vector3(-0.35, 3.48, -0.13), ps + Vector3(0.35, 4.18, 0.13), Color("1f4f99"))  # the parking plate's case
+	box_into(kit, ps + Vector3(-0.92, 7.15, -0.21), ps + Vector3(0.92, 7.23, 0.21), frame)  # the lightbox's cap, rails and pan
+	box_into(kit, ps + Vector3(-0.9, 5.58, -0.2), ps + Vector3(0.9, 5.65, 0.2), frame)
+	for sx in [-1.0, 1.0]:
+		box_into(kit, ps + Vector3(0.85 * sx - 0.04, 5.58, -0.2), ps + Vector3(0.85 * sx + 0.04, 7.15, 0.2), frame)
+	commit([kit], parent)
 	block(parent, Vector3(1.7, 1.5, 0.34), ps + Vector3(0, 6.4, 0), Color("fbfaf5"), true)
 	block(parent, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 6.15, 0), LAYOUT.stripe[0], true)
 	block(parent, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 5.92, 0), LAYOUT.stripe[1], true)
@@ -4503,6 +4536,16 @@ func pole_sign(parent: Node3D) -> void:
 		lf.position = ps + Vector3(0, 6.7, 0.175 * side)
 		lf.rotation.y = 0.0 if side > 0 else PI
 		parent.add_child(lf)
+		var pf := MeshInstance3D.new()  # a lit blue P plate on the pole for the car park
+		var pq := QuadMesh.new()
+		pq.size = Vector2(0.64, 0.64)
+		pf.mesh = pq
+		pf.material_override = mat(Color.WHITE, park_face(), true)
+		if parent == set_node:
+			set_sign_mats.append(pf.material_override)
+		pf.position = ps + Vector3(0, 3.83, 0.135 * side)
+		pf.rotation.y = 0.0 if side > 0 else PI
+		parent.add_child(pf)
 	var glow := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = Vector2(4.2, 3.2)
@@ -4524,7 +4567,8 @@ func pole_sign(parent: Node3D) -> void:
 		var w := parent.global_position + lot
 		pools.append(Vector3(w.x, w.z, 4.4))
 	blob(parent, Vector2(ps.x, ps.z), 0.3)
-	cast(parent, Vector2(ps.x, ps.z), 0.0, 5.7, 0.22)
+	cast(parent, Vector2(ps.x, ps.z), 0.0, 1.3, 0.32)
+	cast(parent, Vector2(ps.x, ps.z), 1.3, 5.7, 0.22)
 	cast(parent, Vector2(ps.x, ps.z), 5.7, 7.15, 1.3)
 
 
