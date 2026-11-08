@@ -3410,6 +3410,48 @@ func garbage_station(gs: Vector3) -> void:
 	blob(set_node, Vector2(gs.x, gs.z - 0.3), 1.0)
 
 
+## The car park's furniture in one surface: wheel stops banded in yellow, and a low planter along the back below the
+## till's sight line, a coped concrete trough holding a clipped hedge of lumpy shrubs with a few azaleas in flower.
+func car_park_kit() -> void:
+	var kit := mat(Color.WHITE)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var st := surface(kit)
+	for cx in [-1.0, 1.4]:
+		box_into(st, Vector3(cx - 0.75, -0.04, -15.4), Vector3(cx + 0.75, 0.08, -15.2), Color("d8d2c4"))
+		for bx in [-0.42, 0.42]:
+			box_into(st, Vector3(cx + bx - 0.1, -0.04, -15.41), Vector3(cx + bx + 0.1, 0.085, -15.19), Color("e2b23a"))
+	var p0 := Vector3(-3.2, -0.04, -16.8)
+	var p1 := Vector3(2.0, 0.26, -16.3)
+	box_into(st, p0, p1, Color("b3ad9f"))
+	box_into(st, p0 - Vector3(0.01, 0, 0.01), Vector3(p1.x + 0.01, 0.03, p1.z + 0.01), Color("8c877c"))  # grime at its foot
+	box_into(st, Vector3(p0.x - 0.04, 0.26, p0.z - 0.04), Vector3(p1.x + 0.04, 0.31, p1.z + 0.04), Color("d6d0c3"))
+	box_into(st, Vector3(p0.x + 0.06, 0.31, p0.z + 0.06), Vector3(p1.x - 0.06, 0.315, p1.z - 0.06), Color("5a4636"))
+	var r := RandomNumberGenerator.new()
+	r.seed = 31
+	var leaf := Color("4f8a43")
+	box_into(st, Vector3(p0.x + 0.08, 0.31, p0.z + 0.08), Vector3(p1.x - 0.08, 0.47, p1.z - 0.08), leaf.darkened(0.06))
+	var x := p0.x + 0.08
+	while x < p1.x - 0.12:  # the clipped top rises and dips in soft lumps, each lit a shade on its crown
+		var x1 := minf(x + r.randf_range(0.3, 0.42), p1.x - 0.08)
+		var top := r.randf_range(0.5, 0.56)
+		var g: Color = leaf.lightened(r.randf_range(-0.04, 0.08))
+		var z0 := p0.z + r.randf_range(0.06, 0.1)
+		var z1 := p1.z - r.randf_range(0.06, 0.1)
+		box_into(st, Vector3(x, 0.4, z0), Vector3(x1, top, z1), g)
+		var ix := (x1 - x) * 0.18
+		box_into(st, Vector3(x + ix, top, z0 + 0.05), Vector3(x1 - ix, top + 0.03, z1 - 0.05), g.lightened(0.12))
+		if r.randf() < 0.45:  # an azalea in flower poking through the clipped face
+			var fx := r.randf_range(x + 0.04, x1 - 0.1)
+			var fy := r.randf_range(0.36, top - 0.06)
+			var fz := maxf(z1, p1.z - 0.08)
+			box_into(st, Vector3(fx, fy, fz), Vector3(fx + 0.06, fy + 0.05, fz + 0.03), Color("e86a9a") if r.randf() < 0.6 else Color("f4f0ec"))
+		if x1 >= p1.x - 0.08:
+			break
+		x = x1 - r.randf_range(0.08, 0.14)
+	commit([st], set_node)
+
+
 func speckle(colors: Array) -> ImageTexture:
 	var r := RandomNumberGenerator.new()
 	r.seed = 7
@@ -3578,11 +3620,7 @@ func build_set() -> void:
 	tv = tv_crew()
 	health = health_check()
 	heat = ice_stand()
-	for cx in [-1.0, 1.4]:  # wheel stops
-		block(set_node, Vector3(1.5, 0.12, 0.2), Vector3(cx, 0.02, -15.3), Color("d8d2c4"))
-	# a low planter along the back of the car park, below the till's sight line
-	block(set_node, Vector3(5.2, 0.32, 0.5), Vector3(-0.6, 0.12, -16.55), Color("b9b3a6"))
-	block(set_node, Vector3(5.0, 0.26, 0.38), Vector3(-0.6, 0.36, -16.55), Color("5f8f4a"))
+	car_park_kit()
 	# a car nosed into the right-hand bay, front wheels at the stop: its art's footprint centre (midway across, a quarter
 	# of its drawn width above its lowest point) held on the bay's centre line, slid along the view to clear the ground
 	var kv: int = b.lot % 3
