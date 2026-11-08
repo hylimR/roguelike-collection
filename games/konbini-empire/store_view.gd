@@ -4538,7 +4538,7 @@ func build_room() -> void:
 		var p: Vector2 = Sim.SLOTS[Sim.PRODUCTS[pid].slot].pos
 		var kind := slot_kind(Sim.PRODUCTS[pid].slot)
 		if FIXTURES.has(kind):
-			fixture_shell(kind, p)
+			fixture_shell(kind, p, pid)
 			goods(pid, kind, p)
 		elif kind == "rack":
 			# the magazine racks' art is the fixture with its stock, three of them stood on the floor
@@ -4675,7 +4675,7 @@ func left_wall(zl: float, products: Array) -> void:
 
 ## A fixture's shell round the boards its FIXTURES rows stand on: a gondola's or low shelf's end panels, back and cap
 ## over open tiers; a fridge's lit cabinet behind glass doors; a chest freezer's well under glass lids.
-func fixture_shell(kind: String, p: Vector2) -> void:
+func fixture_shell(kind: String, p: Vector2, pid: String) -> void:
 	var f: Dictionary = FIXTURES[kind]
 	var h: float = f.h
 	var w := FIXTURE_W
@@ -4693,7 +4693,22 @@ func fixture_shell(kind: String, p: Vector2) -> void:
 				if r[0] > deck:
 					block(room, Vector3(w - 0.08, 0.03, 0.38), Vector3(p.x, r[0] - 0.015, p.y + 0.21), board)
 				block(room, Vector3(w - 0.08, 0.045, 0.015), Vector3(p.x, r[0] - 0.0225, p.y + 0.405), Color("fbf7ee"))  # price rail
-			block(room, Vector3(w + 0.1, 0.1, 0.9), Vector3(p.x, h + 0.05, p.y), Color("3b3f52"))
+			block(room, Vector3(w + 0.1, 0.05, 0.9), Vector3(p.x, h + 0.025, p.y), Color("3b3f52"))  # the cap's edge band
+			block(room, Vector3(w + 0.06, 0.05, 0.86), Vector3(p.x, h + 0.075, p.y), Color("f6f2e8"))
+			block(room, Vector3(w + 0.06, 0.025, 0.01), Vector3(p.x, h + 0.0625, p.y + 0.435), LAYOUT.stripe[0])
+			# a POP card on the end panel: the line's pack over its price
+			var ex := p.x + w / 2
+			var cy := h - 0.32
+			block(room, Vector3(0.02, 0.5, 0.56), Vector3(ex + 0.01, cy, p.y), LAYOUT.stripe[1])
+			block(room, Vector3(0.02, 0.42, 0.48), Vector3(ex + 0.02, cy, p.y), Color("fffaf0"))
+			block(room, Vector3(0.02, 0.09, 0.36), Vector3(ex + 0.03, cy - 0.13, p.y), Color("fff3c4"))  # the price flash
+			block(room, Vector3(0.02, 0.025, 0.2), Vector3(ex + 0.04, cy - 0.13, p.y), LAYOUT.stripe[0])
+			var ic: Array = Sim.PRODUCTS[pid].icon
+			var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
+			var s := sprite(ic[0], Rect2(ic[1] * cell, 0, cell, cell), 0.28 / cell, false)
+			s.rotation.y = PI / 2
+			s.position = Vector3(ex + 0.04, cy + 0.05, p.y)
+			room.add_child(s)
 		"fridge":
 			var body := Color("dfe9ef")
 			var top: float = f.rows[-1][1]  # the header's underside
