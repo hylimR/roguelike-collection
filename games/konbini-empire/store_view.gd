@@ -3685,6 +3685,10 @@ func build_set() -> void:
 			set_node.add_child(disc)
 	# utility poles and their sagging wires along the far sidewalk
 	var wires := surface(mat(Color("34343a")))
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var closures := surface(km)
 	var poles := [-42.0, -19.0, 12.0, 36.0].filter(func(px): return px > street_x.x + 1.0 and px < street_x.y - 1.0 and not in_gaps(px, near_gaps + under[1]))
 	if street_x.x == SET.position.x:  # the wires run on off the set where the street does; at a quay they stop at a pole
 		poles.push_front(SET.position.x)
@@ -3693,24 +3697,22 @@ func build_set() -> void:
 	for k in poles.size():
 		var px: float = poles[k]
 		if absf(px) != SET.end.x:
-			block(set_node, Vector3(0.24, 7.0, 0.24), Vector3(px, 3.5, 6.85), Color("a19d94"))
-			block(set_node, Vector3(0.3, 1.1, 0.3), Vector3(px, 0.55, 6.85), Color("e3c34a"))
-			block(set_node, Vector3(0.12, 0.12, 1.4), Vector3(px, 6.6, 6.85), Color("6f6c66"))
-			cast(set_node, Vector2(px, 6.85), 0.0, 7.0, 0.24)
-			if k % 2 == 0:
-				block(set_node, Vector3(0.5, 0.75, 0.5), Vector3(px, 5.5, 7.2), Color("8a979c"))
-				cast(set_node, Vector2(px, 7.2), 5.1, 5.9, 0.5)
-			blob(set_node, Vector2(px, 6.85), 0.3)
+			utility_pole(Vector3(px, 0, 6.85), k)
 		if k == 0 or under[1].any(func(g): return g.y > poles[k - 1] and g.x < px):  # no wire up through a deck
 			continue
 		var x0: float = poles[k - 1]
-		for dz in [-0.55, 0.0, 0.55]:
+		for line in [[6.76, -0.55, 0.035, 0.025], [6.76, 0.0, 0.035, 0.025], [6.76, 0.55, 0.035, 0.025], [4.6, -0.2, 0.045, 0.032]]:
 			var pts := PackedVector3Array()
 			for i in 9:
 				var t := i / 8.0
-				pts.append(Vector3(lerpf(x0, px, t), 6.66 - 0.035 * (px - x0) * 4.0 * t * (1.0 - t), 6.85 + dz))
-			wall(wires, pts, 0.0, -0.025, 0.025)
-	commit([wires], set_node)
+				pts.append(Vector3(lerpf(x0, px, t), line[0] - line[2] * (px - x0) * 4.0 * t * (1.0 - t), 6.85 + line[1]))
+			wall(wires, pts, 0.0, -line[3], line[3])
+		if k % 2 == 1:  # a telecom closure slung under the cable near the pole
+			var cx := lerpf(x0, px, 0.86)
+			var cy := 4.6 - 0.045 * (px - x0) * 4.0 * 0.86 * 0.14
+			box_into(closures, Vector3(cx - 0.4, cy - 0.2, 6.56), Vector3(cx + 0.4, cy - 0.03, 6.74), Color("2c2d31"))
+			box_into(closures, Vector3(cx - 0.44, cy - 0.17, 6.58), Vector3(cx + 0.44, cy - 0.06, 6.72), Color("3a3b40"))
+	commit([wires, closures] if poles.size() > 2 else [wires], set_node)
 	# neighbours: the district's own mix of buildings either side of your shop and the rival, a row behind them
 	var mix: Array = Sim.City.MIX[type]
 	var r := RandomNumberGenerator.new()
@@ -3943,6 +3945,65 @@ func crossing_signal(at: Vector3) -> void:
 	cast(set_node, Vector2(at.x, at.z), 0.0, 3.6, 0.12)
 	cast(set_node, Vector2(at.x, at.z), 2.12, 2.88, 0.4)
 	cast(set_node, Vector2(at.x, at.z), 3.04, 3.52, 0.3)
+
+
+## A concrete utility pole on the near sidewalk: tapering as it rises from a guard sleeve banded yellow and black, an
+## advertising plate at eye level, step bolts up to a crossarm with a porcelain insulator under each wire, a bracket
+## for the telecom cable and, on every other pole, a transformer can with its leads up to the arm, in one mesh per pole.
+func utility_pole(at: Vector3, k: int) -> void:
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var kit := surface(km)
+	var concrete := Color("aaa69c")
+	var dark := Color("55585f")
+	var y := 0.0
+	for seg in [[0.3, 2.0], [0.27, 4.0], [0.24, 5.8], [0.21, 7.0]]:
+		var h: float = seg[0] / 2
+		box_into(kit, at + Vector3(-h, y, -h), at + Vector3(h, seg[1], h), concrete.darkened(0.04 * (3 - int(y / 2.0))))
+		y = seg[1]
+	box_into(kit, at + Vector3(-0.115, 7.0, -0.115), at + Vector3(0.115, 7.06, 0.115), Color("8d8a83"))
+	for i in 8:  # the guard sleeve
+		box_into(kit, at + Vector3(-0.18, i * 0.2, -0.18), at + Vector3(0.18, i * 0.2 + 0.2, 0.18), Color("e8c43a") if i % 2 == 0 else Color("2e2f33"))
+	# the advertising plate on the sidewalk face: a band in its colour, lines of type and a footer
+	var ad: Color = [Color("2f6fb0"), Color("c8452f"), Color("3c8f5a")][k % 3]
+	var z := 0.135
+	box_into(kit, at + Vector3(-0.17, 1.95, z), at + Vector3(0.17, 3.0, z + 0.02), Color("f4f1e8"))
+	box_into(kit, at + Vector3(-0.15, 2.72, z + 0.02), at + Vector3(0.15, 2.95, z + 0.03), ad)
+	for i in 4:
+		var ty := 2.6 - i * 0.12
+		box_into(kit, at + Vector3(-0.11, ty - 0.04, z + 0.02), at + Vector3(0.11 - 0.05 * (i % 2), ty, z + 0.03), Color("4a4d55"))
+	box_into(kit, at + Vector3(-0.15, 2.0, z + 0.02), at + Vector3(0.15, 2.1, z + 0.03), ad)
+	for i in 9:  # step bolts, side to side
+		var by := 2.5 + i * 0.42
+		var sx := 1.0 if i % 2 == 0 else -1.0
+		box_into(kit, at + Vector3(minf(0.1 * sx, 0.26 * sx), by, -0.02), at + Vector3(maxf(0.1 * sx, 0.26 * sx), by + 0.04, 0.02), dark)
+	# the crossarm on its band, an insulator under each wire
+	box_into(kit, at + Vector3(-0.13, 6.44, -0.13), at + Vector3(0.13, 6.54, 0.13), dark)
+	box_into(kit, at + Vector3(-0.06, 6.54, -0.7), at + Vector3(0.06, 6.66, 0.7), Color("6f6c66"))
+	for dz in [-0.55, 0.0, 0.55]:
+		box_into(kit, at + Vector3(-0.035, 6.66, dz - 0.035), at + Vector3(0.035, 6.7, dz + 0.035), Color("8d8a83"))
+		box_into(kit, at + Vector3(-0.05, 6.7, dz - 0.05), at + Vector3(0.05, 6.78, dz + 0.05), Color("e9e6dc"))
+	box_into(kit, at + Vector3(-0.1, 4.55, -0.2), at + Vector3(0.1, 4.62, -0.11), dark)  # the telecom cable's bracket
+	if k % 2 == 0:
+		# the transformer can on two bands, its lid, ribs, bushings and leads up to the arm
+		for by in [5.25, 5.62]:
+			box_into(kit, at + Vector3(-0.13, by, -0.13), at + Vector3(0.13, by + 0.06, 0.18), dark)
+		var c := at + Vector3(0, 0, 0.36)
+		box_into(kit, c + Vector3(-0.22, 5.1, -0.2), c + Vector3(0.22, 5.8, 0.2), Color("8f9ca0"))
+		box_into(kit, c + Vector3(-0.23, 5.1, -0.21), c + Vector3(0.23, 5.18, 0.21), Color("6c777b"))
+		for ry in [5.38, 5.58]:
+			box_into(kit, c + Vector3(-0.23, ry, -0.21), c + Vector3(0.23, ry + 0.03, 0.21), Color("7c878b"))
+		box_into(kit, c + Vector3(-0.24, 5.8, -0.22), c + Vector3(0.24, 5.86, 0.22), Color("a7b2b5"))
+		for bx in [-0.1, 0.1]:
+			box_into(kit, c + Vector3(bx - 0.03, 5.86, -0.03), c + Vector3(bx + 0.03, 6.0, 0.03), Color("e9e6dc"))
+			box_into(kit, c + Vector3(bx - 0.01, 6.0, -0.01), c + Vector3(bx + 0.01, 6.54, 0.01), Color("34343a"))
+		box_into(kit, c + Vector3(-0.07, 5.3, 0.2), c + Vector3(0.07, 5.36, 0.21), Color("f2c230"))  # its warning label
+		cast(set_node, Vector2(c.x, c.z), 5.1, 5.86, 0.46)
+	commit([kit], set_node)
+	blob(set_node, Vector2(at.x, at.z), 0.3)
+	cast(set_node, Vector2(at.x, at.z), 0.0, 7.0, 0.26)
+	cast(set_node, Vector2(at.x, at.z), 6.54, 6.66, 0.5)
 
 
 ## A row of district buildings fronting z = zf (northwards into the block), shoulder to shoulder from x0 to x1.
