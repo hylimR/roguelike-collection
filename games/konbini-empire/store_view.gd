@@ -4392,6 +4392,54 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	if not rv.defeated:
 		light_up(awning, 0.5)
 		spill(parent, cx, w + 1.6, -7.05)
+	# the end wall: the fascia's stripes wrap round the corner and run its depth, a downpipe at each corner
+	var ex := span.y
+	for s in [[Vector3(0.12, 0.8, 9.1), Vector3(ex + 0.01, 3.65, -11.65), c, 0.8], [Vector3(0.02, 0.08, 9.1), Vector3(ex + 0.08, 3.53, -11.65), Color.WHITE, 1.0],
+			[Vector3(0.02, 0.24, 9.1), Vector3(ex + 0.08, 3.37, -11.65), c.darkened(0.25), 1.0]]:
+		var sm := block(parent, s[0], s[1], s[2])
+		if not rv.defeated:
+			light_up(sm, s[3])
+	for z in [-7.45, -15.95]:
+		block(parent, Vector3(0.1, 3.2, 0.1), Vector3(ex + 0.1, 1.65, z), Color("b4b1a9"))
+		block(parent, Vector3(0.26, 0.08, 0.14), Vector3(ex + 0.17, 0.04, z), Color("8f8c85"))
+	if parent != set_node:
+		return  # a shop on the city map: too small for the fittings
+	# the yard side: a steel staff door under a hood and a lamp, crates of empties by it, the refrigeration condensers
+	# humming on their pads, the meter boxes and their conduit, and a staff-wanted poster in the chain's colours
+	var dz := -14.4
+	block(parent, Vector3(0.06, 2.25, 1.15), Vector3(ex + 0.03, 1.125, dz), Color("5e6670"))
+	block(parent, Vector3(0.04, 2.1, 0.95), Vector3(ex + 0.06, 1.05, dz), Color("a3abb2"))
+	block(parent, Vector3(0.05, 0.05, 0.2), Vector3(ex + 0.1, 1.0, dz + 0.32), Color("d9d6cf"))
+	block(parent, Vector3(0.02, 0.22, 0.44), Vector3(ex + 0.085, 1.65, dz), Color("f4f1e8"))
+	block(parent, Vector3(0.02, 0.05, 0.44), Vector3(ex + 0.09, 1.74, dz), c)
+	block(parent, Vector3(0.5, 0.06, 1.35), Vector3(ex + 0.25, 2.42, dz), Color("8f959b"))
+	block(parent, Vector3(0.5, 0.12, 1.4), Vector3(ex + 0.25, 0.06, dz), Color("bdb9b0"))
+	var lamp := block(parent, Vector3(0.16, 0.14, 0.3), Vector3(ex + 0.12, 2.62, dz), Color("fff3cf"))
+	light_up(lamp, 1.0)
+	pool(parent, Vector3(ex + 1.0, 0, dz), Vector2(2.2, 2.2))
+	for k in 3:
+		var cr := Vector3(ex + 0.35, 0.15 + 0.29 * int(k == 1), dz + 1.0 + 0.48 * int(k == 2))
+		block(parent, Vector3(0.45, 0.28, 0.42), cr, c.lerp(Color("c8c4ba"), 0.35))
+		block(parent, Vector3(0.36, 0.03, 0.34), cr + Vector3(0, 0.14, 0), Color("6b6359"))
+	blob(parent, Vector2(ex + 0.35, dz + 1.25), 0.55)
+	for k in 2:
+		var cz := -11.9 + k * 1.05
+		block(parent, Vector3(0.62, 0.1, 0.95), Vector3(ex + 0.36, 0.05, cz), Color("9c988f"))
+		block(parent, Vector3(0.5, 0.75, 0.85), Vector3(ex + 0.33, 0.475, cz), Color("dcddd8"))
+		block(parent, Vector3(0.02, 0.56, 0.56), Vector3(ex + 0.585, 0.5, cz), Color("41464c"))
+		block(parent, Vector3(0.025, 0.1, 0.1), Vector3(ex + 0.59, 0.5, cz), Color("a7adb3"))
+		cast(parent, Vector2(ex + 0.33, cz), 0.0, 0.85, 0.85)
+	block(parent, Vector3(0.08, 3.0, 0.08), Vector3(ex + 0.06, 2.35, -11.6), Color("c9c6bd"))  # the units' pipes up to the roof
+	block(parent, Vector3(0.14, 0.5, 0.36), Vector3(ex + 0.07, 1.65, -9.4), Color("b8bcbf"))
+	block(parent, Vector3(0.02, 0.18, 0.22), Vector3(ex + 0.145, 1.72, -9.4), Color("39424a"))
+	block(parent, Vector3(0.18, 0.36, 0.3), Vector3(ex + 0.09, 0.95, -9.4), Color("d4d0c6"))
+	block(parent, Vector3(0.05, 0.05, 0.05), Vector3(ex + 0.05, 2.7, -9.4), Color("7a8088"))
+	block(parent, Vector3(0.05, 1.3, 0.05), Vector3(ex + 0.04, 2.55, -9.25), Color("b8bcbf"))
+	block(parent, Vector3(0.03, 0.95, 0.68), Vector3(ex + 0.015, 1.55, -8.3), Color("5e6670"))
+	block(parent, Vector3(0.02, 0.85, 0.6), Vector3(ex + 0.035, 1.55, -8.3), Color("fbfaf5"))
+	block(parent, Vector3(0.02, 0.22, 0.6), Vector3(ex + 0.045, 1.86, -8.3), c)
+	for k in 3:
+		block(parent, Vector3(0.02, 0.04, 0.44 - k * 0.1), Vector3(ex + 0.045, 1.6 - k * 0.12, -8.3), Color("3d3a36"))
 
 
 ## The chain's lightbox on its fascia: a cream plate with its mascot's head in a roundel ringed in the chain's colour
