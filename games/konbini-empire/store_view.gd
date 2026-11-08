@@ -5672,21 +5672,39 @@ func draw_weather() -> void:
 	if look.size() == 1:
 		draw_heat(look[0], inside, r, now)
 		return
-	overlay.draw_rect(Rect2(Vector2.ZERO, size), look[0])
+	var snowing: bool = look[4] == 0.0
+	# snow goes with the light: its pale veil thins after dark and takes the hour's tint, the flakes too, except where
+	# they fall through a lamp's or a shop window's light
+	var veil: Color = look[0] * light if snowing else look[0]
+	veil.a = look[0].a * (lerpf(0.3, 1.0, 1.0 - night) if snowing else 1.0)
+	overlay.draw_rect(Rect2(Vector2.ZERO, size), veil)
+	var flake := Color.WHITE.lerp(light, 0.75 * night).lerp(light, 0.3)
+	var lit := []  # [screen centre, screen radius] of the light pools after dark, at the height the flakes fall through
+	if snowing and night > 0.0:
+		for q in pools:
+			var c := screen_world(Vector3(q.x, 1.6, q.y))
+			lit.append([c, c.distance_to(screen_world(Vector3(q.x + q.z, 1.6, q.y))) * 1.3])
 	var span := size.y + 40.0
 	var lines := PackedVector2Array()
 	for i in look[1]:
 		var d := r.randf()  # snow falls at three depths: near flakes bigger, faster and swaying wider
-		var y := fposmod(r.randf() * span + now * look[3] * r.randf_range(0.8, 1.2) * (lerpf(0.5, 1.7, d) if look[4] == 0.0 else 1.0), span) - 20.0
+		var y := fposmod(r.randf() * span + now * look[3] * r.randf_range(0.8, 1.2) * (lerpf(0.5, 1.7, d) if snowing else 1.0), span) - 20.0
 		var x := fposmod(r.randf() * size.x + y * look[2], size.x)
-		var p := Vector2(x + (sin(now * 1.4 + i) * lerpf(3.0, 10.0, d) if look[4] == 0.0 else 0.0), y)
+		var p := Vector2(x + (sin(now * 1.4 + i) * lerpf(3.0, 10.0, d) if snowing else 0.0), y)
 		if inside.size() > 2 and Geometry2D.is_point_in_polygon(p, inside):
 			continue
-		if look[4] == 0.0:
+		if snowing:
 			var px := 2.0 if d < 0.45 else (3.0 if d < 0.85 else 4.0)
-			if px == 4.0:
-				overlay.draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), Color(1, 1, 1, 0.2))
-			overlay.draw_rect(Rect2(p - Vector2(px, px) / 2, Vector2(px, px)), Color(1, 1, 1, lerpf(0.5, 0.95, d)))
+			var k := 0.0
+			for e in lit:
+				k = maxf(k, 1.0 - p.distance_to(e[0]) / e[1])
+			var glow := clampf(k * 1.6, 0.0, 1.0) * night
+			var c := flake.lerp(Color(1.0, 0.95, 0.84), glow)
+			if glow > 0.0:  # a flake lit up out of the dark glints, a soft rim round it
+				overlay.draw_rect(Rect2(p - Vector2(px + 4, px + 4) / 2, Vector2(px + 4, px + 4)), Color(c, 0.14 * glow))
+			if px == 4.0 or glow > 0.0:
+				overlay.draw_rect(Rect2(p - Vector2(px + 2, px + 2) / 2, Vector2(px + 2, px + 2)), Color(c, 0.25 + 0.2 * glow))
+			overlay.draw_rect(Rect2(p - Vector2(px, px) / 2, Vector2(px, px)), Color(c, lerpf(0.5, 0.95, d)))
 		else:
 			lines.append_array([p, p + Vector2(look[2], 1.0).normalized() * look[4]])
 	if not lines.is_empty():
