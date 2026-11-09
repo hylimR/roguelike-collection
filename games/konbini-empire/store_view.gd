@@ -2357,16 +2357,81 @@ func facade_atlas() -> Array:
 									var px := img.get_pixel(s * 32 + x, y).to_html(false)
 									if px != "4a525a":
 										mask.set_pixel(s * 32 + x, y, Color(0, 1 if px == SHOP_GLASS else 0, 1))
-				4:  # neon-sign buildings
-					if up:
-						r.call(2, 8, 15, 13, fixed("2c3644"))
-						r.call(20, 2, 10, 28, accent(1.0))
-						r.call(22, 4, 6, 24, accent(0.72))
-						for y in [6, 12, 18, 24]:
-							r.call(23, y, 4, 3, accent(1.0))
-					else:
-						r.call(2, 4, 28, 6, accent(0.9))
-						r.call(2, 11, 28, 21, fixed("e8d9a0"))
+				4:  # neon-sign buildings: a bar on every floor, each with its panel in the blade sign up the front
+					# pixels that glow after dark in their own colours: sign lettering, a bar's room through its glass
+					var lit := func(x: int, y: int, w: int, h: int, c: Color) -> void:
+						r.call(x, y, w, h, c)
+						mask.fill_rect(Rect2i(s * 32 + x, row * 32 + y, w, h), Color(0, 0, 1))
+					var frame := fixed("4a525a")
+					var ink := fixed("f6efd8")
+					var glyph := func(x: int, y: int, k: int, h := 6) -> void:  # a made-up character, 4 px wide
+						var rows: Array = GLYPHS[k % GLYPHS.size()]
+						for gy in mini(h, rows.size()):
+							for gx in 4:
+								if rows[gy][gx] == "#":
+									lit.call(x + gx, y + gy, 1, 1, ink)
+					if up:  # a tenant's window in a deep frame, the sky across its glass, its name on the pane; an AC unit
+						r.call(0, 0, 32, 2, wall_px(0.92))
+						r.call(0, 2, 32, 1, wall_px(0.7))
+						r.call(1, 6, 18, 18, wall_px(0.74))
+						r.call(2, 6, 16, 17, fixed("c4c9cc"))
+						r.call(3, 7, 14, 15, fixed("2c3644"))
+						r.call(3, 7, 14, 4, fixed("4f6f8c"))
+						r.call(2, 11, 16, 1, fixed("c4c9cc"))
+						r.call(10, 7, 1, 15, fixed("c4c9cc"))
+						for i in 4:
+							r.call(4 + i, 21 - i, 1, 1, fixed("5d7f9c"))
+							r.call(12 + i, 21 - i, 1, 1, fixed("5d7f9c"))
+						for x in [4, 7, 12, 15]:
+							r.call(x, 16, 2, 1, fixed("e8d9a0"))
+						r.call(4, 18, 5, 1, fixed("e8d9a0"))
+						r.call(1, 23, 18, 1, fixed("e2e4e2"))
+						r.call(1, 24, 18, 1, wall_px(0.6))
+						r.call(4, 26, 8, 4, fixed("d6d8d4"))
+						r.call(5, 27, 3, 2, fixed("8e9398"))
+						r.call(9, 27, 2, 1, fixed("aeb2b4"))
+						r.call(4, 30, 8, 1, wall_px(0.62))
+						r.call(12, 25, 1, 3, fixed("c8c4b8"))
+						# the blade sign, one tenant's panel a floor: lettering stacked down a lit face in a dark box
+						r.call(19, 5, 2, 1, frame)
+						r.call(19, 25, 2, 1, frame)
+						r.call(21, 0, 9, 32, fixed("3a3f48"))
+						r.call(22, 1, 7, 28, accent(1.0))
+						r.call(27, 1, 1, 28, accent(0.8))
+						r.call(22, 1, 7, 1, accent(0.72))
+						r.call(22, 29, 7, 1, accent(0.6))
+						for i in 3:
+							glyph.call(23, 4 + i * 8, i)
+						lit.call(23, 27, 1, 1, ink)
+						lit.call(25, 27, 1, 1, ink)
+					else:  # a lightbox fascia lettered in the bar's name over its glazed front and a door hung with noren
+						r.call(0, 0, 32, 2, wall_px(0.85))
+						r.call(0, 2, 32, 7, fixed("3a3f48"))
+						r.call(1, 3, 30, 5, accent(1.0))
+						r.call(1, 7, 30, 1, accent(0.75))
+						for i in 4:
+							glyph.call(4 + i * 6, 3, 3 + i, 5)
+						r.call(0, 9, 32, 1, wall_px(0.55))
+						r.call(1, 11, 21, 18, frame)
+						lit.call(2, 12, 19, 16, fixed("d9c08a"))
+						lit.call(2, 12, 19, 2, fixed("b89a64"))
+						for x in [5, 13, 18]:
+							lit.call(x, 14, 1, 2, fixed("6a5a48"))
+							lit.call(x - 1, 16, 3, 1, fixed("fff1c0"))
+						lit.call(2, 21, 19, 1, fixed("a86a3e"))
+						lit.call(2, 22, 19, 3, fixed("7a4a2e"))
+						for x in [4, 8, 14, 18]:
+							lit.call(x, 25, 2, 1, fixed("c0392b"))
+							lit.call(x, 26, 1, 2, fixed("3a3030"))
+						r.call(11, 12, 1, 16, frame)
+						r.call(1, 29, 21, 3, wall_px(0.66))
+						r.call(23, 11, 8, 21, frame)
+						lit.call(24, 12, 6, 19, fixed("e0c48c"))
+						for x in [24, 26, 28]:
+							r.call(x, 12, 2, 6, accent(0.85 if x == 26 else 0.95))
+						r.call(24, 18, 6, 1, accent(0.6))
+						r.call(25, 22, 1, 3, fixed("d8d8d0"))
+						r.call(23, 31, 8, 1, fixed("8a8a84"))
 				5:  # wooden machiya
 					for x in range(1, 32, 4):
 						r.call(x, 0, 1, 32, wall_px(0.84))
@@ -2420,6 +2485,15 @@ func facade_atlas() -> Array:
 	return [ImageTexture.create_from_image(img), ImageTexture.create_from_image(mask)]
 
 
+const GLYPHS := [
+	["####", "...#", "####", "...#", "..#.", ".#.."],
+	["####", "#..#", "#..#", "####", "....", "...."],
+	[".#..", "####", ".#..", "##.#", ".#..", ".##."],
+	["#.#.", "####", "#.#.", "....", "....", "...."],
+	["####", ".#..", ".##.", ".#..", "....", "...."],
+	[".##.", "#..#", ".##.", "#..#", "....", "...."],
+	["#..#", "####", "#..#", "#..#", "....", "...."],
+]
 const SHOP_GLASS := "a9cdd6"  # a shop window's pane: the back of the shop, glowing after dark
 const WINDOWS := ["3d5a78", "4f6f8c", "26313e", "5d7f9c", "2c3644", "e8d9a0", "8fb3c0", "ece6d2", "e8e0c8", "c9b98a", "39475a", "e8dcb0", "6f8fa8", "e6dcc6"]
 
