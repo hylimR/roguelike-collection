@@ -4807,7 +4807,6 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	block(parent, Vector3(1.8, 1.3, 1.6), hatch + Vector3(0, 0.65, 0), Color("dedad0"))
 	block(parent, Vector3(1.95, 0.1, 1.75), hatch + Vector3(0, 1.35, 0), Color("aca89f"))
 	block(parent, Vector3(0.7, 1.0, 0.04), hatch + Vector3(0.3, 0.5, 0.81), Color("7d8590"))
-	block(parent, Vector3(w - 2.2, 0.03, 0.8), Vector3(cx + 0.5, 4.25, -13.4), Color("c9c6bd"))
 	for k in 2:
 		var sx := span.x + 3.2 + k * 2.6
 		block(parent, Vector3(1.9, 0.2, 1.3), Vector3(sx, 4.3, -10.0), Color("d6d3ca"))
@@ -4994,9 +4993,10 @@ func skylight_mats() -> Array:
 	return [gm, lm]
 
 
-## The rival's roof as the city's flat roofs are drawn: membrane in strips across its depth, each a shade off, the
-## parapets' shadow along its sunny sides, a dark seam round the hatch, skylights, AC units and walkway and each one's
-## shadow away from the sun, and a drain in the front corner with a damp stain round it. 10 px a metre, street frame.
+## The rival's roof as the city's flat roofs are drawn, kept tidier than the vacant unit's: a coating in strips across its
+## depth, each a shade off with a grit speckle, faint grime and rain streaks running down to the drain in the front corner
+## with a damp stain round it, the parapets' shadow along its sunny sides, a walkway of concrete pads each a shade apart,
+## a dark seam round the hatch, skylights and AC units and each one's shadow away from the sun. 10 px a metre, street frame.
 func rival_roof(span: Vector2) -> StandardMaterial3D:
 	var x0 := span.x + 0.2
 	var iw := roundi((span.y - span.x - 0.4) * 10.0)
@@ -5013,17 +5013,51 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 		casts.append([Rect2(span.x + 2.25 + k * 2.6, -10.65, 1.9, 1.3), Vector2(0.12, -0.2)])
 	for k in 3:
 		casts.append([Rect2(span.x + 3.575 + k * 1.6, -14.925, 1.25, 1.05), Vector2(0.25, -0.42)])
-	casts.append([Rect2(span.x + 1.6, -13.8, span.y - span.x - 2.2, 0.8), Vector2.ZERO])  # the walkway
+	var walk := Rect2(span.x + 1.6, -13.8, span.y - span.x - 2.2, 0.8)
+	var pads := []
+	for k in int(walk.size.x / 0.6) + 1:
+		pads.append(r.randf_range(0.92, 1.06))
+	var gw := int(iw / 10.0) + 2
+	var grime := []
+	for k in gw * 10:
+		grime.append(r.randf())
+	var streaks := []  # rain runs toward the front, every 0.1 m a strength
+	for k in iw:
+		streaks.append(r.randf() if r.randf() < 0.3 else 0.0)
 	var drain := Vector2(span.y - 0.8, -7.95)
 	var base := Color(Sim.City.FLAT_ROOFS[4])  # a teal coating
+	var pad := Color("c9c6bd")
 	var img := Image.create(iw, ih, false, Image.FORMAT_RGB8)
 	for j in ih:
 		var z := -16.0 + (j + 0.5) / 10.0
 		var u := (j + 0.5) / 12.0
-		var lane: float = lanes[int(u) % lanes.size()] * (0.84 if j % 12 == 0 else 1.0)
+		var lane: float = lanes[int(u) % lanes.size()] * (0.84 if j % 12 == 0 else (1.04 if j % 12 == 1 else 1.0))
 		for i in iw:
 			var x := x0 + (i + 0.5) / 10.0
-			var f := lane
+			var gx := x - x0
+			var gz := z + 16.0
+			var cx := int(gx)
+			var cz := int(gz)
+			var tx := smoothstep(0.0, 1.0, gx - cx)
+			var tz := smoothstep(0.0, 1.0, gz - cz)
+			var g := lerpf(lerpf(grime[(cz % 10) * gw + cx], grime[(cz % 10) * gw + cx + 1], tx),
+					lerpf(grime[((cz + 1) % 10) * gw + cx], grime[((cz + 1) % 10) * gw + cx + 1], tx), tz)
+			var f: float = lane * lerpf(0.93, 1.03, g) * (1.0 - streaks[i] * 0.12 * smoothstep(0.0, 8.6, gz))
+			var h := r.randf()
+			if h < 0.04:
+				f *= 0.9
+			elif h < 0.07:
+				f *= 1.06
+			var col := base
+			if walk.has_point(Vector2(x, z)):
+				var wi := int((x - walk.position.x) / 0.6)
+				var wu := fmod(x - walk.position.x, 0.6)
+				col = pad
+				f = pads[wi] * lerpf(0.95, 1.02, g) * (0.9 if h < 0.04 else 1.0)
+				if wu < 0.1 or z - walk.position.y < 0.1:
+					f *= 0.72  # the gap between pads, and the shade along its far edge
+				elif walk.end.y - z < 0.1:
+					f *= 1.08
 			if i < 3 or j >= ih - 4:
 				f *= 0.74
 			elif i >= iw - 2 or j < 2:
@@ -5042,7 +5076,7 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 				f = 0.45
 			elif d < 1.1:
 				f *= lerpf(0.86, 1.0, d / 1.1)
-			img.set_pixel(i, j, Color(base.r * f, base.g * f, base.b * f))
+			img.set_pixel(i, j, Color(col.r * f, col.g * f, col.b * f))
 	img.generate_mipmaps()
 	roof_texs[iw] = ImageTexture.create_from_image(img)
 	return roof_mat(roof_texs[iw])
