@@ -461,6 +461,7 @@ var floor_tex := {}  # shop floor texture by left wall
 var set_sig := ""
 var tarmac_m: StandardMaterial3D
 var car_park_m: StandardMaterial3D
+var road_paint_m: StandardMaterial3D
 var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
 var entries := []  # x of the side roads that meet the set's street, where cars come in when both its ends are quays
 var slot_icons := {}  # product -> [Sprite3D]: its stock on the shelf
@@ -1108,6 +1109,55 @@ func car_park() -> StandardMaterial3D:
 	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	car_park_m = m
+	return m
+
+
+## The set's road markings for an 8 m repeat (uv x/8, z/8), 16 px a metre: the paint a shade apart and dulled with
+## grime, thinned in broad patches and worn through to the street's grain where its wheel paths cross, dusty at
+## the kerbs like the tarmac under it.
+func road_paint() -> StandardMaterial3D:
+	if road_paint_m:
+		return road_paint_m
+	var r := RandomNumberGenerator.new()
+	r.seed = 67
+	var noise := FastNoiseLite.new()
+	noise.seed = 67
+	noise.frequency = 0.08
+	var chips := FastNoiseLite.new()
+	chips.seed = 71
+	chips.frequency = 0.3
+	var img := Image.create(128, 128, false, Image.FORMAT_RGB8)
+	var paint := Color("ebe7dc")
+	var grain := {}
+	for py in 128:
+		var z := (py + 0.5) / 16.0
+		if z >= 4.0:
+			z -= 8.0
+		var lane_z := absf(absf(z) - 1.7)
+		for px in 128:
+			var cell := Vector2i(px / 2, py / 2)  # the tarmac's grain at its 8 px a metre
+			if not grain.has(cell):
+				var g := r.randf()
+				grain[cell] = r.randf_range(0.95, 1.03) if g < 0.8 else (r.randf_range(1.07, 1.12) if g < 0.9 else r.randf_range(0.86, 0.9))
+			var v: float = grain[cell]
+			var under := ASPHALT
+			var p := paint * r.randf_range(0.95, 1.01)
+			if absf(z) > 3.3:
+				under = under.lerp(Color("8d8577"), (absf(z) - 3.3) * 0.5)
+				p = p.lerp(Color("bdb4a2"), 0.25)
+			var path := 1.0 - smoothstep(0.18, 0.36, absf(lane_z - 0.62))
+			if absf(z) < 3.3:
+				v = lerpf(v, 0.87, path * 0.75)
+			var n := noise.get_noise_2d(px, py) * 0.5 + 0.5
+			var wear := 0.03 + 0.2 * smoothstep(0.55, 0.85, n) + 0.3 * path
+			var col := p.lerp(Color(0.62, 0.62, 0.6), wear * 0.4)
+			if (chips.get_noise_2d(px, py) * 0.5 + 0.5) * 0.75 + r.randf() * 0.25 < wear:
+				col = Color(under.r * v, under.g * v, under.b * v).lerp(p, 0.3 * (1.0 - path))
+			img.set_pixel(px, py, col)
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	road_paint_m = m
 	return m
 
 
@@ -3855,26 +3905,26 @@ func build_set() -> void:
 			for ex in [g.x - 0.2, g.y]:
 				if ex > street_x.x and ex + 0.2 < street_x.y:
 					box_into(kerbs, Vector3(ex, -0.045, sd[1]), Vector3(ex + 0.2, 0.09, sd[1] + 3.5), Color("bdb7ab"))
-	var paint := surface(mat(Color("ebe7dc")))
+	var paint := surface(road_paint())
 	var x := SET.position.x
 	while x < SET.end.x:
 		if x >= street_x.x and x + 2.0 <= street_x.y and (x + 2.0 < Sim.CROSS_X - 2.0 or x > Sim.CROSS_X + 2.0):
-			rect_quad(paint, Rect2(x, -0.08, 2.0, 0.16), -0.04)
+			rect_quad(paint, Rect2(x, -0.08, 2.0, 0.16), -0.04, 0.0, false, 0.125)
 		x += 4.0
 	var z := -3.3
 	while z < 3.4:
-		rect_quad(paint, Rect2(Sim.CROSS_X - 1.5, z, 3.0, 0.42), -0.04)
+		rect_quad(paint, Rect2(Sim.CROSS_X - 1.5, z, 3.0, 0.42), -0.04, 0.0, false, 0.125)
 		z += 0.84
 	# edge lines inside the kerbs, broken at the crossing and at side roads; a zebra across each side road's mouth
 	for sd in [[far_gaps, -3.42, -6.95], [near_gaps, 3.3, 4.05]]:
 		for o in open_spans(sd[0]):
 			for seg in [Vector2(o.x, minf(o.y, Sim.CROSS_X - 1.7)), Vector2(maxf(o.x, Sim.CROSS_X + 1.7), o.y)]:
 				if seg.y - seg.x > 0.5:
-					rect_quad(paint, Rect2(seg.x, sd[1], seg.y - seg.x, 0.12), -0.04)
+					rect_quad(paint, Rect2(seg.x, sd[1], seg.y - seg.x, 0.12), -0.04, 0.0, false, 0.125)
 		for g in sd[0]:
 			var zx: float = g.x + 0.5
 			while zx + 0.45 < g.y - 0.4:
-				rect_quad(paint, Rect2(zx, sd[2], 0.45, 2.9), -0.04)
+				rect_quad(paint, Rect2(zx, sd[2], 0.45, 2.9), -0.04, 0.0, false, 0.125)
 				zx += 0.9
 	# your parking: bays and bicycles between your shop and the alley, nothing tall to hide the till
 	var bay := surface(car_park())  # its lines and the arrow leading drivers in off the street are painted on it
