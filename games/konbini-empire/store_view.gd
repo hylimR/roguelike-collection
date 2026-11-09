@@ -558,6 +558,7 @@ var casts: Array = []  # those shadows, stretched as the sun goes down
 var foot_mat: ShaderMaterial  # people's shadows
 var foot_mesh: PlaneMesh
 var sea_mat: StandardMaterial3D
+var shore_mat: StandardMaterial3D  # foam and shallows, dimmed after dark with the sea
 var field_mat: ShaderMaterial
 var swell_mat: ShaderMaterial  # the map's open sea and rivers
 var cam_target := Vector3.ZERO
@@ -868,6 +869,7 @@ func update_light() -> void:
 	env.background_color = SEA * dusk_sea
 	if sea_mat:
 		sea_mat.albedo_color = dusk_sea
+		shore_mat.albedo_color = dusk_sea
 		swell_mat.set_shader_parameter("light", Vector3(dusk_sea.r, dusk_sea.g, dusk_sea.b))
 	if field_mat:
 		field_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
@@ -1377,7 +1379,10 @@ func mm_node(mm: MultiMesh, m: Material, parent: Node) -> MultiMeshInstance3D:
 func country(r: Rect2, edge: float) -> bool:
 	var p := r.get_center()
 	if not C.bounds.grow(120.0).intersects(r):
-		return not Geometry2D.is_point_in_polygon(p, C.bay) and not Geometry2D.is_point_in_polygon(p, bay_mouth)
+		for q in [p, r.position, r.end, Vector2(r.position.x, r.end.y), Vector2(r.end.x, r.position.y)]:
+			if Geometry2D.is_point_in_polygon(q, C.bay) or Geometry2D.is_point_in_polygon(q, bay_mouth):
+				return false
+		return true
 	return Sim.City.nearest(C, p)[1] > Sim.City.URBAN + edge and not Sim.City.blocked(C, r)
 
 
@@ -1497,6 +1502,7 @@ func build_static() -> void:
 	for pk in C.parks:
 		poly_fill(ps, Sim.City.ellipse(pk.center, pk.radii, 40), -0.13, 0.25)
 	commit([ws, land, ps], city)
+	build_shore()
 	build_roads()
 	build_elevated()
 	build_buildings()
@@ -1508,6 +1514,89 @@ func build_static() -> void:
 			continue
 		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_SPAN * L.size / 22.0, Vector3(L.pos.x, 0, L.pos.y), lm_sprites)
 	build_paths()
+
+
+## Where the bay meets open country: a beach along the shore, wet sand at the water's edge and dry sand up the shore
+## in a width that swells and narrows, with a line of foam and a band of paler shallows out over the water. It tapers
+## out where the shore reaches the city's quays, rivers and roads.
+func build_shore() -> void:
+	# the coast as one line, the open sea's west shore north into the city's bay and out down its east shore
+	var coast := PackedVector2Array()
+	coast.append_array(bay_mouth.slice(7))
+	coast.append_array(C.bay)
+	coast.append_array(bay_mouth.slice(2, 5))
+	var pts := PackedVector2Array()
+	for i in coast.size() - 1:
+		var n := ceili(coast[i].distance_to(coast[i + 1]) / 5.0)
+		for k in n:
+			pts.append(coast[i].lerp(coast[i + 1], float(k) / n))
+	pts.append(coast[coast.size() - 1])
+	var norms := PackedVector2Array()
+	var keep := PackedFloat32Array()
+	var near: Rect2 = C.bounds.grow(120.0)
+	for i in pts.size():
+		var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
+		var n := Vector2(t.y, -t.x)  # left of the way the coast runs: the land
+		norms.append(n)
+		var q := pts[i] + n * 9.0
+		var dry := not Sim.City.is_water(C, q) and not Geometry2D.is_point_in_polygon(q, bay_mouth)
+		keep.append(1.0 if dry and (not near.has_point(q) or Sim.City.nearest(C, q)[1] > Sim.City.URBAN + 6.0 and not Sim.City.blocked(C, Rect2(q - Vector2(6, 6), Vector2(12, 12)))) else 0.0)
+	# each beach tapers in over its first and last 30 m rather than stopping square
+	var fade := keep.duplicate()
+	for i in pts.size():
+		if keep[i] > 0.0:
+			var d := 0
+			while d < 6 and i - d - 1 >= 0 and i + d + 1 < pts.size() and keep[i - d - 1] > 0.0 and keep[i + d + 1] > 0.0:
+				d += 1
+			fade[i] = smoothstep(0.0, 6.0, float(d))
+	var sand := surface(ground_mat(speckle([Color(1, 1, 1), Color(0.96, 0.95, 0.92), Color(1.0, 0.99, 0.96), Color(0.92, 0.91, 0.87)])))
+	var sm := mat(Color.WHITE)
+	sm.vertex_color_use_as_albedo = true
+	sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	sm.albedo_color = sea_mat.albedo_color
+	shore_mat = sm
+	var surf := surface(sm)
+	var r := RandomNumberGenerator.new()
+	r.seed = 19
+	var reach := PackedFloat32Array()
+	var s := 0.0
+	for i in pts.size():
+		if i > 0:
+			s += pts[i].distance_to(pts[i - 1])
+		reach.append((9.0 + 3.5 * sin(s / 37.0) + 2.0 * sin(s / 11.0 + 2.0) + r.randf_range(-0.6, 0.6)) * fade[i])
+	var wet := Color("c2ab7e")
+	var dry := Color("e8d8ac")
+	var shallow := Color("8fd6d4")
+	var foam := Color("f4fbfb")
+	for i in pts.size() - 1:
+		if fade[i] <= 0.0 and fade[i + 1] <= 0.0:
+			continue
+		var a := pts[i]
+		var b := pts[i + 1]
+		var na := norms[i]
+		var nb := norms[i + 1]
+		var fa := fade[i]
+		var fb := fade[i + 1]
+		# sand, set a metre under the water's edge so no seam shows, wet up to 2.2 m and dry beyond
+		var bands := [[-1.0, -1.0, wet], [2.2 * fa, 2.2 * fb, wet.lerp(dry, 0.3)], [reach[i], reach[i + 1], dry]]
+		for k in 2:
+			var o0: Array = bands[k]
+			var o1: Array = bands[k + 1]
+			var v := [a + na * o0[0], b + nb * o0[1], b + nb * o1[1], a + na * o1[0]]
+			var c := [o0[2], o0[2], o1[2], o1[2]]
+			for j in [0, 1, 2, 0, 2, 3]:
+				sand.set_color(c[j])
+				sand.set_uv(v[j] * 0.25)
+				sand.add_vertex(Vector3(v[j].x, -0.145, v[j].y))
+		# out over the water: foam at the edge, then shallows fading into the sea
+		for w in [[0.0, -1.4, foam, 0.85, 0.4], [-1.4, -20.0, shallow, 0.5, 0.0]]:
+			var v := [a + na * w[0] * fa, b + nb * w[0] * fb, b + nb * w[1] * fb, a + na * w[1] * fa]
+			var al := [w[3] * fa, w[3] * fb, w[4] * fb, w[4] * fa]
+			for j in [0, 1, 2, 0, 2, 3]:
+				var c: Color = w[2]
+				surf.set_color(Color(c, al[j]))
+				surf.add_vertex(Vector3(v[j].x, -0.12, v[j].y))
+	commit([sand, surf], city)
 
 
 ## The palace moat as triangles: a ring of water from the park's lawn (the same 40-point ellipse) out to the moat's
