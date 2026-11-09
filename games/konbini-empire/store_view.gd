@@ -578,6 +578,7 @@ var soft_mat: StandardMaterial3D  # soft contact shadows under people, cars and 
 var ao_mat: StandardMaterial3D  # the dark seam where a building meets the sidewalk
 var cast_mat: StandardMaterial3D  # the sun's shadow of a pole or post laid on the street
 var crown_mat: StandardMaterial3D  # the same for a tree's crown or a bush, soft all round
+var awning_mat: StandardMaterial3D  # the sun's shadow of the rival's canopy down its glass
 var casts: Array = []  # those shadows, stretched as the sun goes down
 var foot_mat: ShaderMaterial  # people's shadows
 var foot_mesh: PlaneMesh
@@ -692,6 +693,11 @@ func _ready() -> void:
 	fade.gradient.colors = PackedColorArray([Color(0.1, 0.08, 0.14), Color(0.1, 0.08, 0.14, 0.7), Color(0.1, 0.08, 0.14, 0)])
 	cast_mat.albedo_texture = fade
 	crown_mat = soft_mat.duplicate()
+	awning_mat = soft_mat.duplicate()
+	var shade := Image.create(1, 32, false, Image.FORMAT_RGBA8)
+	for y in 32:
+		shade.set_pixel(0, y, Color(0.1, 0.08, 0.14, 1.0 - smoothstep(12.0, 31.0, y)))
+	awning_mat.albedo_texture = ImageTexture.create_from_image(shade)
 	var reach_max := FOOT.z * Vector2(SUN.x, SUN.z).length() / SUN.y * 1.9
 	foot_mesh = PlaneMesh.new()
 	foot_mesh.size = Vector2(FOOT.x, FOOT.y + reach_max)
@@ -883,6 +889,7 @@ func update_light() -> void:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	cast_mat.albedo_color.a = 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
 	crown_mat.albedo_color.a = 0.62 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
+	awning_mat.albedo_color.a = 0.36 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
 	foot_mat.set_shader_parameter("core", 0.5 - 0.15 * night)
 	foot_mat.set_shader_parameter("sun", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	foot_mat.set_shader_parameter("reach", FOOT.z * Vector2(SUN.x, SUN.z).length() / SUN.y * (1.0 + 0.9 * golden_at(h)))
@@ -4966,9 +4973,13 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		block(parent, Vector3(1.4, 2.6, 0.1), Vector3(rv.x, 1.3, -7.05), Color(0.86, 0.93, 0.98, 0.55), true)
 		for dx in [-0.72, 0.0, 0.72]:
 			block(parent, Vector3(0.07, 2.6, 0.12), Vector3(rv.x + dx, 1.3, -7.03), Color("8b96a1"))
-	var awning := block(parent, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
+	if parent == set_node:
+		rival_canopy(parent, rv, w, cx, c)
+	else:
+		var awning := block(parent, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
+		if not rv.defeated:
+			light_up(awning, 0.5)
 	if not rv.defeated:
-		light_up(awning, 0.5)
 		spill(parent, cx, w + 1.6, -7.05)
 	# the end wall: the fascia's stripes wrap round the corner and run its depth, a downpipe at each corner
 	var ex := span.y
@@ -5018,6 +5029,53 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	block(parent, Vector3(0.02, 0.22, 0.6), Vector3(ex + 0.045, 1.86, -8.3), c)
 	for k in 3:
 		block(parent, Vector3(0.02, 0.04, 0.44 - k * 0.1), Vector3(ex + 0.045, 1.6 - k * 0.12, -8.3), Color("3d3a36"))
+
+
+## The canopy over the rival's glass, 20 px a metre: standing-seam sheet in the chain's colour, each pan a shade off
+## with its rib lit on the sun's side, grime along the wall; a gutter lip at the front with a white pinstripe that
+## lights after dark over a dark drip edge; and its sun shadow down the top of the glazing.
+func rival_canopy(parent: Node3D, rv: Dictionary, w: float, cx: float, c: Color) -> void:
+	block(parent, Vector3(w, 0.1, 0.9), Vector3(cx, 2.85, -6.7), c.darkened(0.15))
+	var pw := int(w * 20)
+	var sheet := Image.create(pw, 16, false, Image.FORMAT_RGB8)
+	var base := c.lightened(0.1)
+	for x in pw:
+		var tone := base.darkened(0.03 * ((floori(x / 8.0) * 7 + int(rv.x)) % 3))
+		for y in 16:
+			var px := tone
+			if x % 8 == 0:
+				px = base.lightened(0.35)
+			elif x % 8 == 1:
+				px = base.darkened(0.25)
+			if y < 2:
+				px = px.darkened(0.2 - 0.08 * y)
+			elif y == 15:
+				px = px.darkened(0.1)
+			sheet.set_pixel(x, y, px)
+	sheet.generate_mipmaps()
+	var top := mat(Color.WHITE, ImageTexture.create_from_image(sheet))
+	top.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	top.texture_repeat = false
+	plane(parent, Vector2(w, 0.8), Vector3(cx, 2.902, -6.74), top)
+	if not rv.defeated:
+		light_up(top, 0.45)
+	block(parent, Vector3(w + 0.04, 0.3, 0.08), Vector3(cx, 2.9, -6.25), c)
+	var band := Image.create(1, 9, false, Image.FORMAT_RGB8)
+	band.fill(c)
+	band.set_pixel(0, 0, c.lightened(0.3))
+	for y in [3, 4]:
+		band.set_pixel(0, y, Color.WHITE)
+	band.set_pixel(0, 8, c.darkened(0.45))
+	var face := art_panel(parent, band, Vector2(w + 0.04, 0.3), Vector3(cx, 2.9, -6.208), Color.WHITE, 1.0, false)
+	if not rv.defeated:
+		light_up(face, 1.0)
+	var sh := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(w - 0.6, 1.6)
+	sh.mesh = q
+	sh.material_override = awning_mat
+	sh.position = Vector3(cx + 0.2, 1.99, -6.955)
+	parent.add_child(sh)
 
 
 ## The chain's lightbox on its fascia: a cream plate with its mascot's head in a roundel ringed in the chain's colour
