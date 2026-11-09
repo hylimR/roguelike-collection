@@ -2034,7 +2034,8 @@ func sleepers() -> ImageTexture:
 
 
 ## A box from corner p0 to p1 into a vertex-coloured surface, each face in the house's three tones of col.
-func box_into(st: SurfaceTool, p0: Vector3, p1: Vector3, col: Color) -> void:
+## world_uv > 0 lays a texture on every face at that many repeats a metre, so neighbouring boxes run on unbroken.
+func box_into(st: SurfaceTool, p0: Vector3, p1: Vector3, col: Color, world_uv := 0.0) -> void:
 	var c := (p0 + p1) / 2
 	var h := (p1 - p0).abs() / 2
 	for fc in [[Vector3.UP, 1.0], [Vector3.BACK, 0.9], [Vector3.LEFT, 0.9], [Vector3.RIGHT, 0.75], [Vector3.FORWARD, 0.75]]:
@@ -2044,8 +2045,12 @@ func box_into(st: SurfaceTool, p0: Vector3, p1: Vector3, col: Color) -> void:
 		var ctr := c + fn * absf(fn.dot(h))
 		var hu := u * absf(u.dot(h))
 		var hv := v * absf(v.dot(h))
+		var q := [ctr - hu - hv, ctr + hu - hv, ctr + hu + hv, ctr - hu + hv]
+		var uv := [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN]
+		if world_uv > 0.0:
+			uv = q.map(func(p): return Vector2(p.dot(v.abs()), -p.dot(u)) * world_uv)
 		st.set_color(Color(col.r * fc[1], col.g * fc[1], col.b * fc[1]))
-		add_quad(st, [ctr - hu - hv, ctr + hu - hv, ctr + hu + hv, ctr - hu + hv], [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+		add_quad(st, q, uv)
 
 
 ## A box into a surface: centre c, size, turned `turn` about y (unshaded flat colour, as the walls round it).
@@ -3993,7 +3998,8 @@ func garbage_station(gs: Vector3) -> void:
 
 
 ## The car park's furniture in one surface: wheel stops banded in yellow, and a low planter along the back below the
-## till's sight line, a coped concrete trough holding a clipped hedge of lumpy shrubs with a few azaleas in flower.
+## till's sight line, a coped concrete trough holding a clipped hedge of lumpy shrubs with a few azaleas in flower,
+## their foliage leafed in leaf_tex and each lump bellying out over a shaded waist.
 func car_park_kit() -> void:
 	var kit := mat(Color.WHITE)
 	kit.vertex_color_use_as_albedo = true
@@ -4011,18 +4017,24 @@ func car_park_kit() -> void:
 	box_into(st, Vector3(p0.x + 0.06, 0.31, p0.z + 0.06), Vector3(p1.x - 0.06, 0.315, p1.z - 0.06), Color("5a4636"))
 	var r := RandomNumberGenerator.new()
 	r.seed = 31
-	var leaf := Color("4f8a43")
-	box_into(st, Vector3(p0.x + 0.08, 0.31, p0.z + 0.08), Vector3(p1.x - 0.08, 0.47, p1.z - 0.08), leaf.darkened(0.06))
+	var fm := mat(Color.WHITE, leaf_tex())
+	fm.vertex_color_use_as_albedo = true
+	fm.vertex_color_is_srgb = true
+	var fol := surface(fm)
+	var leaf := Color("5f9e50")  # the leaf texture averages about 0.8, so this lands on the old 4f8a43
+	box_into(fol, Vector3(p0.x + 0.08, 0.31, p0.z + 0.08), Vector3(p1.x - 0.08, 0.42, p1.z - 0.08), leaf.darkened(0.22), 3.0)
 	var x := p0.x + 0.08
 	while x < p1.x - 0.12:  # the clipped top rises and dips in soft lumps, each lit a shade on its crown
 		var x1 := minf(x + r.randf_range(0.3, 0.42), p1.x - 0.08)
-		var top := r.randf_range(0.5, 0.56)
-		var g: Color = leaf.lightened(r.randf_range(-0.04, 0.08))
+		var top := r.randf_range(0.49, 0.58)
+		var g: Color = leaf.lightened(r.randf_range(-0.06, 0.08))
 		var z0 := p0.z + r.randf_range(0.06, 0.1)
 		var z1 := p1.z - r.randf_range(0.06, 0.1)
-		box_into(st, Vector3(x, 0.4, z0), Vector3(x1, top, z1), g)
 		var ix := (x1 - x) * 0.18
-		box_into(st, Vector3(x + ix, top, z0 + 0.05), Vector3(x1 - ix, top + 0.03, z1 - 0.05), g.lightened(0.12))
+		box_into(fol, Vector3(x + 0.03, 0.36, z0 + 0.03), Vector3(x1 - 0.03, 0.44, z1 - 0.03), g.darkened(0.14), 3.0)
+		box_into(fol, Vector3(x, 0.44, z0), Vector3(x1, top - 0.03, z1), g, 3.0)
+		box_into(fol, Vector3(x + ix * 0.5, top - 0.03, z0 + 0.025), Vector3(x1 - ix * 0.5, top, z1 - 0.025), g.lightened(0.08), 3.0)
+		box_into(fol, Vector3(x + ix, top, z0 + 0.06), Vector3(x1 - ix, top + 0.025, z1 - 0.06), g.lightened(0.2), 3.0)
 		if r.randf() < 0.45:  # an azalea in flower poking through the clipped face
 			var fx := r.randf_range(x + 0.04, x1 - 0.1)
 			var fy := r.randf_range(0.36, top - 0.06)
@@ -4031,7 +4043,25 @@ func car_park_kit() -> void:
 		if x1 >= p1.x - 0.08:
 			break
 		x = x1 - r.randf_range(0.08, 0.14)
-	commit([st], set_node)
+	commit([st, fol], set_node)
+
+
+## Clipped foliage in grey: leaf tips lit on top over a darker underside, dark gaps between, around 0.8 on average.
+func leaf_tex() -> ImageTexture:
+	var r := RandomNumberGenerator.new()
+	r.seed = 12
+	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
+	img.fill(Color(0.74, 0.74, 0.74))
+	for i in 34:
+		var lx := r.randi() % 16
+		var ly := r.randi() % 16
+		img.set_pixel((lx + 1) % 16, (ly + 1) % 16, Color(0.56, 0.58, 0.6))
+		img.set_pixel(lx, (ly + 1) % 16, Color(0.66, 0.67, 0.68))
+		img.set_pixel(lx, ly, Color(0.86, 0.86, 0.82))
+		img.set_pixel((lx + 1) % 16, ly, Color(0.96, 0.97, 0.9) if r.randf() < 0.5 else Color(0.86, 0.86, 0.82))
+	for i in 10:
+		img.set_pixel(r.randi() % 16, r.randi() % 16, Color(0.42, 0.44, 0.46))
+	return ImageTexture.create_from_image(img)
 
 
 func speckle(colors: Array) -> ImageTexture:
