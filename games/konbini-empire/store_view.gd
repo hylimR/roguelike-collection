@@ -484,6 +484,7 @@ var set_sig := ""
 var tarmac_m: StandardMaterial3D
 var car_park_m: StandardMaterial3D
 var road_paint_m: StandardMaterial3D
+var side_tar_m: StandardMaterial3D
 var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
 var entries := []  # x of the side roads that meet the set's street, where cars come in when both its ends are quays
 var slot_icons := {}  # product -> [Sprite3D]: its stock on the shelf
@@ -1183,6 +1184,69 @@ func road_paint() -> StandardMaterial3D:
 	return m
 
 
+## The city's side streets and avenues for a 16 m repeat in world uv (x/16, z/16), 8 px a metre: the set street's
+## coarse grain, mottled with grime, a few utility cuts patched in darker tarmac behind a sealed seam and hairline
+## cracks; mipmapped so whole streets of it stay calm from the city view.
+func side_tarmac() -> StandardMaterial3D:
+	if side_tar_m:
+		return side_tar_m
+	var r := RandomNumberGenerator.new()
+	r.seed = 83
+	var noise := FastNoiseLite.new()
+	noise.seed = 83
+	noise.frequency = 0.04
+	var mottle := noise.get_seamless_image(128, 128)
+	var img := Image.create(128, 128, false, Image.FORMAT_RGB8)
+	var patches := [Rect2(18, 70, 30, 6), Rect2(92, 20, 9, 11), Rect2(60, 108, 6, 14)]
+	for py in 128:
+		for px in 128:
+			var v := road_grain(r) * lerpf(0.94, 1.04, mottle.get_pixel(px, py).r)
+			var c := ASPHALT
+			for p: Rect2 in patches:
+				if p.grow(1).has_point(Vector2(px, py)):
+					c = ASPHALT.darkened(0.3 if not p.has_point(Vector2(px, py)) else 0.15)
+					v = r.randf_range(0.97, 1.02)
+			img.set_pixel(px, py, Color(c.r * v, c.g * v, c.b * v))
+	for k in 7:
+		var at := Vector2i(r.randi_range(0, 127), r.randi_range(0, 127))
+		var dir := Vector2i(1, 0) if k % 2 else Vector2i(0, 1)
+		for s in r.randi_range(8, 18):
+			img.set_pixelv(at, img.get_pixelv(at).darkened(0.3))
+			at = Vector2i(posmod(at.x + dir.x + (r.randi_range(-1, 1) if dir.y else 0), 128), posmod(at.y + dir.y + (r.randi_range(-1, 1) if dir.x else 0), 128))
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	side_tar_m = m
+	return m
+
+
+## One pixel of the street's coarse grain, as a brightness: mostly even, a tenth paler stones, a tenth darker.
+static func road_grain(r: RandomNumberGenerator) -> float:
+	var g := r.randf()
+	return r.randf_range(0.95, 1.03) if g < 0.8 else (r.randf_range(1.07, 1.12) if g < 0.9 else r.randf_range(0.86, 0.9))
+
+
+## A side street's marking paint, w x h px with the first `on` columns painted: dulled with grime, a shade apart and
+## chipped through (`chips` of it) to the tarmac's grain, which fills the gaps so they sit on the street like the
+## tarmac round them.
+func worn_paint(paint: Color, w: int, h: int, on: int, chips: float, seed_: int) -> StandardMaterial3D:
+	var r := RandomNumberGenerator.new()
+	r.seed = seed_
+	var img := Image.create(w, h, false, Image.FORMAT_RGB8)
+	for y in h:
+		for x in w:
+			var v := road_grain(r)
+			var col := Color(ASPHALT.r * v, ASPHALT.g * v, ASPHALT.b * v)
+			if x < on and r.randf() > chips:
+				col = (paint * r.randf_range(0.9, 1.0)).lerp(Color(0.62, 0.62, 0.6), r.randf_range(0.05, 0.2))
+			img.set_pixel(x, y, col)
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	m.texture_repeat = true
+	return m
+
+
 ## The shop floor, 0.5 m vinyl tiles each a shade off the next under bevelled grout, polished to a sheen under the
 ## ceiling lights over each aisle, scuffed grey where the traffic runs (in at the door, along the queue and the cross
 ## aisle) and shaded where it meets the walls and the counter.
@@ -1399,8 +1463,8 @@ static func left_of(pts: PackedVector3Array, i: int) -> Vector3:
 
 
 ## A strip along pts between lateral offsets a and b (left of the points' direction is positive), dy above each
-## point; u runs along the strip at u_scale per unit. Only segments first..last-1 are emitted.
-func ribbon(st: SurfaceTool, pts: PackedVector3Array, a: float, b: float, dy := 0.0, u_scale := 0.0, first := 0, last := -1) -> void:
+## point; u runs along the strip at u_scale per unit, or world_uv > 0 maps x, z. Only segments first..last-1 are emitted.
+func ribbon(st: SurfaceTool, pts: PackedVector3Array, a: float, b: float, dy := 0.0, u_scale := 0.0, first := 0, last := -1, world_uv := 0.0) -> void:
 	last = pts.size() - 1 if last < 0 else last
 	var u := 0.0
 	for i in range(first, last):
@@ -1408,7 +1472,11 @@ func ribbon(st: SurfaceTool, pts: PackedVector3Array, a: float, b: float, dy := 
 		var l1 := left_of(pts, i + 1)
 		var up := Vector3(0, dy, 0)
 		var u1 := u + pts[i].distance_to(pts[i + 1]) * u_scale
-		add_quad(st, [pts[i] + l0 * a + up, pts[i + 1] + l1 * a + up, pts[i + 1] + l1 * b + up, pts[i] + l0 * b + up], [Vector2(u, 0), Vector2(u1, 0), Vector2(u1, 1), Vector2(u, 1)])
+		var q := [pts[i] + l0 * a + up, pts[i + 1] + l1 * a + up, pts[i + 1] + l1 * b + up, pts[i] + l0 * b + up]
+		var uv := [Vector2(u, 0), Vector2(u1, 0), Vector2(u1, 1), Vector2(u, 1)]
+		if world_uv > 0.0:
+			uv = q.map(func(p): return Vector2(p.x, p.z) * world_uv)
+		add_quad(st, q, uv)
 		u = u1
 
 
@@ -1687,17 +1755,11 @@ static func moat_ring(pk: Dictionary) -> PackedVector2Array:
 ## Side streets as rectangles (with junction mouths, zebra crossings and dashes) and the curved avenues.
 func build_roads() -> void:
 	var walkway := surface(pavers())
-	var asphalt := mat(ASPHALT)
-	var tar := surface(asphalt)
-	var mouth := surface(asphalt)
-	var dash_tex := stripes(ASPHALT, Color("e8e2c8"), 8, 1, 4)
-	var dm := mat(Color.WHITE, dash_tex)
-	dm.texture_repeat = true
-	var dash := surface(dm)
-	var solid := surface(mat(Color("e8e2c8")))
-	var zm := mat(Color.WHITE, stripes(ASPHALT, Color("ece7d8"), 8, 1, 4))
-	zm.texture_repeat = true
-	var zebra := surface(zm)
+	var tar := surface(side_tarmac())
+	var mouth := surface(side_tarmac())
+	var dash := surface(worn_paint(Color("e8e2c8"), 32, 4, 16, 0.02, 89))
+	var solid := surface(worn_paint(Color("e8e2c8"), 16, 16, 16, 0.02, 97))
+	var zebra := surface(worn_paint(Color("ece7d8"), 16, 16, 8, 0.1, 101))
 	rails = []
 	var SW := Sim.City.SIDEWALK
 	for s in C.streets:
@@ -1709,10 +1771,10 @@ func build_roads() -> void:
 		var d0: float = s.from - minf(s.j[0], 0.0)  # lane markings stop short of a corner
 		var d1: float = s.to + minf(s.j[1], 0.0)
 		rect_quad(walkway, srect(s, s.from, s.to, 0.0, s.w), -0.12, 0.0, false, 0.5)
-		rect_quad(tar, srect(s, a0, a1, SW, s.w - SW), -0.11)
+		rect_quad(tar, srect(s, a0, a1, SW, s.w - SW), -0.11, 0.0, false, 0.0625)
 		var len_: float = d1 - d0
 		if s.w > Sim.City.ROAD:
-			rect_quad(solid, srect(s, d0, d1, s.w / 2 - 0.12, s.w / 2 + 0.12), -0.1)
+			rect_quad(solid, srect(s, d0, d1, s.w / 2 - 0.12, s.w / 2 + 0.12), -0.1, 0.0, false, 0.5)
 			for off in [(s.w / 2 + SW) / 2, (s.w * 1.5 - SW) / 2]:
 				rect_quad(dash, srect(s, d0, d1, off - 0.07, off + 0.07), -0.1, len_ / 2.0, along_z)
 		else:
@@ -1733,22 +1795,22 @@ func build_roads() -> void:
 				continue
 			var at_: float = s.from if e == 0 else s.to
 			var dir := -1.0 if e == 0 else 1.0
-			rect_quad(mouth, srect(s, minf(at_, at_ + dir * s.j[e]), maxf(at_, at_ + dir * s.j[e]), SW, s.w - SW), -0.095)
+			rect_quad(mouth, srect(s, minf(at_, at_ + dir * s.j[e]), maxf(at_, at_ + dir * s.j[e]), SW, s.w - SW), -0.095, 0.0, false, 0.0625)
 			rect_quad(zebra, srect(s, minf(at_ - dir * 0.6, at_ - dir * 2.6), maxf(at_ - dir * 0.6, at_ - dir * 2.6), SW, s.w - SW), -0.09, (s.w - 2 * SW) / 0.9, not along_z)
 	for av in C.avenues:
 		var pts := flat3(av.pts)
 		var half: float = av.w / 2
 		ribbon(walkway, pts, half, -half, -0.12, 0.5)
-		ribbon(tar, pts, half - SW, SW - half, -0.11)
+		ribbon(tar, pts, half - SW, SW - half, -0.11, 0.0, 0, -1, 0.0625)
 		if av.w <= Sim.City.ROAD:  # a park's road: two lanes, as a side street
 			ribbon(dash, pts, 0.08, -0.08, -0.1, 0.5)
 		elif av.shuto == "":
-			ribbon(solid, pts, 0.12, -0.12, -0.1)
+			ribbon(solid, pts, 0.12, -0.12, -0.1, 0.0, 0, -1, 0.5)
 			var mid_lane: float = (half - SW) / 2
 			ribbon(dash, pts, mid_lane + 0.07, mid_lane - 0.07, -0.1, 0.5)
 			ribbon(dash, pts, -mid_lane + 0.07, -mid_lane - 0.07, -0.1, 0.5)
 		else:
-			ribbon(solid, pts, 0.6, -0.6, -0.1)  # the expressway's pillars stand on this median
+			ribbon(solid, pts, 0.6, -0.6, -0.1, 0.0, 0, -1, 0.5)  # the expressway's pillars stand on this median
 		# bridges: railings where the avenue crosses water
 		var run := -1
 		for i in pts.size():
@@ -3903,7 +3965,7 @@ func build_set() -> void:
 	var overhead := decks_near()
 	var under := [mouths(-8.2, -3.6, overhead), mouths(3.6, 8.2, overhead)]  # where a deck crosses each sidewalk
 	var walk := surface(pavers())
-	var tar := surface(tiled(speckle([ASPHALT, ASPHALT.darkened(0.05), ASPHALT.lightened(0.06), ASPHALT.darkened(0.08)]), Vector2.ONE))
+	var tar := surface(side_tarmac())
 	var road := surface(tarmac())
 	rect_quad(road, Rect2(street_x.x, -3.7, street_x.y - street_x.x, 7.4), -0.045, 0.0, false, 0.125)
 	var kerb := surface(mat(Color("8f8b84")))
@@ -3923,7 +3985,7 @@ func build_set() -> void:
 				if seg.y - seg.x > 0.3:
 					box_into(kerbs, Vector3(seg.x, -0.045, sd[2]), Vector3(seg.y, 0.09, sd[2] + 0.2), Color("bdb7ab"))
 		for g in sd[0]:  # a side road's mouth: the asphalt runs through the sidewalk, the kerb turning the corners
-			rect_quad(tar, Rect2(g.x, sd[1], g.y - g.x, 3.5), -0.045, 0.0, false, 0.5)
+			rect_quad(tar, Rect2(g.x, sd[1], g.y - g.x, 3.5), -0.045, 0.0, false, 0.0625)
 			for ex in [g.x - 0.2, g.y]:
 				if ex > street_x.x and ex + 0.2 < street_x.y:
 					box_into(kerbs, Vector3(ex, -0.045, sd[1]), Vector3(ex + 0.2, 0.09, sd[1] + 3.5), Color("bdb7ab"))
