@@ -485,6 +485,7 @@ var tarmac_m: StandardMaterial3D
 var car_park_m: StandardMaterial3D
 var road_paint_m: StandardMaterial3D
 var side_tar_m: StandardMaterial3D
+var manhole_m: StandardMaterial3D
 var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
 var entries := []  # x of the side roads that meet the set's street, where cars come in when both its ends are quays
 var slot_icons := {}  # product -> [Sprite3D]: its stock on the shelf
@@ -1081,6 +1082,60 @@ func tarmac() -> StandardMaterial3D:
 	m.texture_repeat = true
 	m.uv1_scale = Vector3(0.25, 1, 1)
 	tarmac_m = m
+	return m
+
+
+## A manhole in the street, 1 m across at 48 px a metre: a seal of dark tar round a steel frame worn bright at its lip,
+## the gap, and a cast-iron lid with a rim band, a tread of raised diamonds lit along one edge and a sakura crest at its
+## centre, polished paler where the tyres run over it. Cut out round its seal.
+func manhole() -> StandardMaterial3D:
+	if manhole_m:
+		return manhole_m
+	var r := RandomNumberGenerator.new()
+	r.seed = 23
+	var img := Image.create(48, 48, false, Image.FORMAT_RGBA8)
+	var iron := Color("5c6068")
+	for py in 48:
+		for px in 48:
+			var d := Vector2(px - 23.5, py - 23.5)
+			var rr := d.length()
+			var c := Color(0, 0, 0, 0)
+			if rr < 23.5:
+				if rr >= 21.5:
+					c = ASPHALT.darkened(0.42)
+				elif rr >= 19.0:
+					c = Color("85878b").lerp(Color("b8b9b5"), clampf(20.5 - rr, 0.0, 1.0))
+				elif rr >= 18.0:
+					c = Color("26282c")
+				elif rr >= 16.0:
+					c = iron.lightened(0.12 if rr < 17.0 else 0.04)
+				elif rr >= 15.0:
+					c = iron.darkened(0.3)
+				elif rr >= 7.0:
+					c = iron
+					var u := posmod(px + py, 8)
+					var w := posmod(px - py, 8)
+					if u == 0 or w == 0:
+						c = iron.darkened(0.32)
+					elif u == 1 or w == 1:
+						c = iron.lightened(0.2)
+				elif rr >= 6.0:
+					c = iron.lightened(0.25)
+				else:
+					c = iron.darkened(0.12)
+					if rr > 1.0 and rr < 5.5 and cos(5.0 * d.angle()) > 0.6 - rr * 0.16:
+						c = Color("a99ca1")
+				if rr < 21.5:
+					var wear := clampf(1.0 - absf(d.y + 3.0) / 14.0, 0.0, 1.0) * 0.18
+					c = c.lerp(Color("a7a9aa"), wear + r.randf_range(-0.03, 0.04))
+				c.a = 1.0
+			img.set_pixel(px, py, c)
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	m.texture_repeat = false
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	manhole_m = m
 	return m
 
 
@@ -4354,17 +4409,14 @@ func build_set() -> void:
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
 		if mh.x < street_x.x + 0.6 or mh.x > street_x.y - 0.6:
 			continue
-		for ring in [[0.46, Color("74767c"), -0.039], [0.36, Color("4d4f55"), -0.037]]:
-			var disc := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = ring[0]
-			cm.bottom_radius = ring[0]
-			cm.height = 0.002
-			cm.radial_segments = 20
-			disc.mesh = cm
-			disc.material_override = mat(ring[1])
-			disc.position = Vector3(mh.x, ring[2], mh.y)
-			set_node.add_child(disc)
+		var lid := MeshInstance3D.new()
+		var pm := PlaneMesh.new()
+		pm.size = Vector2(1.0, 1.0)
+		lid.mesh = pm
+		lid.material_override = manhole()
+		lid.position = Vector3(mh.x, -0.038, mh.y)
+		lid.rotation.y = mh.x * 0.7  # each lid set down its own way round
+		set_node.add_child(lid)
 	# utility poles and their sagging wires along the far sidewalk
 	var wires := surface(mat(Color("34343a")))
 	var km := mat(Color.WHITE)
