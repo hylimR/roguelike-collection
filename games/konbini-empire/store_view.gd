@@ -1282,6 +1282,42 @@ func side_tarmac() -> StandardMaterial3D:
 	return m
 
 
+## A leafy block's ground for a 16 m repeat in world uv (x/16, z/16), 16 px a metre, white so the district's colour
+## tints it: fine gravel, each stone a shade off with a dark gap under it, mottled in broad patches, and grass grown
+## over it in drifts, thick in their hearts with lit blade tips and thinning to tufts at their rims.
+func leafy_ground() -> ImageTexture:
+	const N := 256
+	var r := RandomNumberGenerator.new()
+	r.seed = 71
+	var fn := FastNoiseLite.new()
+	fn.seed = 71
+	fn.noise_type = FastNoiseLite.TYPE_VALUE_CUBIC
+	fn.frequency = 0.016
+	fn.fractal_octaves = 3
+	var mottle := fn.get_seamless_image(N, N).get_data()
+	fn.seed = 73
+	fn.frequency = 0.022
+	fn.fractal_octaves = 4
+	var turf := fn.get_seamless_image(N, N).get_data()
+	var blade := Color(0.7, 0.9, 0.52)
+	var stone := Color(1.0, 0.9, 0.95)  # off the district's green, so the gravel reads as gravel
+	var img := Image.create(N, N, false, Image.FORMAT_RGB8)
+	for y in N:
+		for x in N:
+			var i := y * N + x
+			var v := lerpf(0.92, 1.0, mottle[i] / 255.0) * (r.randf_range(0.96, 1.0) if r.randf() < 0.8 else r.randf_range(0.86, 0.9))
+			var c := stone * v
+			var t := turf[i] / 255.0
+			if t > 0.5 + r.randf() * 0.08:  # grass, its rim broken into tufts
+				var g := r.randf()
+				var b := r.randf_range(0.9, 1.0) * (0.78 if g < 0.18 else 1.0) * lerpf(0.9, 1.04, smoothstep(0.5, 0.8, t))
+				c = blade * b if g < 0.9 else Color(0.86, 0.98, 0.7)
+				if turf[(i + N) % (N * N)] / 255.0 <= 0.5 or turf[(i + 2 * N) % (N * N)] / 255.0 <= 0.5:
+					c = blade.darkened(0.25)  # the turf's lower edge, a shadow on the gravel
+			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
+
+
 ## One pixel of the street's coarse grain, as a brightness: mostly even, a tenth paler stones, a tenth darker.
 static func road_grain(r: RandomNumberGenerator) -> float:
 	var g := r.randf()
@@ -1666,14 +1702,15 @@ func build_static() -> void:
 			fx += bw
 		fy += bh
 	commit([fs], city)
-	# built-up ground, coloured by what the district is: paving slabs in town, fine gravel where it's leafy
+	# built-up ground, coloured by what the district is: paving slabs in town, gravel grown over with grass where it's leafy
 	var paved := surface(ground_mat(paving()))
-	var gravel := surface(ground_mat(speckle([Color(1, 1, 1), Color(0.95, 0.96, 0.93), Color(0.98, 0.97, 0.94), Color(0.9, 0.92, 0.88)])))
+	var gravel := surface(ground_mat(leafy_ground()))
 	for bl in C.blocks:
 		var dt: String = C.districts[bl.d].type
-		var gs: SurfaceTool = gravel if dt in Sim.City.LEAFY else paved
+		var leafy: bool = dt in Sim.City.LEAFY
+		var gs: SurfaceTool = gravel if leafy else paved
 		gs.set_color(Color(Sim.City.GROUND[dt]))
-		rect_quad(gs, bl.rect.grow(0.2), -0.15, 0.0, false, 0.25)
+		rect_quad(gs, bl.rect.grow(0.2), -0.15, 0.0, false, 0.0625 if leafy else 0.25)
 	commit([paved, gravel], city)
 	var sea_tex := speckle([SEA, SEA.lightened(0.08), SEA.darkened(0.08), SEA.lightened(0.16)])
 	var sea := mat(Color.WHITE, sea_tex)
