@@ -5349,6 +5349,56 @@ func left_wall(zl: float, products: Array) -> void:
 		s.rotation.y = PI / 2
 		s.position = Vector3(f + 0.05, 2.09, z)
 		room.add_child(s)
+	wall_kit(zl)
+
+
+## The left wall's plaster as painted panels butted every 1.5 m, each a shade off and lit from the ceiling, fading
+## toward the skirting, with a clock in the aisle and an extinguisher under its red sign in the front corner, in one
+## mesh.
+func wall_kit(zl: float) -> void:
+	var m := mat(Color.WHITE, null, true)
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	var s := surface(m)
+	var plaster := Color("efe6d2")
+	var x := zl + 0.003
+	const Y0 := 0.12
+	const Y1 := 2.5
+	for k in 6:
+		var z0 := -4.5 + k * 1.5
+		var t := 0.75 + (0.012 if k % 2 == 0 else -0.01)
+		var lo := Color(plaster.r * (t - 0.08), plaster.g * (t - 0.085), plaster.b * (t - 0.09))
+		var hi := Color(plaster.r * (t + 0.03), plaster.g * (t + 0.03), plaster.b * (t + 0.02))
+		var v := [Vector3(x, Y0, z0), Vector3(x, Y0, z0 + 1.5), Vector3(x, Y1, z0 + 1.5), Vector3(x, Y1, z0)]
+		var c := [lo, lo, hi, hi]
+		for i in [0, 1, 2, 0, 2, 3]:
+			s.set_color(c[i])
+			s.set_uv(Vector2.ZERO)
+			s.add_vertex(v[i])
+		if k > 0:
+			box_into(s, Vector3(zl, Y0, z0 - 0.012), Vector3(zl + 0.006, Y1, z0 + 0.012), plaster * Color(0.88, 0.86, 0.83))
+	box_into(s, Vector3(zl, Y1, -4.5), Vector3(zl + 0.02, Y1 + 0.03, 4.5), Color("d9d4c8"))  # a capping rail under the stripes
+	# the clock, an octagon of boxes: dark rim, white face, quarter ticks and its hands at ten to two
+	var cc := Vector3(zl, 2.12, 0.65)
+	for r: Vector2 in [Vector2(0.36, 0.15), Vector2(0.15, 0.36), Vector2(0.3, 0.3)]:
+		box_into(s, cc + Vector3(0.01, -r.y / 2, -r.x / 2), cc + Vector3(0.06, r.y / 2, r.x / 2), Color("3a3f47"))
+	for r: Vector2 in [Vector2(0.3, 0.12), Vector2(0.12, 0.3), Vector2(0.24, 0.24)]:
+		box_into(s, cc + Vector3(0.06, -r.y / 2, -r.x / 2), cc + Vector3(0.065, r.y / 2, r.x / 2), Color("fbfaf5"))
+	for o: Vector2 in [Vector2(0, 0.12), Vector2(0, -0.12), Vector2(0.12, 0), Vector2(-0.12, 0)]:
+		box_into(s, cc + Vector3(0.065, o.y - 0.012, o.x - 0.012), cc + Vector3(0.07, o.y + 0.012, o.x + 0.012), Color("3a3f47"))
+	box_into(s, cc + Vector3(0.068, 0.0, -0.01), cc + Vector3(0.075, 0.1, 0.01), Color("2b2d33"))
+	box_into(s, cc + Vector3(0.068, -0.01, -0.01), cc + Vector3(0.075, 0.01, 0.075), Color("2b2d33"))
+	box_into(s, cc + Vector3(0.07, -0.018, -0.018), cc + Vector3(0.08, 0.018, 0.018), Color("d8452f"))
+	# the extinguisher on its stand by the glass, its red sign over it
+	var ez := 4.12
+	box_into(s, Vector3(zl + 0.01, 0.0, ez - 0.13), Vector3(zl + 0.24, 0.04, ez + 0.13), Color("5e6670"))
+	box_into(s, Vector3(zl + 0.05, 0.04, ez - 0.08), Vector3(zl + 0.21, 0.46, ez + 0.08), Color("d8312a"))
+	box_into(s, Vector3(zl + 0.05, 0.22, ez - 0.081), Vector3(zl + 0.211, 0.31, ez + 0.081), Color("f2efe6"))  # its label
+	box_into(s, Vector3(zl + 0.09, 0.46, ez - 0.035), Vector3(zl + 0.17, 0.52, ez + 0.035), Color("2b2d33"))
+	box_into(s, Vector3(zl + 0.17, 0.2, ez + 0.06), Vector3(zl + 0.2, 0.5, ez + 0.09), Color("2b2d33"))  # the hose
+	box_into(s, Vector3(zl + 0.01, 0.74, ez - 0.17), Vector3(zl + 0.025, 0.88, ez + 0.17), Color("d8312a"))
+	box_into(s, Vector3(zl + 0.025, 0.78, ez - 0.13), Vector3(zl + 0.03, 0.84, ez + 0.13), Color("fbf3ea"))
+	commit([s], room)
 
 
 ## A fixture's shell round the boards its FIXTURES rows stand on: a gondola's or low shelf's end panels, back and cap
