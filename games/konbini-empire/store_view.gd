@@ -580,6 +580,7 @@ var drag := 0.0
 var bold: Font  # the HUD's heavy weight, for the clock and street tags
 var styles := {}  # rounded boxes for tags and bars, by color and radius
 var roof_texs := {}  # the rival's roof by the width of its shop, and the vacant unit's by minus its width
+var glass_sheen: StandardMaterial3D  # the knee-height glass front's sheen, tiled per run
 var skylight_pair: Array = []  # weakrefs to the rival's skylight glass and its night glow, shared by both skylights
 
 var walkers: Array = []
@@ -6021,19 +6022,54 @@ func build_counter(stripe: Array, tills: Array) -> void:
 	commit([s], room)
 
 
-## The glass front cut away at knee height from x0 to x1 (shop-local, z = 4.6): an aluminium sill, the glass's
-## section with its cut edge catching the light, and mullion stubs every bay and at each end.
+## The glass front cut away at knee height from x0 to x1 (shop-local, z = 4.6), in one mesh: an aluminium sill lit
+## along its outer lip, black gaskets at the glass's foot, the chain's stripes as a film on the glass, the glass's
+## sea-green cut edge, and box-section mullion stubs every bay and at each end, their hollow showing at the cut;
+## the glass itself clear enough to see the floor through, with a sheen across it.
 func glass_front(x0: float, x1: float) -> void:
 	var w := x1 - x0
 	if w <= 0.1:
 		return
 	var cx := (x0 + x1) / 2
-	block(room, Vector3(w, 0.12, 0.26), Vector3(cx, 0.06, 4.6), Color("5e6670"))
-	block(room, Vector3(w, 0.3, 0.06), Vector3(cx, 0.27, 4.6), Color(0.78, 0.89, 0.96, 0.6))
-	block(room, Vector3(w, 0.025, 0.07), Vector3(cx, 0.43, 4.6), Color("f2f9fc"))
+	var m := mat(Color.WHITE, null, true)
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	var s := surface(m)
+	box_into(s, Vector3(x0, 0.0, 4.47), Vector3(x1, 0.1, 4.73), Color("59626c"))
+	box_into(s, Vector3(x0, 0.1, 4.47), Vector3(x1, 0.115, 4.66), Color("8d97a1"))
+	box_into(s, Vector3(x0, 0.1, 4.66), Vector3(x1, 0.12, 4.73), Color("c4cdd5"))
+	for z in [4.553, 4.632]:
+		box_into(s, Vector3(x0, 0.11, z), Vector3(x1, 0.145, z + 0.015), Color("2b3036"))
+	box_into(s, Vector3(x0, 0.165, 4.631), Vector3(x1, 0.2, 4.635), LAYOUT.stripe[1])
+	box_into(s, Vector3(x0, 0.208, 4.631), Vector3(x1, 0.243, 4.635), LAYOUT.stripe[0])
+	box_into(s, Vector3(x0, 0.415, 4.57), Vector3(x1, 0.435, 4.63), Color("7cc4b0"))
+	box_into(s, Vector3(x0, 0.435, 4.592), Vector3(x1, 0.438, 4.608), Color("e4f7f1"))
 	var bays := maxi(1, roundi(w / 1.6))
 	for k in bays + 1:
-		block(room, Vector3(0.09, 0.48, 0.14), Vector3(x0 + 0.045 + (w - 0.09) * k / bays, 0.24, 4.6), Color("6d7680"))
+		var mx := x0 + 0.045 + (w - 0.09) * k / bays
+		box_into(s, Vector3(mx - 0.045, 0.0, 4.53), Vector3(mx + 0.045, 0.47, 4.67), Color("737c86"))
+		box_into(s, Vector3(mx - 0.045, 0.47, 4.53), Vector3(mx + 0.045, 0.48, 4.67), Color("cfd6dc"))
+		box_into(s, Vector3(mx - 0.028, 0.47, 4.55), Vector3(mx + 0.028, 0.482, 4.65), Color("30353b"))
+		box_into(s, Vector3(mx - 0.046, 0.0, 4.664), Vector3(mx - 0.03, 0.47, 4.671), Color("a9b2bb"))
+	commit([s], room)
+	block(room, Vector3(w, 0.27, 0.05), Vector3(cx, 0.28, 4.6), Color(0.58, 0.8, 0.84, 0.3))
+	if not glass_sheen:
+		var img := Image.create(32, 8, false, Image.FORMAT_RGBA8)
+		for y in 8:
+			for x in 32:
+				var d := posmod(x + y, 32)
+				img.set_pixel(x, y, Color(1, 1, 1, 0.38 if d < 3 else (0.2 if d >= 6 and d < 8 else 0.0)))
+		glass_sheen = mat(Color.WHITE, ImageTexture.create_from_image(img), true)
+		glass_sheen.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var sheen := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(w, 0.27)
+	sheen.mesh = q
+	var sm: StandardMaterial3D = glass_sheen.duplicate()
+	sm.uv1_scale = Vector3(w / 1.1, 1, 1)
+	sheen.material_override = sm
+	sheen.position = Vector3(cx, 0.28, 4.627)
+	room.add_child(sheen)
 
 
 ## The left wall's face (at x = zl, facing +x): a skirting board, the staff door in the aisle by the fridges under a
