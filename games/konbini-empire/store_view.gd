@@ -2021,6 +2021,30 @@ func facade_atlas() -> Array:
 				var lit := c.a == 0.0 and c.to_html(false) in WINDOWS
 				mask.fill_rect(box, Color(1, 0, 0) if c.a == 0.5 else (Color(0, 1, 0) if lit else Color.BLACK))
 			var up := row == 1
+			# a sliding window: two sashes in an aluminium frame in a shaded reveal, the sky caught across the glass, a
+			# curtain drawn across one sash (lit with the room after dark), a rail across the lower panes, a sill
+			var sash := func(x: int, y: int, w: int, h: int, left: bool, rail: bool) -> void:
+				var mid := x + int(w / 2.0)
+				r.call(x - 1, y, w + 2, h + 1, wall_px(0.78))
+				r.call(x, y, w, h, fixed("c4c9cc"))
+				r.call(x + 1, y + 1, w - 2, h - 2, glass2)
+				r.call(mid, y + 1, 1, h - 2, fixed("c4c9cc"))
+				r.call(x + 1, y + 1, mid - x - 1, 1, fixed("6f8fa8"))
+				for i in mini(3, mid - x - 1):
+					r.call(x + 1 + i, y + 4 - i, 1, 1, fixed("6f8fa8"))
+					r.call(mid + 1 + i, y + h - 4 - i, 1, 1, fixed("6f8fa8"))
+				var cw := mini(3, mid - x - 1)
+				var cx := x + 1 if left else x + w - 1 - cw
+				r.call(cx, y + 1, cw, h - 2, fixed("e6dcc6"))
+				r.call(cx + cw - 1 if left else cx, y + 1, 1, h - 2, fixed("cbbfa6"))
+				if rail:
+					var ry := y + int(h / 2.0)
+					r.call(x + 1, ry, w - 2, 1, fixed("5a6068"))
+					r.call(x + 1, y + h - 3, w - 2, 1, fixed("5a6068"))
+					for rx in [x + 1, mid, x + w - 2]:
+						r.call(rx, ry, 1, y + h - 2 - ry, fixed("5a6068"))
+				r.call(x - 1, y + h, w + 2, 1, fixed("e2e4e2"))
+				r.call(x - 1, y + h + 1, w + 2, 1, wall_px(0.6))
 			match s:
 				0:  # glass curtain wall
 					if up:
@@ -2043,20 +2067,20 @@ func facade_atlas() -> Array:
 						r.call(5, 11, 22, 21, dark)
 				2:  # apartments with balconies
 					if up:
-						r.call(3, 6, 14, 14, glass2)
+						sash.call(3, 6, 14, 12, true, false)
 						r.call(20, 7, 8, 13, fixed("8a8f96"))
 						r.call(0, 20, 32, 2, wall_px(0.75))
 						r.call(1, 22, 30, 6, fixed("c8ccd0"))
 						for x in range(2, 31, 3):
 							r.call(x, 22, 1, 6, fixed("9aa0a6"))
 					else:
-						r.call(3, 10, 10, 10, glass2)
+						sash.call(3, 10, 10, 9, false, false)
 						r.call(16, 10, 12, 22, fixed("6b5a4a"))
 				3:  # shops below, flats above
-					if up:
-						r.call(3, 7, 11, 13, glass2)
-						r.call(18, 7, 11, 13, glass2)
-						r.call(0, 20, 32, 2, wall_px(0.8))
+					if up:  # two sliding windows, each with a curtain drawn across one sash, a rail and a sill
+						sash.call(3, 6, 11, 13, true, true)
+						sash.call(18, 6, 11, 13, false, true)
+						r.call(0, 21, 32, 2, wall_px(0.8))
 						r.call(0, 30, 32, 2, wall_px(0.88))
 					else:  # a shopfront: striped awning, shelves behind mullioned glass, a glazed door, lit after dark
 						r.call(0, 0, 32, 2, wall_px(0.82))
@@ -2135,13 +2159,10 @@ func facade_atlas() -> Array:
 						r.call(6, 8, 20, 6, accent(0.95))
 				6:  # plaster house
 					if up:
-						r.call(9, 8, 14, 13, fixed("f4f4f0"))
-						r.call(10, 9, 12, 11, glass2)
-						r.call(15, 9, 2, 11, fixed("f4f4f0"))
+						sash.call(9, 8, 14, 13, true, true)
 					else:
 						r.call(4, 12, 8, 20, fixed("7a5a40"))
-						r.call(16, 12, 12, 11, fixed("f4f4f0"))
-						r.call(17, 13, 10, 9, glass2)
+						sash.call(16, 12, 12, 10, false, false)
 				7:  # warehouse
 					for x in range(0, 32, 3):
 						r.call(x, 0, 1, 32, wall_px(0.82))
@@ -2177,7 +2198,7 @@ func facade_atlas() -> Array:
 
 
 const SHOP_GLASS := "a9cdd6"  # a shop window's pane: the back of the shop, glowing after dark
-const WINDOWS := ["3d5a78", "4f6f8c", "26313e", "5d7f9c", "2c3644", "e8d9a0", "8fb3c0", "ece6d2", "e8e0c8", "c9b98a", "39475a", "e8dcb0"]
+const WINDOWS := ["3d5a78", "4f6f8c", "26313e", "5d7f9c", "2c3644", "e8d9a0", "8fb3c0", "ece6d2", "e8e0c8", "c9b98a", "39475a", "e8dcb0", "6f8fa8", "e6dcc6"]
 
 
 static func wall_px(v: float) -> Color:
