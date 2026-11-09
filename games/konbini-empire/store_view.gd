@@ -2275,6 +2275,44 @@ func facade_atlas() -> Array:
 						r.call(rx, ry, 1, y + h - 2 - ry, fixed("5a6068"))
 				r.call(x - 1, y + h, w + 2, 1, fixed("e2e4e2"))
 				r.call(x - 1, y + h + 1, w + 2, 1, wall_px(0.6))
+			# an office lobby behind full-height glass in an aluminium frame, lit all night: pale stone under a row of
+			# downlights, a planter, a desk where the bay is wide enough, a pair of sliding doors, the sky across the panes
+			var lobby := func(x: int, y: int, w: int, h: int, frame: Color) -> void:
+				var lit := func(lx: int, ly: int, lw: int, lh: int, c: Color) -> void:
+					r.call(lx, ly, lw, lh, c)
+					mask.fill_rect(Rect2i(s * 32 + lx, row * 32 + ly, lw, lh), Color(0, 0, 1))
+				r.call(x, y, w, h, frame)
+				var gx := x + 1
+				var gy := y + 1
+				var gw := w - 2
+				var gh := h - 2
+				var fy := gy + gh - 4
+				lit.call(gx, gy, gw, gh, fixed("c9ccc4"))
+				lit.call(gx, gy, gw, 2, fixed("9ea6a8"))
+				for lx in range(gx + 2, gx + gw - 1, 4):
+					lit.call(lx, gy + 1, 2, 1, fixed("fff6dc"))
+				lit.call(gx, fy, gw, 4, fixed("aeb2aa"))
+				lit.call(gx, fy, gw, 1, fixed("848a88"))
+				lit.call(gx + 2, fy - 3, 3, 3, fixed("5a5f66"))
+				lit.call(gx + 1, fy - 8, 5, 5, fixed("4f8a4a"))
+				lit.call(gx + 2, fy - 9, 2, 3, fixed("6aa65a"))
+				var dx := gx + gw - 12
+				if dx - gx > 14:
+					lit.call(gx + 8, fy - 4, dx - gx - 10, 4, fixed("5c4c40"))
+					lit.call(gx + 8, fy - 4, dx - gx - 10, 1, fixed("e8e2d6"))
+					lit.call(gx + 10, fy - 6, 2, 2, fixed("3a3f48"))
+				r.call(dx, gy, 1, gh, frame)
+				r.call(dx + 6, gy + 3, 1, gh - 3, frame)
+				r.call(dx, gy + 3, gw - (dx - gx), 1, frame)
+				r.call(dx + 4, fy - 6, 1, 3, fixed("d8d8d0"))
+				r.call(dx + 8, fy - 6, 1, 3, fixed("d8d8d0"))
+				lit.call(dx + 1, fy + 1, 11, 2, fixed("6a6460"))
+				for k in [[gx + 4, 8], [gx + 11, 4], [dx + 3, 6]]:
+					for i in k[1]:
+						for j in 3:
+							var px := Vector2i(s * 32 + k[0] + i + j, row * 32 + fy - 2 - i * 2)
+							if px.x < s * 32 + gx + gw and px.y > row * 32 + gy + 1:
+								img.set_pixel(px.x, px.y, img.get_pixel(px.x, px.y).lerp(Color(0.92, 0.97, 1.0, 0), 0.5))
 			match s:
 				0:  # glass curtain wall
 					if up:
@@ -2282,19 +2320,24 @@ func facade_atlas() -> Array:
 						r.call(1, 2, 30, 5, fixed("5d7f9c"))
 						r.call(15, 1, 2, 28, wall_px(0.95))
 						r.call(0, 29, 32, 3, wall_px(0.85))
-					else:
-						r.call(0, 0, 32, 6, wall_px(0.9))
-						r.call(3, 6, 26, 26, dark)
-						r.call(15, 6, 2, 26, wall_px(0.8))
+					else:  # the lobby under a canopy's soffit, edged in the building's colour, on a granite step
+						r.call(0, 0, 32, 3, wall_px(0.9))
+						r.call(0, 3, 32, 1, accent(0.9))
+						r.call(0, 4, 32, 1, wall_px(0.55))
+						lobby.call(0, 5, 32, 25, fixed("8c959e"))
+						r.call(0, 30, 32, 2, fixed("8a8a84"))
 				1:  # concrete office, ribbon windows
 					if up:
 						r.call(0, 9, 32, 13, glass)
 						for x in [7, 15, 23, 31]:
 							r.call(x, 9, 1, 13, wall_px(0.9))
 						r.call(0, 22, 32, 2, wall_px(0.8))
-					else:
-						r.call(0, 8, 32, 3, wall_px(0.7))
-						r.call(5, 11, 22, 21, dark)
+					else:  # the lobby set into the wall under a steel canopy, up a step
+						r.call(0, 8, 32, 2, fixed("b8bcc0"))
+						r.call(0, 10, 32, 1, fixed("5a6068"))
+						r.call(2, 10, 28, 20, wall_px(0.7))
+						lobby.call(3, 11, 26, 19, fixed("6a7078"))
+						r.call(2, 30, 28, 2, wall_px(0.62))
 				2:  # apartments with balconies
 					if up:
 						sash.call(3, 6, 14, 12, true, false)
