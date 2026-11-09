@@ -2627,14 +2627,41 @@ func facade_atlas() -> Array:
 				2:  # apartments with balconies
 					if up:
 						sash.call(3, 6, 14, 12, true, false)
-						r.call(20, 7, 8, 13, fixed("8a8f96"))
+						sash.call(20, 6, 8, 14, false, false)  # the balcony's sliding door
 						r.call(0, 20, 32, 2, wall_px(0.75))
 						r.call(1, 22, 30, 6, fixed("c8ccd0"))
 						for x in range(2, 31, 3):
 							r.call(x, 22, 1, 6, fixed("9aa0a6"))
-					else:
+					else:  # the entrance: a glazed door pair under a concrete hood and its downlight, the hall behind it
+						# (mailboxes over a pale floor) lit all night, up a granite step
 						sash.call(3, 10, 10, 9, false, false)
-						r.call(16, 10, 12, 22, fixed("6b5a4a"))
+						var hall := func(x: int, y: int, w: int, h: int, c: Color) -> void:
+							r.call(x, y, w, h, c)
+							mask.fill_rect(Rect2i(s * 32 + x, row * 32 + y, w, h), Color(0, 0, 1))
+						r.call(14, 7, 16, 2, fixed("b8bcc0"))
+						r.call(14, 9, 16, 1, wall_px(0.55))
+						hall.call(21, 9, 2, 1, fixed("fff6dc"))
+						r.call(15, 10, 14, 20, wall_px(0.66))
+						r.call(16, 10, 12, 20, fixed("8a8f96"))
+						hall.call(17, 11, 10, 19, fixed("cfc8b6"))
+						hall.call(17, 11, 10, 1, fixed("fff6dc"))
+						for my in [14, 16, 18]:
+							hall.call(17, my, 4, 1, fixed("8a9096"))
+							hall.call(17, my + 1, 4, 1, fixed("b4b8bc"))
+						hall.call(24, 15, 3, 5, fixed("7f9a7a"))
+						hall.call(17, 25, 10, 5, fixed("aeb2aa"))
+						hall.call(17, 25, 10, 1, fixed("8f938c"))
+						r.call(21, 11, 2, 19, fixed("8a8f96"))
+						r.call(20, 17, 1, 4, fixed("e2e4e2"))
+						r.call(23, 17, 1, 4, fixed("e2e4e2"))
+						r.call(17, 28, 10, 2, fixed("6a7078"))
+						for i in 8:
+							for j in 2:
+								var px := Vector2i(s * 32 + 18 + i + j, row * 32 + 27 - i * 2)
+								if px.x != s * 32 + 21 and px.x != s * 32 + 22:
+									img.set_pixel(px.x, px.y, img.get_pixel(px.x, px.y).lerp(Color(0.92, 0.97, 1.0, 0), 0.45))
+						r.call(14, 30, 16, 2, fixed("8a8a84"))
+						r.call(14, 30, 16, 1, fixed("a9a9a2"))
 				3:  # shops below, flats above
 					if up:  # two sliding windows, each with a curtain drawn across one sash, a rail and a sill
 						sash.call(3, 6, 11, 13, true, true)
