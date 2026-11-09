@@ -474,7 +474,7 @@ var hover := {}  # the action a click would take
 var drag := 0.0
 var bold: Font  # the HUD's heavy weight, for the clock and street tags
 var styles := {}  # rounded boxes for tags and bars, by color and radius
-var roof_texs := {}  # the rival's roof, by the width of its shop
+var roof_texs := {}  # the rival's roof by the width of its shop, and the vacant unit's by minus its width
 var skylight_pair: Array = []  # weakrefs to the rival's skylight glass and its night glow, shared by both skylights
 
 var walkers: Array = []
@@ -4025,11 +4025,7 @@ func build_set() -> void:
 		# its roof: a weathered membrane laid in strips with a drain, an old water tank on a frame, two tired AC units
 		# and a vent stack, all kept low so nothing rises over your shop
 		var xl := vx - vw / 2
-		block(set_node, Vector3(vw - 0.4, 0.04, 8.4), Vector3(vx, 3.61, -11.75), Color(Sim.City.FLAT_ROOFS[2]))
-		var sz := -8.6
-		while sz > -15.6:
-			block(set_node, Vector3(vw - 0.4, 0.05, 0.14), Vector3(vx, 3.62, sz), Color(Sim.City.FLAT_ROOFS[2]).darkened(0.18))
-			sz -= 1.4
+		plane(set_node, Vector2(vw - 0.4, 8.4), Vector3(vx, 3.63, -11.75), vacant_roof(xl, vw))
 		block(set_node, Vector3(0.3, 0.05, 0.3), Vector3(xl + 0.45, 3.63, -7.95), Color("4d4a44"))
 		var drift := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
 		rect_quad(drift, Rect2(xl + 0.2, -15.95, vw - 0.4, 8.4), 3.665, 0.0, false, 0.125)
@@ -4916,6 +4912,84 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 	img.generate_mipmaps()
 	roof_texs[iw] = ImageTexture.create_from_image(img)
 	return roof_mat(roof_texs[iw])
+
+
+## The vacant unit's roof, left to weather: membrane strips lapped every 1.4 m, each a shade off and mottled with grime,
+## tide-marked stains where rain has ponded, a patch of newer membrane, the coping's shadow, a dark seam round the tank's
+## legs, AC units and vent stack and each one's shadow away from the sun. 10 px a metre, street frame.
+func vacant_roof(xl: float, vw: float) -> StandardMaterial3D:
+	var iw := roundi((vw - 0.4) * 10.0)
+	if -iw in roof_texs:
+		return roof_mat(roof_texs[-iw])
+	var ih := 84
+	var x0 := xl + 0.2
+	var r := RandomNumberGenerator.new()
+	r.seed = 17
+	var gw := int(vw) + 2
+	var grime := []
+	for k in gw * 10:
+		grime.append(r.randf())
+	var lanes := []
+	for k in 7:
+		lanes.append(r.randf_range(0.9, 1.03))
+	var casts := []  # footprint, shadow offset (street frame), round
+	for lg in [Vector2(-0.45, -0.45), Vector2(0.45, -0.45), Vector2(-0.45, 0.45), Vector2(0.45, 0.45)]:
+		casts.append([Rect2(xl + 1.0 + lg.x - 0.04, -14.9 + lg.y - 0.04, 0.08, 0.08), Vector2.ZERO, false])
+	casts.append([Rect2(xl + 0.5, -15.4, 1.0, 1.0), Vector2(0.62, -1.05), true])  # the tank, up on its frame
+	for k in 2:
+		casts.append([Rect2(xl + 0.35 + k * 1.4, -12.0, 1.1, 0.8), Vector2(0.24, -0.4), false])
+	casts.append([Rect2(xl + vw - 0.79, -9.29, 0.18, 0.18), Vector2(0.3, -0.5), false])  # the vent stack
+	casts.append([Rect2(xl + 2.25, -14.85, 0.1, 3.1), Vector2(0.05, -0.08), false])  # their pipe
+	var ponds := [[Vector2(x0 + (vw - 0.4) * 0.62, -10.4), 0.9], [Vector2(x0 + (vw - 0.4) * 0.35, -8.6), 0.6]]
+	var patch := Rect2(x0 + (vw - 0.4) * 0.5, -14.6, 1.6, 1.1)
+	var base := Color(Sim.City.FLAT_ROOFS[2])
+	var img := Image.create(iw, ih, false, Image.FORMAT_RGB8)
+	for j in ih:
+		var z := -15.95 + (j + 0.5) / 10.0
+		var u := (j + 0.5) / 14.0
+		var f0: float = lanes[int(u) % lanes.size()]
+		if j % 14 == 0:
+			f0 *= 0.8  # the lap
+		elif j % 14 == 1:
+			f0 *= 1.06
+		for i in iw:
+			var x := x0 + (i + 0.5) / 10.0
+			var gx := x - x0
+			var gz := z + 15.95
+			var cx := int(gx)
+			var cz := int(gz)
+			var tx := smoothstep(0.0, 1.0, gx - cx)
+			var tz := smoothstep(0.0, 1.0, gz - cz)
+			var g := lerpf(lerpf(grime[(cz % 10) * gw + cx], grime[(cz % 10) * gw + cx + 1], tx),
+					lerpf(grime[((cz + 1) % 10) * gw + cx], grime[((cz + 1) % 10) * gw + cx + 1], tx), tz)
+			var f := f0 * lerpf(0.9, 1.02, g)
+			if posmod(i * 7 + j * 13, 23) == 0:
+				f *= 0.93
+			if patch.has_point(Vector2(x, z)):
+				f = f0 * (0.82 if patch.grow(-0.1).has_point(Vector2(x, z)) else 0.72)
+			for pd in ponds:
+				var d: float = Vector2((x - pd[0].x) * 0.8, z - pd[0].y).length() / pd[1] * lerpf(0.8, 1.2, g)
+				if d < 1.0:
+					f *= 0.92 if d < 0.86 else 0.84  # a tide mark round its rim
+				elif d < 1.15:
+					f *= 1.05
+			if i < 2 or j >= ih - 2:
+				f *= 0.8
+			for c in casts:
+				var at: Rect2 = c[0]
+				var p: Vector2 = Vector2(x, z) - c[1]
+				var hit: bool = (p.distance_to(at.get_center()) < at.size.x / 2 - 0.05) if c[2] else at.grow(-0.03).has_point(p)
+				if hit:
+					f *= 0.72
+					break
+				var out := Vector2(maxf(maxf(at.position.x - x, x - at.end.x), 0.0), maxf(maxf(at.position.y - z, z - at.end.y), 0.0))
+				if not c[2] and out.length() < 0.2:
+					f *= lerpf(0.78, 1.0, out.length() / 0.2)
+					break
+			img.set_pixel(i, j, Color(base.r * f, base.g * f, base.b * f))
+	img.generate_mipmaps()
+	roof_texs[-iw] = ImageTexture.create_from_image(img)
+	return roof_mat(roof_texs[-iw])
 
 
 func roof_mat(t: ImageTexture) -> StandardMaterial3D:
