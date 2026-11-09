@@ -4722,25 +4722,64 @@ func quay(runs: Array, roads: Array) -> void:
 	var box := func(p0: Vector3, p1: Vector3, col: Color) -> void: box_into(wall_, p0, p1, col)
 	const T := 0.3  # the wall's thickness, inside the made ground's edge
 	const TOP := 0.34
+	const CAP := TOP - 0.07  # the coping's underside
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 53
 	for e in edges:
 		var n: Vector2 = e[2]
 		var lo := Vector2(minf(e[0].x, e[1].x), minf(e[0].y, e[1].y))
 		var hi := Vector2(maxf(e[0].x, e[1].x), maxf(e[0].y, e[1].y))
+		var d := (hi - lo).normalized()
+		var L := lo.distance_to(hi)
 		rect_quad(shade, Rect2(lo, hi - lo).merge(Rect2(lo + n * 0.55, hi - lo)), -0.137)
-		var r := Rect2(lo, hi - lo).merge(Rect2(lo - n * T, hi - lo))
-		box.call(Vector3(r.position.x, -0.14, r.position.y), Vector3(r.end.x, TOP, r.end.y), Color("c4bfb3"))
-		var st_ := Rect2(lo + n * 0.02, hi - lo).merge(Rect2(lo - n * 0.02, hi - lo))  # a wet tide line along its foot
-		box.call(Vector3(st_.position.x, -0.14, st_.position.y), Vector3(st_.end.x, 0.02, st_.end.y), Color("7d8079"))
-		# a railing along the coping: posts every 2 m, a top rail and a mid rail
-		var mid := lo - n * T / 2
-		var posts := maxi(1, roundi(lo.distance_to(hi) / 2.0))
+		# a box from s0 to s1 along the edge, w0 to w1 out toward the water (the wall's face at 0), y0 to y1
+		var qb := func(s0: float, s1: float, w0: float, w1: float, y0: float, y1: float, col: Color) -> void:
+			var a := lo + d * s0 + n * w0
+			var b := lo + d * s1 + n * w1
+			box.call(Vector3(minf(a.x, b.x), y0, minf(a.y, b.y)), Vector3(maxf(a.x, b.x), y1, maxf(a.y, b.y)), col)
+		# the wall cast in 2 m bays, each a shade off, butted at a dark joint, weed-green above the wet tide line and
+		# streaked where rain runs off the coping
+		var bays := maxi(1, roundi(L / 2.0))
+		for k in bays:
+			var s0 := L * k / bays
+			var s1 := L * (k + 1) / bays
+			var tone := Color("c4bfb3").darkened(rr.randf_range(-0.03, 0.05))
+			qb.call(s0, s1, -T, 0.0, -0.14, CAP, tone)
+			if k > 0:
+				qb.call(s0 - 0.012, s0 + 0.012, 0.0, 0.006, -0.14, CAP, tone.darkened(0.3))
+			qb.call(s0, s1, 0.0, 0.008, 0.0, 0.05 + rr.randf_range(0.0, 0.05), tone.lerp(Color("6f7c5a"), 0.45))
+			for j in rr.randi_range(1, 2):
+				var sx := rr.randf_range(s0 + 0.2, s1 - 0.25)
+				qb.call(sx, sx + rr.randf_range(0.04, 0.09), 0.0, 0.01, CAP - rr.randf_range(0.08, 0.2), CAP, tone.darkened(0.12))
+		qb.call(0.0, L, -0.02, 0.02, -0.14, 0.0, Color("6c7069"))  # the wet tide line along its foot
+		qb.call(0.0, L, 0.0, 0.012, CAP - 0.03, CAP, Color("8f8a80"))  # in the coping's shadow
+		# the coping: precast 1 m blocks lipped out over the water, each a shade off, on grouted joints
+		var blocks := maxi(1, roundi(L))
+		for k in blocks:
+			var s0 := L * k / blocks
+			var s1 := L * (k + 1) / blocks
+			qb.call(s0 + 0.008, s1 - 0.008, -T - 0.02, 0.04, CAP, TOP, Color("d8d3c8").darkened(rr.randf_range(-0.02, 0.05)))
+			qb.call(s0 - 0.008, s0 + 0.008, -T - 0.01, 0.03, CAP, TOP - 0.012, Color("8a857b"))
+		# the railing on the coping: posts every 2 m on base plates, a handrail over a foot rail and slim balusters
+		var mid := -T / 2 - 0.01
+		var posts := maxi(1, roundi(L / 2.0))
 		for i in posts + 1:
-			var q := mid + (hi - lo) * i / posts
-			box.call(Vector3(q.x - 0.04, TOP, q.y - 0.04), Vector3(q.x + 0.04, TOP + 0.75, q.y + 0.04), Color("5d6a6c"))
-		for ry in [TOP + 0.7, TOP + 0.35]:
-			var p0 := Vector3(mid.x, ry, mid.y) - Vector3(n.x, 0, n.y) * 0.03
-			var p1 := Vector3(mid.x + (hi - lo).x, ry + 0.06, mid.y + (hi - lo).y) + Vector3(n.x, 0, n.y) * 0.03
-			box.call(Vector3(minf(p0.x, p1.x), p0.y, minf(p0.z, p1.z)), Vector3(maxf(p0.x, p1.x), p1.y, maxf(p0.z, p1.z)), Color("6b7a7c"))
+			var s := clampf(L * i / posts, 0.04, L - 0.04)
+			qb.call(s - 0.08, s + 0.08, mid - 0.08, mid + 0.08, TOP, TOP + 0.02, Color("4b5759"))
+			qb.call(s - 0.035, s + 0.035, mid - 0.035, mid + 0.035, TOP, TOP + 0.84, Color("526466"))
+		for k in floori(L / 0.2):
+			var s := 0.1 + k * 0.2
+			qb.call(s - 0.01, s + 0.01, mid - 0.01, mid + 0.01, TOP + 0.1, TOP + 0.78, Color("5b6e70"))
+		qb.call(0.0, L, mid - 0.022, mid + 0.022, TOP + 0.08, TOP + 0.12, Color("526466"))
+		qb.call(0.0, L, mid - 0.04, mid + 0.04, TOP + 0.78, TOP + 0.85, Color("93a3a5"))
+		# a life ring in orange and white hung on long runs, on the railing's side toward the camera
+		if L > 9.0:
+			var s := L * floorf(posts / 2.0) / posts + 1.0
+			var w := mid + 0.11 if n.dot(Vector2.ONE) > 0.0 else mid - 0.06
+			for side in [[-0.22, -0.14, -0.22, 0.22], [0.14, 0.22, -0.22, 0.22], [-0.14, 0.14, -0.22, -0.14], [-0.14, 0.14, 0.14, 0.22]]:
+				qb.call(s + side[0], s + side[1], w - 0.05, w, TOP + 0.45 + side[2], TOP + 0.45 + side[3], Color("ea6a2a"))
+			for c in [Vector2(-0.18, 0.0), Vector2(0.18, 0.0), Vector2(0.0, -0.18), Vector2(0.0, 0.18)]:
+				qb.call(s + c.x - 0.045, s + c.x + 0.045, w - 0.055, w + 0.005, TOP + 0.45 + c.y - 0.045, TOP + 0.45 + c.y + 0.045, Color("f4f1e8"))
 	commit([shade, wall_], set_node)
 
 
