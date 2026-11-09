@@ -2068,19 +2068,40 @@ func facade_atlas() -> Array:
 						r.call(1, 11, 21, 18, fixed("4a525a"))
 						r.call(2, 12, 19, 16, fixed(SHOP_GLASS))
 						r.call(11, 12, 1, 16, fixed("4a525a"))
-						for y in [19, 24]:
-							r.call(2, y, 19, 1, fixed("b9bdb8"))
-						var goods := ["e0a040", "d05050", "60a060", "5a8fd0", "e8e0c8"]
-						for i in 8:
-							var gx: int = [3, 6, 8, 13, 15, 18, 3, 14][i]
-							var gy := 21 if i < 6 else 15
-							r.call(gx, gy, 2, 3, fixed(goods[i % goods.size()]))
-						r.call(13, 22, 6, 2, fixed("f2efe4"))
+						# a strip light under the ceiling, then three shelves stocked edge to edge in runs of facings, each
+						# pack a shade apart with a paler lid, a gap where one has sold, a plinth at the foot
+						for x0 in [3, 13]:
+							r.call(x0, 12, 7, 1, fixed("eef0e8"))
+						var goods := ["e0a040", "d05050", "60a060", "5a8fd0", "e8e0c8", "f0cf5a", "c0628e", "3f8f8a", "8a5a3a"]
+						var gr := RandomNumberGenerator.new()
+						gr.seed = 23
+						for shelf in [[17, 3], [22, 4], [27, 4]]:
+							var sy: int = shelf[0]
+							r.call(2, sy, 19, 1, fixed("b9bdb8") if sy < 27 else fixed("7d8288"))
+							var x := 2
+							while x < 21:
+								var run := gr.randi_range(2, 4)
+								var gc := Color(goods[gr.randi() % goods.size()])
+								var gh := gr.randi_range(2, shelf[1] - 1)
+								for i in run:
+									if x >= 21:
+										break
+									if x != 11 and gr.randf() > 0.08:
+										var c := gc.darkened(0.08) if i % 2 else gc
+										r.call(x, sy - gh, 1, gh, Color(c, 0.0))
+										r.call(x, sy - gh, 1, 1, Color(c.lightened(0.25), 0.0))
+									x += 1
+								x += 1 if gr.randf() < 0.3 else 0
+						r.call(3, 13, 4, 3, fixed("f4f1e6"))  # a sale poster taped inside the glass
+						r.call(3, 13, 4, 1, fixed("d8493a"))
+						r.call(4, 15, 2, 1, fixed("d8493a"))
 						r.call(1, 29, 21, 3, wall_px(0.68))
 						r.call(23, 11, 8, 21, fixed("4a525a"))
 						r.call(24, 12, 6, 19, fixed(SHOP_GLASS))
 						r.call(24, 12, 6, 3, accent(0.9))
 						r.call(25, 21, 1, 3, fixed("d8d8d0"))
+						r.call(25, 16, 4, 3, fixed("f4f1e6"))  # the open sign hung in the door
+						r.call(25, 17, 4, 1, fixed("d8493a"))
 						r.call(23, 31, 8, 1, fixed("8a8a84"))
 						# the shop inside the glass (shelves, goods, the door's pane) lights up after dark in its own colours
 						for win in [Rect2i(2, 12, 19, 16), Rect2i(24, 15, 6, 16)]:
