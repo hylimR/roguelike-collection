@@ -244,6 +244,8 @@ varying flat vec4 tint;
 varying vec2 sunl;
 varying vec3 slope;  // a gable's face: along the ridge, up from the eave along the slope, the slope's length (metres)
 varying flat float rseed;
+varying flat vec2 viewl;  // run along the roof (local x, z) toward the camera per metre of height
+varying flat float square;  // set square to the world, as the city's rooftop kit boxes are
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
 const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.68, 0.64, 0.42), vec3(0.52, 0.52, 0.5), vec3(0.68, 0.66, 0.61));  // boards, tatami, concrete, tile
 const vec3 ROOF[8] = vec3[8](FLAT_ROOFS);  // Sim.City.FLAT_ROOFS
@@ -258,6 +260,25 @@ void vertex() {
 	float run = length(vec2(0.5 * length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz)));
 	slope = vec3(VERTEX.z * length(MODEL_MATRIX[2].xyz), (0.5 - abs(VERTEX.x)) * 2.0 * run, run);
 	rseed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
+	vec3 back = INV_VIEW_MATRIX[2].xyz;
+	viewl = vec2(dot(back.xz, normalize(MODEL_MATRIX[0].xz)), dot(back.xz, normalize(MODEL_MATRIX[2].xz))) / max(back.y, 0.05);
+	square = abs(normalize(MODEL_MATRIX[0].xz).y) < 0.001 ? 1.0 : 0.0;
+}
+
+// a box standing on a roof, centre c, half size hs, h tall, seen from q along run (per metre of height): x 0 for bare
+// roof, 1 its top, 2 its side across x, 3 its side across z; y how high up it the view meets it
+vec2 stood(vec2 q, vec2 run, vec2 c, vec2 hs, float h) {
+	vec2 d = vec2(abs(run.x) < 1e-4 ? 1e-4 : run.x, abs(run.y) < 1e-4 ? 1e-4 : run.y);
+	vec2 t0 = (c - hs - q) / d;
+	vec2 t1 = (c + hs - q) / d;
+	vec2 lo = min(t0, t1);
+	vec2 hi = max(t0, t1);
+	float a = max(max(lo.x, lo.y), 0.0);
+	float b = min(hi.x, hi.y);
+	if (a > b || a > h) {
+		return vec2(0.0);
+	}
+	return b >= h ? vec2(1.0, h) : vec2(hi.x < hi.y ? 2.0 : 3.0, b);
 }
 
 // a light whose own threshold (0-1) the falling dark has passed: full on (a little dimmer until full night), not faded in
@@ -398,13 +419,72 @@ void fragment() {
 				vec2 into = vec2(sunl.x < 0.0 ? q.x : info.x - q.x, sunl.y > 0.0 ? info.z - q.y : q.y) - 0.3;
 				float shadow = max(step(0.0, into.x) * step(into.x, 0.7 * abs(sunl.x)), step(0.0, into.y) * step(into.y, 0.7 * abs(sunl.y)));
 				f *= 1.0 - 0.2 * shadow;
+				vec4 over = vec4(0.0);  // kit painted over the membrane, and how strongly
 				if (min(info.x, info.z) > 3.5) {
+					// drawn while a few pixels across: grime in broad patches, a drain in one corner with rain ponded round it
+					float near = 1.0 - smoothstep(0.25, 0.7, fwidth(q.x) + fwidth(q.y));
+					vec2 mp = q * 0.35 + seed * 17.0;
+					vec2 mi = floor(mp);
+					vec2 mf = smoothstep(0.0, 1.0, fract(mp));
+					vec4 mh = fract(sin(vec4(dot(mi, vec2(12.9898, 78.233)), dot(mi + vec2(1.0, 0.0), vec2(12.9898, 78.233)), dot(mi + vec2(0.0, 1.0), vec2(12.9898, 78.233)), dot(mi + 1.0, vec2(12.9898, 78.233)))) * 43758.5453);
+					float grime = 0.88 + 0.16 * mix(mix(mh.x, mh.y, mf.x), mix(mh.z, mh.w, mf.x), mf.y);
+					vec2 dr = vec2(fract(seed * 5.7) < 0.5 ? 0.75 : info.x - 0.75, fract(seed * 8.3) < 0.5 ? 0.75 : info.z - 0.75);
+					vec2 dv = q - dr;
+					float dd = length(dv);
+					float pond = (0.9 + 1.1 * fract(seed * 11.3)) * (1.0 + 0.14 * sin(atan(dv.y, dv.x) * 5.0 + seed * 9.0));
+					float wet = dd < 0.12 ? 0.45 : (dd < 0.18 ? 1.08 : (dd < pond ? (pond - dd < 0.07 ? 0.84 : 0.92) : 1.0));
+					f *= mix(1.0, grime * wet, near);
+					// the plant room on most roofs (kit_box) lays its shadow across the membrane
+					float k = seed / 0.98;
+					vec3 ks = vec3(1.6 + 1.6 * k, 1.2, 1.4 + 1.8 * (1.0 - k));
+					vec2 kc = vec2(1.0 + ks.x / 2.0 + (info.x - ks.x - 2.0) * k, 1.0 + ks.z / 2.0 + (info.z - ks.z - 2.0) * (1.0 - k));
+					bool boxed = square > 0.5 && info.y > 8.9 && min(info.x, info.z) > 6.0;
+					if (boxed && stood(q, sunl, kc, ks.xz / 2.0, ks.y).x > 0.5) {
+						f *= mix(1.0, 0.78, near);
+					}
 					vec2 hc = info.xz * vec2(0.22 + 0.56 * fract(seed * 7.31), 0.25 + 0.5 * fract(seed * 3.17));
 					vec2 hd = abs(q - hc);
 					vec2 sd = abs(q - hc + sunl * 0.45);
 					f = max(hd.x, hd.y) < 0.5 ? (max(hd.x, hd.y) < 0.4 ? 1.12 : 0.8) : (max(sd.x, sd.y) < 0.5 ? f * 0.78 : f);
+					// air-conditioning condensers in a row across the roof from the plant room, each shadowed off the sun, its
+					// casing louvred on top and its fan grille on the long side
+					if (min(info.x, info.z) > 5.0) {
+						float az = k < 0.5 ? 1.7 : info.z - 1.7;
+						float best = -1e9;
+						for (int i = 0; i < 4; i++) {
+							if (float(i) >= clamp(floor(info.x * 0.3 / 1.25), 1.0, 4.0)) {
+								break;
+							}
+							vec2 c = vec2(k < 0.5 ? info.x - 1.8 - 1.25 * float(i) : 1.8 + 1.25 * float(i), az);
+							vec2 kd = abs(c - kc) - ks.xz / 2.0;
+							if (length(c - hc) < 1.3 || boxed && max(kd.x, kd.y) < 0.9) {
+								continue;
+							}
+							vec2 hs = vec2(0.45, 0.22);
+							if (stood(q, sunl, c, hs, 0.7).x > 0.5) {
+								f *= mix(1.0, 0.78, near);
+							}
+							vec2 s = stood(q, viewl, c, hs, 0.7);
+							float depth = dot(c, viewl);
+							if (s.x > 0.5 && depth > best) {
+								best = depth;
+								vec2 at = q + viewl * s.y - c;
+								vec3 cas = vec3(0.86, 0.86, 0.83);
+								vec3 uc;
+								if (s.x < 1.5) {
+									uc = cas * (fract(at.x * 9.0) < 0.3 ? 0.9 : 1.0);
+								} else if (s.x < 2.5) {
+									uc = cas * (dot(vec2(sign(viewl.x), 0.0), sunl) > 0.0 ? 0.9 : 0.75);
+								} else {
+									float fan = length(vec2(at.x + 0.1, s.y - 0.35));
+									uc = cas * (dot(vec2(0.0, sign(viewl.y)), sunl) > 0.0 ? 0.9 : 0.75) * (fan < 0.22 ? (fan < 0.04 || abs(fan - 0.13) < 0.02 ? 0.75 : 0.45) : 1.0);
+								}
+								over = vec4(uc, near);
+							}
+						}
+					}
 				}
-				col = mix(ROOF[pick], tint.rgb, ROOF_TINT) * (min(e.x, e.y) < 0.3 ? 1.14 : f);
+				col = mix(mix(ROOF[pick], tint.rgb, ROOF_TINT) * (min(e.x, e.y) < 0.3 ? 1.14 : f), over.rgb, over.a);
 			}
 		} else {
 			bool front = abs(lnrm.z) > 0.5;
@@ -2275,11 +2355,8 @@ func build_buildings() -> void:
 			roofs.append([c, sz, h, rh, Color(bd.roof), bd.angle])
 			rec.h += rh
 		elif bd.floors >= 3 and bd.angle == 0.0 and r.size.x > 6.0 and r.size.y > 6.0:
-			var k: float = bd.kit
-			var ks := Vector3(1.6 + 1.6 * k, 1.2, 1.4 + 1.8 * (1.0 - k))
-			var at_ := Vector3(r.position.x + 1.0 + ks.x / 2 + (r.size.x - ks.x - 2.0) * k, h + 0.6, r.position.y + 1.0 + ks.z / 2 + (r.size.y - ks.z - 2.0) * (1.0 - k))
 			rec.box.append(boxes.size())
-			boxes.append([ks, at_, Color("c9c7c0"), Sim.City.PLAIN, 0.0])
+			boxes.append(kit_box(r, h, bd.kit) + [0.0])
 		brecs.append(rec)
 	# landmarks with a traced model join the city's boxes and roofs on their square, one record each, so they cast
 	# shadows, light up and clear for the street set like any building, but go whole
@@ -4862,7 +4939,16 @@ func fill_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: 
 		if bd.roof != "":
 			var rh := minf(fp.size.x, fp.size.y) * 0.32
 			roofs.append([Vector3(fp.size.x, rh, fp.size.y), Vector3(fp.get_center().x, h + rh / 2, fp.get_center().y), Color(bd.roof)])
+		elif bd.floors >= 3 and fp.size.x > 6.0 and fp.size.y > 6.0:
+			boxes.append(kit_box(fp, h, bd.kit))
 		pos += w
+
+
+## The plant room on a flat roof of three floors or more, placed by the building's kit (0-1); BUILDING_SHADER finds it
+## the same way to lay its shadow. [size, centre, tint, style] as the building boxes.
+func kit_box(r: Rect2, h: float, k: float) -> Array:
+	var ks := Vector3(1.6 + 1.6 * k, 1.2, 1.4 + 1.8 * (1.0 - k))
+	return [ks, Vector3(r.position.x + 1.0 + ks.x / 2 + (r.size.x - ks.x - 2.0) * k, h + 0.6, r.position.y + 1.0 + ks.z / 2 + (r.size.y - ks.z - 2.0) * (1.0 - k)), Color("c9c7c0"), Sim.City.PLAIN]
 
 
 ## The one-floor shops between your car park and the rival, seen from above: a parapet with a coping round a membrane
