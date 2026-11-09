@@ -2485,16 +2485,51 @@ func facade_atlas() -> Array:
 				5:  # wooden machiya
 					for x in range(1, 32, 4):
 						r.call(x, 0, 1, 32, wall_px(0.84))
-					if up:
-						r.call(8, 8, 16, 12, fixed("ece6d2"))
-						for x in [12, 16, 20]:
-							r.call(x, 8, 1, 12, fixed("6e5a44"))
-						r.call(8, 13, 16, 1, fixed("6e5a44"))
+					if up:  # a plastered panel pierced by mushiko-mado, plaster ribs over a dark room that lights after dark
+						r.call(0, 0, 32, 3, wall_px(0.55))
+						r.call(3, 7, 26, 17, fixed("dcd2bc"))
+						r.call(3, 7, 26, 1, fixed("eee6d4"))
+						r.call(3, 23, 26, 1, fixed("b4aa94"))
+						for x0 in [6, 18]:
+							r.call(x0 - 1, 10, 10, 12, fixed("b4aa94"))
+							r.call(x0, 11, 8, 10, fixed("26313e"))
+							for x in range(x0 + 1, x0 + 8, 2):
+								r.call(x, 11, 1, 10, fixed("d4cab4"))
+							r.call(x0 - 1, 21, 10, 1, fixed("eee6d4"))
 					else:
-						r.call(4, 8, 24, 24, fixed("e8e0c8"))
-						for x in [9, 15, 21]:
-							r.call(x, 8, 1, 24, fixed("6e5a44"))
-						r.call(6, 8, 20, 6, accent(0.95))
+						# a pent roof of kawara along the top, its lip lit over the shadow it casts on the wall
+						r.call(0, 0, 32, 4, fixed("4c525c"))
+						for x in range(0, 32, 3):
+							r.call(x, 0, 1, 4, fixed("3a3f48"))
+							r.call(x + 1, 0, 1, 3, fixed("5e6570"))
+						r.call(0, 4, 32, 1, fixed("7a828e"))
+						r.call(0, 5, 32, 2, wall_px(0.5))
+						# koshi: fine slats on a dark frame over paper screens, which light with the room after dark
+						r.call(1, 8, 19, 20, wall_px(0.42))
+						r.call(2, 9, 17, 18, fixed("e8e0c8"))
+						for x in range(2, 19, 2):
+							r.call(x, 9, 1, 18, wall_px(0.6))
+						r.call(2, 13, 17, 1, wall_px(0.5))
+						# inu-yarai: a bamboo fence bowed out along the foot of the lattice
+						r.call(1, 28, 19, 4, wall_px(0.38))
+						for x in range(2, 19, 2):
+							r.call(x, 29, 1, 3, fixed("a88c58"))
+						r.call(1, 27, 19, 1, fixed("c8ac70"))
+						r.call(1, 28, 19, 1, fixed("b09660"))
+						# a latticed sliding door under a noren of three panels in the accent colour, a ringed crest across it
+						r.call(21, 7, 10, 25, wall_px(0.42))
+						r.call(22, 8, 8, 23, fixed("e6dcc6"))
+						for x in range(22, 30, 2):
+							r.call(x, 8, 1, 23, wall_px(0.6))
+						for y in [19, 25]:
+							r.call(22, y, 8, 1, wall_px(0.6))
+						r.call(22, 8, 8, 9, accent(0.95))
+						r.call(22, 8, 8, 1, accent(0.6))
+						for x in [24, 27]:
+							r.call(x, 9, 1, 8, accent(0.68))
+						for c in [Rect2i(25, 11, 2, 1), Rect2i(25, 14, 2, 1), Rect2i(24, 12, 1, 2), Rect2i(27, 12, 1, 2)]:
+							r.call(c.position.x, c.position.y, c.size.x, c.size.y, fixed("f4ecd8"))
+						r.call(21, 31, 10, 1, fixed("8a8a84"))
 				6:  # plaster house
 					if up:
 						sash.call(9, 8, 14, 13, true, true)
