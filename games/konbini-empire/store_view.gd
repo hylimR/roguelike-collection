@@ -4658,7 +4658,8 @@ func fill_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: 
 
 
 ## The one-floor shops between your car park and the rival, seen from above: a parapet with a coping round a membrane
-## laid in strips, its drain, AC condensers on pads piped to the edge, a vent stack and a roof hatch, all low.
+## laid in strips, its drain, AC condensers on pads piped to the edge, a vent stack and a roof hatch, all low, each laying
+## its shadow on the membrane (see shop_roof_tex).
 func shop_roofs(list: Array) -> void:
 	var km := mat(Color.WHITE)
 	km.vertex_color_use_as_albedo = true
@@ -4685,15 +4686,8 @@ func shop_roofs(list: Array) -> void:
 		var long_ := maxf(sz.x, sz.z)
 		var at := func(t: float, side: float) -> Vector3:  # t from the street end along the roof, side across it from its centre
 			return Vector3(e[1].x + side, y + 0.03, z1 - t) if along_z else Vector3(x0 + t, y + 0.03, e[1].z + side)
-		var t := 1.0
-		while t < long_ - 0.4:  # the membrane's lapped seams across the roof
-			var sp: Vector3 = at.call(t, 0.0)
-			var hw := (minf(sz.x, sz.z) - 0.3) / 2
-			var half := Vector3(hw, 0, 0.05) if along_z else Vector3(0.05, 0, hw)
-			box_into(kit, sp - half, sp + half + Vector3(0, 0.015, 0), skin.darkened(0.16))
-			t += 1.0
 		var drain: Vector3 = at.call(long_ - 0.5, -minf(sz.x, sz.z) / 2 + 0.45)
-		box_into(kit, drain + Vector3(-0.13, 0, -0.13), drain + Vector3(0.13, 0.02, 0.13), Color("4d4a44"))
+		var casts := []  # footprint, shadow offset (street frame)
 		rect_quad(drift, Rect2(x0 + 0.15, z0 + 0.15, sz.x - 0.3, sz.z - 0.3), y + 0.06, 0.0, false, 0.125)
 		var units := 1 if long_ < 5.0 else 2
 		for k in units:
@@ -4702,16 +4696,23 @@ func shop_roofs(list: Array) -> void:
 			box_into(kit, ac + Vector3(-0.47, 0.1, -0.32), ac + Vector3(0.47, 0.62, 0.32), Color("d2cfc4"))
 			box_into(kit, ac + Vector3(-0.32, 0.18, 0.32), ac + Vector3(0.32, 0.54, 0.34), Color("7a8088"))
 			box_into(kit, ac + Vector3(-0.47, 0.18, -0.25), ac + Vector3(-0.49, 0.54, 0.25), Color("9a9d9f"))
+			casts.append([Rect2(ac.x - 0.55, ac.z - 0.4, 1.1, 0.8), Vector2(0.24, -0.4)])
 		var pipe: Vector3 = at.call(long_ * 0.3, 0.0)  # their pipes run along the roof to drop down the back
 		var end_: Vector3 = at.call(long_ - 0.15, 0.0)
 		var off := Vector3(0.62, 0, 0) if along_z else Vector3(0, 0, 0.5)
 		box_into(kit, pipe + off - Vector3(0.05, 0, 0.05), end_ + off + Vector3(0.05, 0.1, 0.05), Color("bdb8ad"))
+		var pa := Vector2(minf(pipe.x, end_.x) + off.x - 0.05, minf(pipe.z, end_.z) + off.z - 0.05)
+		casts.append([Rect2(pa, Vector2(absf(end_.x - pipe.x), absf(end_.z - pipe.z)) + Vector2(0.1, 0.1)), Vector2(0.05, -0.08)])
 		var hatch: Vector3 = at.call(long_ * 0.72, -0.1)
 		box_into(kit, hatch + Vector3(-0.45, 0, -0.45), hatch + Vector3(0.45, 0.28, 0.45), Color("a9a49a"))
 		box_into(kit, hatch + Vector3(-0.38, 0.28, -0.38), hatch + Vector3(0.38, 0.32, 0.38), Color("8c949b"))
 		var vent: Vector3 = at.call(0.9 + r.randf_range(0.0, 0.5), minf(sz.x, sz.z) / 2 - 0.55)
 		box_into(kit, vent + Vector3(-0.09, 0, -0.09), vent + Vector3(0.09, 0.6, 0.09), Color("9aa0a6"))
 		box_into(kit, vent + Vector3(-0.17, 0.6, -0.17), vent + Vector3(0.17, 0.67, 0.17), Color("6e737d"))
+		casts.append([Rect2(hatch.x - 0.45, hatch.z - 0.45, 0.9, 0.9), Vector2(0.13, -0.22)])
+		casts.append([Rect2(vent.x - 0.12, vent.z - 0.12, 0.24, 0.24), Vector2(0.3, -0.5)])
+		plane(set_node, Vector2(sz.x - 0.3, sz.z - 0.3), Vector3(e[1].x, y + 0.035, e[1].z),
+				roof_mat(shop_roof_tex(Rect2(x0 + 0.15, z0 + 0.15, sz.x - 0.3, sz.z - 0.3), along_z, skin, Vector2(drain.x, drain.z), casts, branch.lot * 977 + int(e[1].x * 10.0))))
 	commit([kit], set_node)
 	commit([drift], snow_cover)
 
@@ -5407,6 +5408,79 @@ func vacant_roof(xl: float, vw: float) -> StandardMaterial3D:
 	img.generate_mipmaps()
 	roof_texs[-iw] = ImageTexture.create_from_image(img)
 	return roof_mat(roof_texs[-iw])
+
+
+## A one-floor shop's membrane, rect in the street frame: strips 1 m wide across its length lapped at each seam, each a
+## shade off and mottled with grime, rain streaking toward the drain with a damp stain round it, a tide-marked pond, the
+## parapets' shadow along its sunny sides, and a dark seam round each fitting and its shadow away from the sun. 10 px a metre.
+func shop_roof_tex(rect: Rect2, along_z: bool, base: Color, drain: Vector2, casts: Array, sd: int) -> ImageTexture:
+	var iw := roundi(rect.size.x * 10.0)
+	var ih := roundi(rect.size.y * 10.0)
+	var r := RandomNumberGenerator.new()
+	r.seed = sd
+	var lanes := []
+	for k in 16:
+		lanes.append(r.randf_range(0.9, 1.04))
+	var gw := int(iw / 10.0) + 2
+	var gh := int(ih / 10.0) + 2
+	var grime := []
+	for k in gw * gh:
+		grime.append(r.randf())
+	var streaks := []  # rain runs down the strips, every 0.1 m across them a strength
+	for k in maxi(iw, ih):
+		streaks.append(r.randf() if r.randf() < 0.3 else 0.0)
+	var pond := rect.position + rect.size * Vector2(r.randf_range(0.3, 0.7), r.randf_range(0.3, 0.7))
+	var pr := r.randf_range(0.5, 0.8)
+	var img := Image.create(iw, ih, false, Image.FORMAT_RGB8)
+	for j in ih:
+		var z := rect.position.y + (j + 0.5) / 10.0
+		for i in iw:
+			var x := rect.position.x + (i + 0.5) / 10.0
+			var t := (ih - 1 - j) if along_z else i  # px from the street end, along the roof
+			var across := i if along_z else j
+			var f: float = lanes[int(t / 10.0) % lanes.size()]
+			if t % 10 == 0:
+				f *= 0.8  # the lap
+			elif t % 10 == 1:
+				f *= 1.06
+			var gx := (i + 0.5) / 10.0
+			var gz := (j + 0.5) / 10.0
+			var cx := int(gx)
+			var cz := int(gz)
+			var tx := smoothstep(0.0, 1.0, gx - cx)
+			var tz := smoothstep(0.0, 1.0, gz - cz)
+			var g := lerpf(lerpf(grime[cz * gw + cx], grime[cz * gw + cx + 1], tx),
+					lerpf(grime[(cz + 1) * gw + cx], grime[(cz + 1) * gw + cx + 1], tx), tz)
+			f *= lerpf(0.9, 1.03, g) * (1.0 - streaks[across] * 0.1 * smoothstep(0.0, 6.0, t / 10.0))
+			var h := r.randf()
+			if h < 0.04:
+				f *= 0.91
+			elif h < 0.06:
+				f *= 1.06
+			var pd := Vector2(x - pond.x, (z - pond.y) * 0.8).length() / pr * lerpf(0.8, 1.2, g)
+			if pd < 1.0:
+				f *= 0.93 if pd < 0.86 else 0.85  # a tide mark round its rim
+			var d := Vector2(x, z).distance_to(drain)
+			if d < 0.13:
+				f = 0.42 if d < 0.08 else 0.6
+			elif d < 1.0:
+				f *= lerpf(0.84, 1.0, d / 1.0)
+			if i < 2 or j >= ih - 3:
+				f *= 0.76  # the parapets' shadow on the sunny sides
+			elif i >= iw - 1 or j < 1:
+				f *= 0.88
+			for c in casts:
+				var at: Rect2 = c[0]
+				if at.grow(-0.04).has_point(Vector2(x, z) - c[1]):
+					f *= 0.72
+					break
+				var out := Vector2(maxf(maxf(at.position.x - x, x - at.end.x), 0.0), maxf(maxf(at.position.y - z, z - at.end.y), 0.0))
+				if out.length() < 0.2:  # a dark seam where each fitting meets the roof
+					f *= lerpf(0.78, 1.0, out.length() / 0.2)
+					break
+			img.set_pixel(i, j, Color(base.r * f, base.g * f, base.b * f))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 func roof_mat(t: ImageTexture) -> StandardMaterial3D:
