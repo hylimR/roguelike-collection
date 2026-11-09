@@ -155,7 +155,7 @@ void fragment() {
 """
 const FOOT := Vector3(0.7, 0.35, 1.6)  # a person's shadow plane: width, behind the feet, and the height it casts
 # Farmland: each field's crop colour, furrowed, under the hour's light; after dark the crops fade into one dark green
-# so the lit city stands out rather than a patchwork of maroon, olive and green round it.
+# so the lit city stands out rather than a patchwork of maroon, olive and green round it, while the lanes stay gravel.
 const FIELD_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled;
@@ -164,9 +164,10 @@ uniform vec3 light = vec3(1.0);
 uniform float night = 0.0;
 
 void fragment() {
+	float field = step(0.99, COLOR.a);  // lanes come in at alpha below 1: bare gravel, no furrows, no crop at night
 	float l = dot(COLOR.rgb, vec3(0.3, 0.59, 0.11));
-	vec3 crop = mix(COLOR.rgb, vec3(0.47, 0.62, 0.36) * (0.9 + 0.4 * (l - 0.66)), 0.8 * night);
-	ALBEDO = crop * texture(furrows, UV).rgb * light;
+	vec3 crop = mix(COLOR.rgb, vec3(0.47, 0.62, 0.36) * (0.9 + 0.4 * (l - 0.66)), 0.8 * night * field);
+	ALBEDO = crop * mix(vec3(1.0), texture(furrows, UV).rgb, field) * light;
 }
 """
 # Open water on the map: the sea's blue, mottled in broad patches, with short wave crests over a darker trough
@@ -1414,26 +1415,49 @@ func build_static() -> void:
 	# checkerboard; each field still takes its own shade
 	var crops := {}
 	var fw8 := PackedFloat32Array(FIELD_WEIGHTS)
+	# farm blocks between gravel lanes, each cut into strips one way and the strips into fields, furrowed down the
+	# strip, so no seam runs on across the whole countryside
+	const LANE := 2.4
+	var lane := Color("cbbd96", 0.5)
 	var fy := fb.position.y
 	while fy < fb.end.y:
-		var fh := fr.randf_range(14.0, 26.0)
-		var fx := fb.position.x - fr.randf_range(0.0, 20.0)
+		var bh := fr.randf_range(70.0, 130.0)
+		var fx := fb.position.x - fr.randf_range(0.0, 120.0)
 		while fx < fb.end.x:
-			var fw := fr.randf_range(16.0, 36.0)
-			var r := Rect2(fx, fy, fw, fh).grow(-0.9)
-			if country(r.grow(12.0), 16.0):
-				var along := fr.randf() < 0.5
-				var at := r.get_center() + Vector2(fr.randf_range(-40.0, 40.0), fr.randf_range(-40.0, 40.0))
-				var cell := Vector2i((at / 110.0).floor())
-				if not crops.has(cell):
-					crops[cell] = fr.rand_weighted(fw8)
-				var crop: int = crops[cell] if fr.randf() < 0.75 else fr.rand_weighted(fw8)
-				var shade := fr.randf_range(-0.06, 0.06)
-				var fc := Color(FIELDS[crop])
-				fs.set_color(fc.lightened(shade) if shade > 0.0 else fc.darkened(-shade))
-				rect_quad(fs, r, -0.155, (r.size.y if along else r.size.x) / 3.0, along)
-			fx += fw
-		fy += fh
+			var bw := fr.randf_range(80.0, 170.0)
+			for ln in [Rect2(fx, fy, bw, LANE), Rect2(fx, fy, LANE, bh)]:
+				if country(ln.grow(12.0), 16.0):
+					fs.set_color(lane.darkened(fr.randf_range(0.0, 0.05)))
+					rect_quad(fs, ln, -0.155)
+			var blk := Rect2(fx + LANE, fy + LANE, bw - LANE, bh - LANE)
+			var along := fr.randf() < 0.5  # strips run along x
+			var across := blk.size.x if not along else blk.size.y
+			var length := blk.size.y if not along else blk.size.x
+			var s0 := 0.0
+			while s0 < across - 4.0:
+				var sw := minf(fr.randf_range(14.0, 28.0), across - s0)
+				if across - s0 - sw < 10.0:
+					sw = across - s0
+				var t0 := 0.0
+				while t0 < length - 4.0:
+					var fl := minf(fr.randf_range(24.0, 60.0), length - t0)
+					if length - t0 - fl < 16.0:
+						fl = length - t0
+					var r := Rect2(blk.position + (Vector2(t0, s0) if along else Vector2(s0, t0)), Vector2(fl, sw) if along else Vector2(sw, fl)).grow(-0.9)
+					if country(r.grow(12.0), 16.0):
+						var at := r.get_center() + Vector2(fr.randf_range(-40.0, 40.0), fr.randf_range(-40.0, 40.0))
+						var cell := Vector2i((at / 110.0).floor())
+						if not crops.has(cell):
+							crops[cell] = fr.rand_weighted(fw8)
+						var crop: int = crops[cell] if fr.randf() < 0.75 else fr.rand_weighted(fw8)
+						var shade := fr.randf_range(-0.06, 0.06)
+						var fc := Color(FIELDS[crop])
+						fs.set_color(fc.lightened(shade) if shade > 0.0 else fc.darkened(-shade))
+						rect_quad(fs, r, -0.155, (r.size.y if along else r.size.x) / 3.0, along)
+					t0 += fl
+				s0 += sw
+			fx += bw
+		fy += bh
 	commit([fs], city)
 	# built-up ground, coloured by what the district is: paving slabs in town, fine gravel where it's leafy
 	var paved := surface(ground_mat(paving()))
