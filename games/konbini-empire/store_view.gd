@@ -1942,8 +1942,9 @@ static func sub_line(e: Dictionary, pts: PackedVector3Array, a: float, b: float)
 	return [out, first, last]
 
 
-## The Yamanote viaduct: two tracks on a ballasted deck with parapets and the line's green stripe, an island platform
-## under a canopy at each station; a column and cap beam under it at each pier.
+## The Yamanote viaduct: two tracks on a ballasted deck between cast parapets under a coping, the line's green stripe
+## along their outer face and cable-trough lids along their foot, an island platform under a canopy at each station; a
+## column and cap beam under it at each pier.
 func build_rail(pillars: Array) -> void:
 	var CT := Sim.City
 	var ballast := tiled(speckle([Color("8a8174"), Color("938a7d"), Color("80786c"), Color("9b9285")]), Vector2(1, CT.RAIL_W / 3.2))
@@ -1951,7 +1952,7 @@ func build_rail(pillars: Array) -> void:
 	var steel := mat(Color("aeaca6"))
 	var web := mat(Color("4a4440"))
 	var fascia := mat(Color("c3bfb6"))
-	var green := mat(Color("7fc241"))
+	var cast := mat(Color.WHITE, parapet_tex())
 	var slab := mat(Color("d6d2c6"))
 	var edge := mat(Color("e8c84a"))
 	var roof := mat(Color("8f979b"))
@@ -1959,6 +1960,9 @@ func build_rail(pillars: Array) -> void:
 	var half: float = CT.RAIL_W / 2
 	var y: float = CT.RAIL_DECK
 	var loop: PackedVector3Array = flat3(C.rail_loop, y)
+	var cum := PackedFloat32Array([0.0])  # arc length round the loop, so the parapets' panels run on across pieces
+	for k in range(1, loop.size()):
+		cum.append(cum[k - 1] + loop[k - 1].distance_to(loop[k]))
 	var i := 0
 	while i < loop.size() - 1:
 		var j := mini(i + 8, loop.size() - 1)
@@ -1969,8 +1973,7 @@ func build_rail(pillars: Array) -> void:
 		var beds := surface(bed)
 		var rails := surface(steel)
 		var webs := surface(web)
-		var side := surface(fascia)
-		var stripe := surface(green)
+		var side := surface(cast)
 		var f := 1
 		var l := part.size() - 2
 		ribbon(top, part, half, -half, 0.3, 1.0 / 3.2, f, l)
@@ -1980,11 +1983,14 @@ func build_rail(pillars: Array) -> void:
 				ribbon(rails, part, t + g + 0.06, t + g - 0.06, 0.37, 0.0, f, l)
 				for e in [0.05, -0.05]:
 					wall(webs, part, t + g + e * 1.2, 0.31, 0.37, f, l)
+		var u0: float = cum[i] / 10.0
 		for s in [half, -half]:
-			wall(side, part, s, -0.6, 0.9, f, l)
-		for s in [half + 0.01, -half - 0.01]:
-			wall(stripe, part, s, 0.25, 0.45, f, l)
-		elevated.append(commit([top, beds, webs, rails, side, stripe], city))
+			var n: float = -signf(s)
+			band(side, part, s, s, 0.9, -0.6, 0, 24, u0, f, l)
+			band(side, part, s + n * 0.18, s + n * 0.18, 0.9, 0.3, 24, 34, u0, f, l)
+			band(side, part, s, s + n * 0.18, 0.9, 0.9, 34, 38, u0, f, l)
+			band(side, part, s + n * 0.18, s + n * 0.46, 0.38, 0.38, 38, 42, u0, f, l)
+		elevated.append(commit([top, beds, webs, rails, side], city))
 		i = j
 	# stations: an island platform between the tracks, its yellow edges, a canopy on posts
 	for st in C.stations:
@@ -2018,6 +2024,89 @@ func build_rail(pillars: Array) -> void:
 		var turn := atan2(on[1].x, on[1].y)
 		pillars.append(Transform3D(Basis.from_scale(Vector3(1.2, y - 0.6, 1.2)), Vector3(at_.x, (y - 0.6) / 2.0, at_.y)))
 		pillars.append(Transform3D(Basis(Vector3.UP, turn) * Basis.from_scale(Vector3(CT.RAIL_W - 0.6, 0.7, 1.1)), Vector3(on[0].x, y - 0.6, on[0].y)))
+
+
+## A strip along pts from lateral offset a at height y0 to b at y1 (a wall when a == b, a deck when y0 == y1), its
+## texture rows r0..r1 of parapet_tex across it and 10 m of it along, starting u0 in.
+func band(st: SurfaceTool, pts: PackedVector3Array, a: float, b: float, y0: float, y1: float, r0: int, r1: int, u0: float, first: int, last: int) -> void:
+	var v0 := (r0 + 0.25) / 42.0
+	var v1 := (r1 - 0.25) / 42.0
+	var u := u0
+	for i in range(first, last):
+		var l0 := left_of(pts, i)
+		var l1 := left_of(pts, i + 1)
+		var u1 := u + pts[i].distance_to(pts[i + 1]) / 10.0
+		var q := [pts[i] + l0 * a + Vector3(0, y0, 0), pts[i + 1] + l1 * a + Vector3(0, y0, 0), pts[i + 1] + l1 * b + Vector3(0, y1, 0), pts[i] + l0 * b + Vector3(0, y1, 0)]
+		add_quad(st, q, [Vector2(u, v0), Vector2(u1, v0), Vector2(u1, v1), Vector2(u, v1)])
+		u = u1
+
+
+## The viaduct's parapet, 10 m along at 16 px a metre, in four bands: its outer face (rows 0-23, 0.9 m above the deck
+## to 0.6 below: the coping's lit lip over its shadow, precast panels butted every 2.5 m each a shade off with tie
+## holes and rain streaks run down from the coping, the green stripe, a drip groove and the deck slab's edge), its
+## inner face (24-33, dusty toward the ballast), the coping's top (34-37) and the cable-trough lids (38-41).
+func parapet_tex() -> ImageTexture:
+	var r := RandomNumberGenerator.new()
+	r.seed = 23
+	var img := Image.create(160, 42, false, Image.FORMAT_RGB8)
+	var base := Color("c3bfb6")
+	var tint: Array = []
+	for k in 4:
+		tint.append(1.0 + r.randf_range(-0.06, 0.05))
+	var streak: Array = []
+	for x in 160:
+		streak.append(r.randi_range(2, 13) if r.randf() < 0.3 else 0)
+	var grain := func() -> float: return r.randf_range(-0.025, 0.025)
+	for x in 160:
+		var t: float = tint[floori(x / 40.0)]
+		var joint := x % 40 == 0
+		var lit := x % 40 == 1
+		img.set_pixel(x, 0, Color("e6e2d8"))
+		img.set_pixel(x, 1, Color("d6d2c8").darkened(0.12 if joint else 0.0))
+		img.set_pixel(x, 2, Color("cbc7bd").darkened(0.12 if joint else 0.0))
+		img.set_pixel(x, 3, Color("8d887e"))
+		for y in range(4, 19):
+			var c: Color = base * (t + grain.call())
+			if y >= 7 and y <= 10:
+				c = Color("93d052") if y == 7 else Color("6aa836") if y == 10 else Color("7fc241")
+			if y - 4 < streak[x]:
+				c = c.darkened(0.12 * (1.0 - float(y - 4) / streak[x]))
+			if (y == 5 or y == 16) and x % 10 == 5:
+				c = c.darkened(0.25)
+			if joint:
+				c = c.darkened(0.3)
+			elif lit:
+				c = c.lightened(0.08)
+			c.a = 1.0
+			img.set_pixel(x, y, c)
+		img.set_pixel(x, 19, Color("6f6a62"))
+		for y in range(20, 24):
+			var c: Color = base * (0.86 + grain.call() - (0.1 if y == 23 else 0.0))
+			c.a = 1.0
+			img.set_pixel(x, y, c)
+		img.set_pixel(x, 24, Color("d6d2c8"))
+		img.set_pixel(x, 25, Color("9d988e"))
+		for y in range(26, 34):
+			var c: Color = (base * (t * 0.93 + grain.call())).lerp(Color("8a8174"), float(y - 26) / 8.0 * 0.55)
+			if joint:
+				c = c.darkened(0.25)
+			c.a = 1.0
+			img.set_pixel(x, y, c)
+		for y in range(34, 38):
+			var c: Color = Color("dcd8ce") * (1.0 + grain.call() - (0.08 if y == 37 else 0.0))
+			if x % 20 == 0:
+				c = c.darkened(0.25)
+			c.a = 1.0
+			img.set_pixel(x, y, c)
+		for y in range(38, 42):
+			var c: Color = Color("a29d93") * (1.0 + grain.call())
+			if y == 38:
+				c = c.lightened(0.12)
+			if y == 41 or x % 8 == 0:
+				c = c.darkened(0.3)
+			c.a = 1.0
+			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
 
 
 ## One sleeper on its ballast bed, u along the track (a sleeper every texture width), v across it: a concrete tie
