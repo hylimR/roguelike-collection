@@ -242,6 +242,8 @@ varying flat vec3 lnrm;
 varying flat vec4 info;
 varying flat vec4 tint;
 varying vec2 sunl;
+varying vec3 slope;  // a gable's face: along the ridge, up from the eave along the slope, the slope's length (metres)
+varying flat float rseed;
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
 const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.68, 0.64, 0.42), vec3(0.52, 0.52, 0.5), vec3(0.68, 0.66, 0.61));  // boards, tatami, concrete, tile
 const vec3 ROOF[8] = vec3[8](FLAT_ROOFS);  // Sim.City.FLAT_ROOFS
@@ -253,6 +255,9 @@ void vertex() {
 	lpos = (VERTEX + 0.5) * INSTANCE_CUSTOM.xyz;
 	wxz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
 	sunl = vec2(dot(normalize(MODEL_MATRIX[0].xz), vec2(-0.35, 0.6)), dot(normalize(MODEL_MATRIX[2].xz), vec2(-0.35, 0.6)));
+	float run = length(vec2(0.5 * length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz)));
+	slope = vec3(VERTEX.z * length(MODEL_MATRIX[2].xyz), (0.5 - abs(VERTEX.x)) * 2.0 * run, run);
+	rseed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
 // a light whose own threshold (0-1) the falling dark has passed: full on (a little dimmer until full night), not faded in
@@ -436,6 +441,23 @@ void fragment() {
 			}
 		}
 		col *= mix(0.72, 1.0, clamp(lpos.y / 1.2, 0.0, 1.0));
+	} else if (info.w < -0.5 && lnrm.y > 0.2 && lnrm.y < 0.98) {  // a gable's slope: kawara in courses, or ribbed sheet metal
+		vec2 q = slope.xy;
+		float fine = 1.0 - smoothstep(0.035, 0.11, max(fwidth(q.x), fwidth(q.y)));
+		float f = 1.0;
+		if (rseed < 0.72) {  // tiles laid in columns of rolls, each course's lip lit over the shadow it casts down the slope
+			vec2 c = vec2(q.x / 0.3, q.y / 0.28);
+			vec2 cf = fract(c);
+			float tone = fract(sin(dot(floor(c) + rseed * 41.0, vec2(12.9898, 78.233))) * 43758.5453);
+			f = (1.0 + 0.09 * sin(cf.x * 6.2832)) * (0.95 + 0.08 * tone) * (cf.y > 0.82 ? 0.78 : (cf.y < 0.08 ? 1.1 : 1.0));
+		} else {  // standing seams every 45 cm, each lit on one side and shaded on the other, weathered in streaks
+			float s = fract(q.x / 0.45);
+			float streak = fract(sin(floor(q.x / 0.15) * 12.9898 + rseed * 7.0) * 43758.5453);
+			f = (s < 0.06 ? 1.16 : (s < 0.14 ? 0.82 : 1.0)) * (0.96 + 0.05 * streak);
+		}
+		float up = slope.z - q.y;
+		f = up < 0.2 ? (up < 0.05 ? 1.12 : 0.8) : (q.y < 0.1 ? 0.7 : f);  // the ridge cap, and the eave's edge
+		col = tint.rgb * mix(1.0, f, fine);
 	} else if (info.x == 0.0 && tint.a < 0.99) {  // a landmark face packed with alpha under 1 is floodlit after dark
 		glow = vec3(1.0, 0.62, 0.3) * (1.0 - tint.a) * 2.0 * night;  // a warm floodlight, its strength in the alpha
 	}
