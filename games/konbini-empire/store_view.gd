@@ -358,7 +358,7 @@ void fragment() {
 				vec2 ca = mid + (side / 2 == 0 ? vec2((room.x * 0.5 - ha.x) * (side == 0 ? -1.0 : 1.0), 0.0) : vec2(0.0, (room.y * 0.5 - ha.y) * (side == 2 ? -1.0 : 1.0)));
 				vec2 hb = min(room * (k == 0 ? vec2(0.24, 0.22) : vec2(0.15, 0.12)) + 0.05, vec2(0.75));
 				vec2 cb = mid + (vec2(fract(r * 5.3), fract(r * 9.7)) - 0.5) * 0.25 * room - (ca - mid) * 0.15;
-				vec3 ACol[4] = vec3[4](mix(ACCENT[(pick + 4) % 8], vec3(0.45), 0.45), vec3(0.93, 0.9, 0.84), vec3(0.6, 0.65, 0.7), vec3(0.9, 0.9, 0.87));
+				vec3 ACol[4] = vec3[4](mix(ACCENT[(pick + 4) % 8], vec3(0.4), 0.35), vec3(0.93, 0.9, 0.84), vec3(0.6, 0.65, 0.7), vec3(0.9, 0.9, 0.87));
 				vec3 BCol[4] = vec3[4](mix(ACCENT[(pick + int(r * 5.0) + 1) % 8], fl, 0.35), vec3(0.42, 0.27, 0.17), vec3(0.77, 0.6, 0.4), vec3(0.74, 0.56, 0.36));
 				float ta = k == 1 ? 0.12 : 0.35;  // how far each casts its shadow: a futon barely, racking far
 				float tb = k == 0 ? 0.0 : 0.25;  // a rug casts none
@@ -378,9 +378,26 @@ void fragment() {
 					float inz = min(max(z1.x, z1.y), max(z2.x, z2.y));
 					fl = inz < 0.0 ? mix(ACCENT[(pick + 2) % 8], vec3(0.55, 0.3, 0.3), 0.35) * (inz > -0.04 ? 0.8 : (inz > -0.2 ? 1.0 : 0.88)) : fl;
 				}
+				if (k == 0 && fract(r * 17.0) < 0.8 && inb > 0.0) {  // a fringe of cream threads off each short end of the rug
+					vec2 fc = lpos.xz - cb;
+					bool lx = hb.x >= hb.y;
+					float fa = abs(lx ? fc.x : fc.y) - (lx ? hb.x : hb.y);
+					float fw = (lx ? hb.y : hb.x) - 0.03 - abs(lx ? fc.y : fc.x);
+					fl = fa < 0.07 && fw > 0.0 ? (fract((lx ? fc.y : fc.x) * 24.0) < 0.55 ? vec3(0.9, 0.86, 0.76) * (1.0 - 1.6 * fa) : fl * 0.8) : fl;
+				}
 				if (inb < 0.0) {
-					fl = BCol[k] * (inb > -0.05 ? 0.82 : (k == 0 && inb > -0.14 ? 1.15 : (k == 1 && inb < -0.08 ? 1.3 : 1.0)));
-					if (k == 2) {  // a strip of tape across each box
+					fl = BCol[k] * (inb > -0.05 ? 0.82 : (k == 1 && inb < -0.08 ? 1.3 : 1.0));
+					if (k == 0) {  // a woven rug: a dark binding, a cream border, and a medallion on a field in its own colour
+						vec3 rug = mix(ACCENT[(pick + int(r * 5.0) + 1) % 8], vec3(0.34, 0.18, 0.16), 0.32);
+						vec3 cream = vec3(0.9, 0.85, 0.74);
+						float bw = min(hb.x, hb.y);
+						vec2 dn = abs(lpos.xz - cb) / hb;
+						float m = dn.x + dn.y;
+						float d = -inb / bw;
+						fl = d < 0.07 ? rug * 0.6 : (d < 0.2 ? cream * 0.9 : (d < 0.26 ? rug * 0.72 : (m < 0.16 ? cream : (m < 0.36 ? rug * 0.78 : (m < 0.52 ? mix(rug, cream, 0.55) : rug)))));
+						vec2 pp = floor(lpos.xz * 24.0);
+						fl *= 0.95 + 0.08 * fract(sin(dot(pp, vec2(12.9898, 78.233))) * 43758.5453);
+					} else if (k == 2) {  // a strip of tape across each box
 						fl *= abs(lpos.x - cb.x) < 0.04 ? 1.2 : 1.0;
 					}
 				}
@@ -393,7 +410,12 @@ void fragment() {
 						float n = run > 1.5 ? 3.0 : 2.0;
 						float cu = (along - 0.12) / (run - 0.24) * n;
 						bool frame = across < 0.13 || along < 0.12 || along > run - 0.12;
-						fl = ina > -0.05 ? fl : ACol[k] * (frame ? 1.12 : (min(fract(cu), 1.0 - fract(cu)) < 0.06 ? 0.8 : 0.95));
+						// the back and arms lit on top, the seat shadowed where it tucks under them and rounding off to the front
+						float tuck = min(across - 0.13, min(along - 0.12, run - 0.12 - along));
+						float front = 2.0 * ha[side / 2 == 0 ? 0 : 1] - across;
+						fl = ina > -0.05 ? fl : ACol[k] * (frame ? 1.2 : (min(fract(cu), 1.0 - fract(cu)) < 0.06 ? 0.78 : (tuck < 0.04 ? 0.74 : (front < 0.06 ? 0.86 : 0.98))));
+						vec2 pil = vec2(across - 0.24, along - 0.26);  // a throw cushion at one end, propped against the back
+						fl = !frame && abs(pil.x) < 0.09 && abs(pil.y) < 0.11 ? vec3(0.9, 0.85, 0.74) * (pil.x < -0.05 ? 0.82 : 1.0) : fl;
 					} else if (k == 1) {  // a futon: a blue quilt up to the pillow at its head
 						fl = dot(lpos.xz - ca, side / 2 == 0 ? vec2(0.0, 1.0) : vec2(1.0, 0.0)) < run * 0.28 && ina < -0.04 ? vec3(0.45, 0.58, 0.8) : fl;
 					} else if (k == 3) {  // a steel sink let into the counter
