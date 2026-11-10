@@ -170,6 +170,28 @@ void fragment() {
 	ALBEDO = crop * mix(vec3(1.0), texture(furrows, UV).rgb, field) * light;
 }
 """
+# The map's streetlights after dark: a pool on the carriageway under each lamp, the lamps a unit of u apart along
+# both kerbs and staggered, over a faint wash down the whole road; COLOR.r carries the carriageway's width / 40.
+const ROAD_LIGHT_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled, blend_add, depth_draw_never, shadows_disabled;
+uniform vec3 tint = vec3(1.0, 0.85, 0.58);
+uniform float spacing = 24.0;
+uniform float wash = 0.07;
+uniform float glow = 0.0;
+
+void fragment() {
+	float w = COLOR.r * 40.0;
+	float pool = 0.0;
+	for (int k = 0; k < 2; k++) {
+		float u = UV.x + 0.5 * float(k);
+		vec2 d = vec2((fract(u) - 0.5) * spacing, (UV.y - (k == 0 ? 0.1 : 0.9)) * w);
+		pool += exp(-dot(d, d) / 16.0) + 0.6 * exp(-dot(d, d) / 1.5);
+	}
+	float edge = smoothstep(0.0, 0.12, UV.y) * smoothstep(1.0, 0.88, UV.y);
+	ALBEDO = tint * glow * (wash * (1.0 + 0.7 * edge) + 0.42 * pool);
+}
+"""
 # Open water on the map: the sea's blue, mottled in broad patches, with short wave crests over a darker trough
 # scattered across it at a steady size on screen at any zoom (two sizes crossfaded), slowly glinting in and out.
 const SWELL_SHADER := """
@@ -847,6 +869,8 @@ var foot_mesh: PlaneMesh
 var sea_mat: StandardMaterial3D
 var shore_mat: StandardMaterial3D  # foam and shallows, dimmed after dark with the sea
 var field_mat: ShaderMaterial
+var road_lights: MeshInstance3D  # the map's streetlights on its roads and the expressway, only on the map
+var road_light_mats: Array = []
 var swell_mat: ShaderMaterial  # the map's open sea and rivers
 var cam_target := Vector3.ZERO
 var cam_offset := Vector3.ZERO
@@ -1167,6 +1191,8 @@ func update_light() -> void:
 	if field_mat:
 		field_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
 		field_mat.set_shader_parameter("night", night)
+	for m in road_light_mats:
+		m.set_shader_parameter("glow", night)
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
@@ -1769,6 +1795,8 @@ func tiles(a: Color, b: Color) -> ImageTexture:
 ## Store mode frames the focused street; city mode frames the whole city. Drag pans, wheel zooms.
 func set_mode(m: String) -> void:
 	mode = m
+	if road_lights:
+		road_lights.visible = m == "city"
 	cam_offset = Vector3.ZERO
 	zoom = 1.0
 	yaw = PI / 4  # the shop cutaway is drawn for this angle
@@ -2289,9 +2317,41 @@ func build_roads() -> void:
 						rails.append([pts, side, k])
 				run = -1
 	commit([walkway, tar, mouth, dash, solid, zebra], city)
+	build_road_lights()
 	rail_node = commit([], city)
 	rail_sig = Rect2(1, 1, -1, -1)
 	build_rails([])
+
+
+## The map's streetlights: a pool under each lamp along every street and avenue, warm white, and along the
+## expressway's decks in sodium orange; lit after dark.
+func build_road_lights() -> void:
+	road_light_mats = []
+	for t in [[LAMP, 0.06], [Color(1.0, 0.56, 0.22), 0.025]]:
+		var m := ShaderMaterial.new()
+		m.shader = Shader.new()
+		m.shader.code = ROAD_LIGHT_SHADER
+		m.set_shader_parameter("tint", Vector3(t[0].r, t[0].g, t[0].b))
+		m.set_shader_parameter("wash", t[1])
+		m.set_shader_parameter("glow", maxf(night, 0.0))
+		road_light_mats.append(m)
+	var S := 24.0
+	var SW := Sim.City.SIDEWALK
+	var road := surface(road_light_mats[0])
+	for s in C.streets:
+		var a0: float = s.from + (0.0 if s.quay[0] else (SW if s.j[0] < 0.0 else -SW))
+		var a1: float = s.to - (0.0 if s.quay[1] else (SW if s.j[1] < 0.0 else -SW))
+		road.set_color(Color((s.w - 2 * SW) / 40.0, 0, 0))
+		rect_quad(road, srect(s, a0, a1, SW, s.w - SW), -0.085, (a1 - a0) / S, s.axis == "v")
+	for av in C.avenues:
+		road.set_color(Color((av.w - 2 * SW) / 40.0, 0, 0))
+		ribbon(road, flat3(av.pts), av.w / 2 - SW, SW - av.w / 2, -0.085, 1.0 / S)
+	var deck := surface(road_light_mats[1])
+	for e in Sim.City.elevated(C):
+		deck.set_color(Color(e.w / 40.0, 0, 0))
+		ribbon(deck, lifted(e.pts), e.w / 2, -e.w / 2, 0.03, 1.0 / S)
+	road_lights = commit([road, deck], city)
+	road_lights.visible = mode == "city"
 
 
 ## The city's railings, leaving out every piece that crosses one of `clear` (the set's street and buildings), where
