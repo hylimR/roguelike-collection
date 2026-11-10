@@ -49,6 +49,7 @@ const STATION_OFFS := [STATION_OFF, STATION_OFF + 4.0, STATION_OFF + 8.0]  # fur
 const PIER_GAP := 12.0  # a pier about this often, slid off the roads under the viaduct
 const MAX_SPAN := 42.0  # the longest girder between piers: over an avenue it crosses at a slant, or an expressway junction
 const DECK_SPAN := 45.0  # the expressway's longest, where its pillars step aside for the viaduct under it
+const RUN_OFF := 28.0  # the pillar spacing where a radial route runs off over the country
 const CAR_GAP := 0.6
 const CARS := 4  # a train
 const TRAINS := 3  # a track
@@ -479,7 +480,33 @@ static func _build() -> Dictionary:
 			lost[L.block] = true
 	_place_lots(C, lost.keys())
 	_place_landmarks_late(C)
+	_run_off(C)
 	return C
+
+
+## The radial routes and the avenues under them run on straight out over the country past the ground's edge
+## (C.bounds grown by 1300), a point and a pillar every RUN_OFF m, so none stops dead in a field. Done last: the city
+## round them is already laid out. C.run_off keeps each stretch [from, to, half the avenue's width] for the farmland.
+static func _run_off(C: Dictionary) -> void:
+	var edge: Rect2 = C.bounds.grow(1300.0)
+	C.run_off = []
+	for sh in C.shuto:
+		if sh.closed or sh.get("lands", false):
+			continue
+		var pts: PackedVector3Array = sh.pts
+		var n := pts.size()
+		sh.mid = int(n / 2.0)
+		var dir := (pts[-1] - pts[-2]).normalized()
+		var from := Vector2(pts[-1].x, pts[-1].z)
+		while edge.has_point(Vector2(pts[-1].x, pts[-1].z)):
+			pts.append(pts[-1] + dir * RUN_OFF)
+		sh.pts = pts
+		for av in C.avenues:
+			if av.shuto == sh.name and av.pts[-1].distance_to(from) < 1.0:
+				av.third = int(av.pts.size() / 3.0)
+				for k in range(n, pts.size()):
+					av.pts.append(Vector2(pts[k].x, pts[k].z))
+				C.run_off.append([from, av.pts[-1], av.w / 2])
 
 
 ## A route that comes down to the ground ends on a road: the last side street it crosses on land before the end it was

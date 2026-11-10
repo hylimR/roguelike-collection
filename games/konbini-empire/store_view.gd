@@ -829,6 +829,7 @@ var pillar_mm: MultiMesh
 var tree_mms: Array = []  # [MultiMesh, base transforms, height]
 var mask_vp: SubViewport  # the city seen from the sun, for ground shadows
 var shadow_mat: ShaderMaterial
+var run_off_shadow_mat: StandardMaterial3D  # the shadows the expressway lays out of town, past shadow_mat's reach
 var env: Environment
 var light := Color.WHITE  # the hour's tint (DAYLIGHT)
 var night := 0.0  # 0 by day, 1 from 22:00, fading out at first light: lit windows and lamp pools
@@ -1179,6 +1180,7 @@ func update_light() -> void:
 		building_mat.set_shader_parameter("dawn", dawn_at(h))
 	if shadow_mat:
 		shadow_mat.set_shader_parameter("strength", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
+		run_off_shadow_mat.albedo_color = Color(0.08, 0.1, 0.2, 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	cast_mat.albedo_color.a = 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
 	crown_mat.albedo_color.a = 0.62 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
 	awning_mat.albedo_color.a = 0.36 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
@@ -2014,14 +2016,15 @@ func mm_node(mm: MultiMesh, m: Material, parent: Node) -> MultiMeshInstance3D:
 
 
 ## Whether r is open country, at least `edge` past the built-up land and clear of roads, parks and water. Out past
-## every road, river, park and plot (C.bounds grown by 120 holds them all) only the sea is in the way.
+## every road, river, park and plot (C.bounds grown by 120 holds them all) only the sea and the radial routes running
+## on out of town are in the way.
 func country(r: Rect2, edge: float) -> bool:
 	var p := r.get_center()
 	if not C.bounds.grow(120.0).intersects(r):
 		for q in [p, r.position, r.end, Vector2(r.position.x, r.end.y), Vector2(r.end.x, r.position.y)]:
 			if Geometry2D.is_point_in_polygon(q, C.bay) or Geometry2D.is_point_in_polygon(q, bay_mouth):
 				return false
-		return true
+		return C.run_off.all(func(ro): return Sim.City.seg_rect_dist(ro[0], ro[1], r) > ro[2] + 2.0)
 	return Sim.City.nearest(C, p)[1] > Sim.City.URBAN + edge and not Sim.City.blocked(C, r)
 
 
@@ -2846,6 +2849,39 @@ func build_shadows() -> void:
 	sm.set_shader_parameter("light_vp", sun.get_camera_projection() * Projection(sun.global_transform.affine_inverse()))
 	sm.set_shader_parameter("strength", 0.42)
 	plane(city, b.grow(200.0).size, Vector3(mid.x, -0.06, mid.z), sm)
+	# past the sun's view the radial routes running on out of town lay their deck's and pillars' shadows as flat bands
+	run_off_shadow_mat = StandardMaterial3D.new()
+	run_off_shadow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	run_off_shadow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	run_off_shadow_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	run_off_shadow_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var st := surface(run_off_shadow_mat)
+	var lay := Vector2(-SUN.x, -SUN.z) / SUN.y  # ground offset per metre of height
+	var inside := b.grow(200.0)
+	var y := -0.05
+	for sh in C.shuto:
+		if not sh.has("mid"):
+			continue
+		var pts: PackedVector3Array = sh.pts
+		var k := pts.size() - 1
+		while k > 0 and not inside.has_point(Vector2(pts[k - 1].x, pts[k - 1].z) + lay * (Sim.City.DECK - 0.4)):
+			k -= 1
+		var a := Vector2(pts[k - 1].x, pts[k - 1].z)
+		var dir := Vector2(pts[k].x, pts[k].z) - a
+		var t := 0.0
+		while inside.has_point(a + dir * t + lay * (Sim.City.DECK - 0.4)):
+			t += 0.02
+		var band := PackedVector3Array()
+		for q in [a + dir * t, Vector2(pts[-1].x, pts[-1].z)]:
+			var g: Vector2 = q + lay * (Sim.City.DECK - 0.4)
+			band.append(Vector3(g.x, y, g.y))
+		ribbon(st, band, Sim.City.EXPRESS_W / 2 + 0.2, -Sim.City.EXPRESS_W / 2 - 0.2)
+	for dp in Sim.City.deck_pillars(C):
+		var foot := Vector2(dp[2].x, dp[2].z)
+		if not inside.has_point(foot):
+			var top: Vector2 = foot + lay * dp[2].y
+			ribbon(st, PackedVector3Array([Vector3(foot.x, y, foot.y), Vector3(top.x, y, top.y)]), dp[3] / 2, -dp[3] / 2)
+	commit([st], city)
 
 
 ## Facade tiles, 32 px a bay (3 units) by a floor, one column per style: row 0 the ground floor, row 1 the floors
@@ -8014,7 +8050,7 @@ func draw_city_marks(font: Font) -> void:
 			if av.name == "":
 				continue
 			var pts: PackedVector2Array = av.pts
-			var third: Vector2 = pts[int(pts.size() / 3.0)]
+			var third: Vector2 = pts[av.get("third", int(pts.size() / 3.0))]
 			var at := screen_world(Vector3(third.x, 0, third.y))
 			var w := font.get_string_size(av.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
 			if room_for.call(Rect2(at + Vector2(-w / 2 - 2, -10), Vector2(w + 4, 13))):
@@ -8022,7 +8058,7 @@ func draw_city_marks(font: Font) -> void:
 				overlay.draw_string(font, at + Vector2(-50, 0), av.name, HORIZONTAL_ALIGNMENT_CENTER, 100, 10, Color("5d5f66"))
 		for sh in C.shuto:
 			var pts: PackedVector3Array = sh.pts
-			var at := screen_world(pts[int(pts.size() / 2.0)] + Vector3(0, 1.5, 0))
+			var at := screen_world(pts[sh.get("mid", int(pts.size() / 2.0))] + Vector3(0, 1.5, 0))
 			if room_for.call(Rect2(at + Vector2(-13, -9), Vector2(26, 16))):
 				overlay.draw_rect(Rect2(at + Vector2(-13, -9), Vector2(26, 16)), Color("1f6f43"))
 				overlay.draw_rect(Rect2(at + Vector2(-13, -9), Vector2(26, 16)), Color.WHITE, false, 1.5)
