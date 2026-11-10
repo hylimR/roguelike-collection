@@ -584,6 +584,7 @@ var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
 var floor_tex := {}  # shop floor texture by left wall
 var set_sig := ""
 var tarmac_m: StandardMaterial3D
+var slabs_m: StandardMaterial3D
 var car_park_m: StandardMaterial3D
 var road_paint_m: StandardMaterial3D
 var side_tar_m: StandardMaterial3D
@@ -1123,22 +1124,68 @@ func pavers() -> StandardMaterial3D:
 	return m
 
 
-## Poured concrete for a 1.8 m repeat: one slab a pixel short of the repeat each way, flecked, its score lines darker.
+## Poured concrete for a 7.2 m repeat of 1.8 m slabs (32 px each): each slab a shade off, mottled with grime in
+## broad patches and flecked with aggregate, its score lines dark with dirt and lit on their sunny lip, a few hairline
+## cracks and the odd oil or rust stain.
 func slabs() -> StandardMaterial3D:
+	if slabs_m:
+		return slabs_m
+	const N := 128
 	var r := RandomNumberGenerator.new()
 	r.seed = 31
+	var fn := FastNoiseLite.new()
+	fn.seed = 31
+	fn.noise_type = FastNoiseLite.TYPE_VALUE_CUBIC
+	fn.frequency = 0.03
+	fn.fractal_octaves = 3
+	var mottle := fn.get_seamless_image(N, N).get_data()
 	var base := Color("cbc6bb")
-	var img := Image.create(18, 18, false, Image.FORMAT_RGB8)
-	for y in 18:
-		for x in 18:
-			var v := r.randf_range(0.97, 1.01) if r.randf() < 0.86 else r.randf_range(0.92, 0.95)
-			if x == 17 or y == 17:
-				v = 0.84
-			img.set_pixel(x, y, Color(base.r * v, base.g * v, base.b * v))
+	var tone := []
+	for k in 16:
+		tone.append(r.randf_range(0.95, 1.02) if r.randf() < 0.8 else r.randf_range(0.89, 0.93))
+	var v := PackedFloat32Array()
+	v.resize(N * N)
+	for y in N:
+		for x in N:
+			var lx := x % 32
+			var ly := y % 32
+			var f: float = tone[(y >> 5) * 4 + (x >> 5)] * lerpf(0.9, 1.04, mottle[y * N + x] / 255.0)
+			var g := r.randf()
+			f *= r.randf_range(0.97, 1.01) if g < 0.88 else (r.randf_range(0.91, 0.94) if g < 0.96 else 1.04)
+			if lx == 31 or ly == 31:
+				f = 0.74 * r.randf_range(0.95, 1.02)
+			elif lx == 30 or ly == 30:
+				f *= 0.93
+			elif lx == 0 or ly == 0:
+				f *= 1.04
+			v[y * N + x] = f
+	for i in 6:  # hairline cracks wandering in from a slab's edge
+		var p := Vector2(r.randi_range(0, 3) * 32 + r.randi_range(4, 27), r.randi_range(0, 3) * 32)
+		var dir := Vector2(r.randf_range(-0.6, 0.6), 1.0).normalized()
+		if r.randf() < 0.5:
+			p = Vector2(p.y, p.x)
+			dir = Vector2(dir.y, dir.x)
+		for step in r.randi_range(10, 24):
+			v[posmod(int(p.y), N) * N + posmod(int(p.x), N)] *= 0.8
+			dir = dir.rotated(r.randf_range(-0.5, 0.5))
+			p += dir
+	for i in 3:  # a drip of oil or a rust bloom, soft at its rim
+		var c := Vector2(r.randf_range(0, N), r.randf_range(0, N))
+		var rad := r.randf_range(3.0, 6.0)
+		for y in range(int(c.y - rad - 1), int(c.y + rad + 2)):
+			for x in range(int(c.x - rad - 1), int(c.x + rad + 2)):
+				var d := Vector2(x, y).distance_to(c) / rad
+				if d < 1.0:
+					v[posmod(y, N) * N + posmod(x, N)] *= lerpf(0.84, 1.0, d * d)
+	var img := Image.create(N, N, false, Image.FORMAT_RGB8)
+	for y in N:
+		for x in N:
+			var f := minf(v[y * N + x], 1.06)
+			img.set_pixel(x, y, Color(minf(base.r * f, 1.0), minf(base.g * f, 1.0), minf(base.b * f, 1.0)))
 	img.generate_mipmaps()
-	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	return m
+	slabs_m = mat(Color.WHITE, ImageTexture.create_from_image(img))
+	slabs_m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	return slabs_m
 
 
 ## The set's street for a 32 m repeat across its whole 8 m width (uv x/8, z/8, scaled to a quarter along x): coarse
@@ -4522,8 +4569,8 @@ func build_set() -> void:
 	# the yard round the back of the car park and on to the rival, where the set's lots meet: poured concrete scored
 	# into slabs, with a drain grating along the sidewalk, rather than the bare district ground the set cleared
 	var yard := surface(slabs())
-	rect_quad(yard, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.043, 0.0, false, 1.0 / 1.8)
-	rect_quad(yard, Rect2(-16.5, -20.2, 20.2, 3.95), -0.043, 0.0, false, 1.0 / 1.8)
+	rect_quad(yard, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.043, 0.0, false, 1.0 / 7.2)
+	rect_quad(yard, Rect2(-16.5, -20.2, 20.2, 3.95), -0.043, 0.0, false, 1.0 / 7.2)
 	var grate := surface(mat(Color("6c6a66")))
 	rect_quad(grate, Rect2(3.75, -7.75, span.x - 3.8, 0.28), -0.04)
 	commit([made, walk, road, tar, kerb, bay, paint, hatch, tactile, kerbs, yard, grate], set_node)
