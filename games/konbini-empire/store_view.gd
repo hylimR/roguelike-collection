@@ -5005,27 +5005,88 @@ func build_set() -> void:
 		block(set_node, Vector3(0.34, 0.08, 0.34), vent + Vector3(0, 0.74, 0), Color("6e737d"))
 		block(set_node, Vector3(vw - 0.3, 0.55, 0.12), Vector3(vx, 3.1, -7.16), Color("cfc7b6"))
 		block(set_node, Vector3(vw - 1.1, 0.4, 0.06), Vector3(vx, 3.1, -7.08), Color("e9e4d8"))  # where the old sign hung
+		# its ghost: paint unfaded where the board sat, grime caught round its edge and rust bled from its screw holes
+		var gw := maxi(8, roundi((vw - 1.1) * 32.0))
+		var ghost := Image.create(gw, 13, false, Image.FORMAT_RGB8)
+		for px in gw:
+			for y in 13:
+				var c := Color("e9e4d8")
+				var edge := mini(mini(px, gw - 1 - px), mini(y, 12 - y))
+				if edge == 1:
+					c = Color("b9b1a1")
+				elif edge >= 2:
+					c = Color("f1ede3")
+				ghost.set_pixel(px, y, c)
+		for hx in [3, gw / 2, gw - 4]:
+			for hy in [3, 9]:
+				ghost.set_pixel(hx, hy, Color("4a443c"))
+				for k in (hx + hy) % 3 + 1:
+					ghost.set_pixel(hx, hy + 1 + k, Color("e9e4d8").lerp(Color("94603e"), 0.6 - k * 0.2))
+		var gq := MeshInstance3D.new()
+		var gm := QuadMesh.new()
+		gm.size = Vector2(vw - 1.1, 0.4)
+		gq.mesh = gm
+		gq.material_override = mat(Color(0.9, 0.9, 0.9), ImageTexture.create_from_image(ghost))
+		gq.position = Vector3(vx, 3.1, -7.047)
+		set_node.add_child(gq)
+		# the shutter box: a pressed steel case, its top lit, a seam along its face and an end cap at each side
 		block(set_node, Vector3(vw - 0.5, 0.3, 0.32), Vector3(vx, 2.62, -7.05), Color("9aa0a6"))
-		# the shutter, 14 ribbed slats at 23 px a metre: road grime climbing from the foot, rust run down from the box
+		block(set_node, Vector3(vw - 0.5, 0.025, 0.33), Vector3(vx, 2.78, -7.05), Color("c3c8cc"))
+		block(set_node, Vector3(vw - 0.5, 0.02, 0.01), Vector3(vx, 2.6, -6.885), Color("6e737a"))
+		for side in [-1, 1]:
+			block(set_node, Vector3(0.05, 0.33, 0.35), Vector3(vx + side * (vw - 0.5) / 2, 2.62, -7.05), Color("7d8389"))
+		# the shutter at 32 px a metre: slats 15 cm deep, each a lit lip over its face, a shaded underside and a dark
+		# groove, a shade apart; two vented slats under the box, a few dents, road grime climbing from the foot in
+		# blotches, rust run down from the box, and a bottom bar with its handle
 		var sw := vw - 0.8
-		var slats := Image.create(maxi(8, roundi(sw * 23.0)), 56, false, Image.FORMAT_RGB8)
+		var sh := 78
+		var slats := Image.create(maxi(8, roundi(sw * 32.0)), sh, false, Image.FORMAT_RGB8)
+		var sx := slats.get_width()
 		var rr := RandomNumberGenerator.new()
 		rr.seed = 7
+		var gn := FastNoiseLite.new()
+		gn.seed = 7
+		gn.frequency = 0.07
 		var runs := {}
-		for k in roundi(sw * 1.2):
-			runs[rr.randi_range(1, slats.get_width() - 2)] = rr.randi_range(10, 34)
-		for px in slats.get_width():
-			for y in 56:
-				var c := Color("8f959b") if y % 4 == 3 else (Color("d3d7d9") if y % 4 == 0 else Color("c4c8cb"))
-				c = c.lerp(Color("7c7366"), 0.75 * pow(clampf((y - 20.0) / 36.0, 0.0, 1.0), 1.3))
+		for k in roundi(sw * 1.4):
+			runs[rr.randi_range(1, sx - 2)] = rr.randi_range(12, 44)
+		var tone := []
+		for k in sh / 5 + 1:
+			tone.append(rr.randf_range(0.96, 1.03))
+		var dents := []
+		for k in 3:
+			dents.append(Vector3i(rr.randi_range(4, sx - 14), rr.randi_range(6, 13) * 5, rr.randi_range(6, 11)))
+		var face := [Color("e8ebec"), Color("d3d7d9"), Color("cdd1d4"), Color("aeb3b7"), Color("7a8086")]
+		for px in sx:
+			for y in sh:
+				var c: Color
+				if y >= sh - 5:  # the bottom bar
+					c = [Color("cfd3d6"), Color("9aa0a6"), Color("969ca2"), Color("8f959b"), Color("575d64")][y - (sh - 5)]
+					if absi(px - sx / 2) <= 6 and y > sh - 5 and y < sh - 1:
+						c = Color("3d4248") if y > sh - 4 else Color("b5babe")
+				else:
+					var row := y % 5
+					c = face[row] * tone[y / 5]
+					if y / 5 in [1, 2] and row in [1, 2] and posmod(px, 10) in [2, 3, 4, 5, 6, 7]:
+						c = Color("3a3f45") if row == 1 else Color("50565c")
+					for d: Vector3i in dents:
+						if y - row == d.y and px >= d.x and px < d.x + d.z and row in [1, 2]:
+							c = c.darkened(0.14) if row == 1 else c.lightened(0.1)
+				var g := pow(clampf((y - 30.0) / 48.0, 0.0, 1.0), 1.3) * (0.55 + 0.45 * (gn.get_noise_2d(px, y * 2.0) * 0.5 + 0.5))
+				c = c.lerp(Color("6f6658"), 0.85 * g)
+				if y > sh - 16 and rr.randf() < 0.07:
+					c = c.darkened(0.18)
 				if runs.has(px) and y < runs[px]:
-					c = c.lerp(Color("94603e"), 0.7 * (1.0 - float(y) / runs[px]))
+					c = c.lerp(Color("8a5a3a"), 0.65 * (1.0 - float(y) / runs[px]))
 				slats.set_pixel(px, y, c)
 		var shutter := MeshInstance3D.new()
 		var q := QuadMesh.new()
 		q.size = Vector2(sw, 2.45)
 		shutter.mesh = q
-		shutter.material_override = mat(Color.WHITE, ImageTexture.create_from_image(slats))
+		slats.generate_mipmaps()
+		var sm := mat(Color(0.9, 0.9, 0.9), ImageTexture.create_from_image(slats))
+		sm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+		shutter.material_override = sm
 		shutter.position = Vector3(vx, 1.235, -7.17)
 		set_node.add_child(shutter)
 		block(set_node, Vector3(vw - 0.7, 0.1, 0.1), Vector3(vx, 0.05, -7.13), Color("7d8389"))
