@@ -774,6 +774,7 @@ var car_park_m: StandardMaterial3D
 var road_paint_m: StandardMaterial3D
 var side_tar_m: StandardMaterial3D
 var manhole_m: StandardMaterial3D
+var condenser_m: StandardMaterial3D
 var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
 var entries := []  # x of the side roads that meet the set's street, where cars come in when both its ends are quays
 var slot_icons := {}  # product -> [Sprite3D]: its stock on the shelf
@@ -5742,6 +5743,7 @@ func shop_roofs(list: Array) -> void:
 	km.vertex_color_use_as_albedo = true
 	km.vertex_color_is_srgb = true
 	var kit := surface(km)
+	var faces := surface(condenser())
 	var drift := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
 	var r := RandomNumberGenerator.new()
 	r.seed = branch.lot * 131 + 7
@@ -5770,9 +5772,7 @@ func shop_roofs(list: Array) -> void:
 		for k in units:
 			var ac: Vector3 = at.call(long_ * 0.3 + k * 1.25, r.randf_range(-0.2, 0.2))
 			box_into(kit, ac + Vector3(-0.55, 0, -0.4), ac + Vector3(0.55, 0.1, 0.4), Color("8e8d88"))
-			box_into(kit, ac + Vector3(-0.47, 0.1, -0.32), ac + Vector3(0.47, 0.62, 0.32), Color("d2cfc4"))
-			box_into(kit, ac + Vector3(-0.32, 0.18, 0.32), ac + Vector3(0.32, 0.54, 0.34), Color("7a8088"))
-			box_into(kit, ac + Vector3(-0.47, 0.18, -0.25), ac + Vector3(-0.49, 0.54, 0.25), Color("9a9d9f"))
+			condenser_into(kit, faces, ac + Vector3(0, 0.1, 0), Vector3(0.94, 0.52, 0.64))
 			casts.append([Rect2(ac.x - 0.55, ac.z - 0.4, 1.1, 0.8), Vector2(0.24, -0.4)])
 		var pipe: Vector3 = at.call(long_ * 0.3, 0.0)  # their pipes run along the roof to drop down the back
 		var end_: Vector3 = at.call(long_ - 0.15, 0.0)
@@ -5790,8 +5790,98 @@ func shop_roofs(list: Array) -> void:
 		casts.append([Rect2(vent.x - 0.12, vent.z - 0.12, 0.24, 0.24), Vector2(0.3, -0.5)])
 		plane(set_node, Vector2(sz.x - 0.3, sz.z - 0.3), Vector3(e[1].x, y + 0.035, e[1].z),
 				roof_mat(shop_roof_tex(Rect2(x0 + 0.15, z0 + 0.15, sz.x - 0.3, sz.z - 0.3), along_z, skin, Vector2(drain.x, drain.z), casts, branch.lot * 977 + int(e[1].x * 10.0))))
-	commit([kit], set_node)
+	commit([kit, faces], set_node)
 	commit([drift], snow_cover)
+
+
+## A rooftop AC condenser standing on `at`, size w x h x d, into a vertex-coloured kit surface and a surface of
+## condenser(): an ivory casing under an overhanging lid, the round fan grille on its street side and the coil's
+## fins behind a wire guard down its right side.
+func condenser_into(kit: SurfaceTool, faces: SurfaceTool, at: Vector3, size_: Vector3) -> void:
+	var hw := size_.x / 2
+	var hd := size_.z / 2
+	box_into(kit, at + Vector3(-hw + 0.04, 0, -hd + 0.04), at + Vector3(hw - 0.04, 0.05, hd - 0.04), Color("5f6166"))  # its feet
+	box_into(kit, at + Vector3(-hw, 0.05, -hd), at + Vector3(hw, size_.y, hd), Color("d6d2c7"))
+	box_into(kit, at + Vector3(-hw - 0.02, size_.y, -hd - 0.02), at + Vector3(hw + 0.02, size_.y + 0.03, hd + 0.02), Color("e4e1d8"))
+	var y0 := at.y + 0.05
+	var y1 := at.y + size_.y
+	var zf := at.z + hd + 0.004
+	add_quad(faces, [Vector3(at.x - hw, y1, zf), Vector3(at.x + hw, y1, zf), Vector3(at.x + hw, y0, zf), Vector3(at.x - hw, y0, zf)],
+			[Vector2(0, 0), Vector2(0.625, 0), Vector2(0.625, 1), Vector2(0, 1)])
+	var xs := at.x + hw + 0.004
+	add_quad(faces, [Vector3(xs, y1, at.z + hd), Vector3(xs, y1, at.z - hd), Vector3(xs, y0, at.z - hd), Vector3(xs, y0, at.z + hd)],
+			[Vector2(0.6667, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0.6667, 1)])
+
+
+## The condenser's faces at 64 px a metre, in the tones box_into gives them: its front (u 0-0.625) a casing round a
+## recessed fan grille of wire rings and spokes over the blades and hub, a badge and the valve cover beside it, rain
+## run down from the lid; its side (u 0.667-1) the coil's fins behind a wire guard in a casing frame.
+func condenser() -> StandardMaterial3D:
+	if condenser_m:
+		return condenser_m
+	var r := RandomNumberGenerator.new()
+	r.seed = 29
+	var img := Image.create(96, 40, false, Image.FORMAT_RGB8)
+	var cas := Color("d6d2c7")
+	for py in 40:
+		for px in 64:
+			var c := cas
+			var d := Vector2(px - 22.5, py - 20.5)
+			var rr := d.length()
+			if rr < 15.5:
+				c = Color("2a2e34")
+				if sin(3.0 * d.angle() + rr * 0.22) > 0.35 and rr > 4.0:
+					c = Color("3e444b")  # the blades behind
+				if rr < 3.5:
+					c = Color("767c84") if d.x + d.y < 0.0 else Color("5c6168")
+				elif fmod(rr, 3.0) < 0.9 or absi(px - 22) == 0 or absi(py - 20) == 0:
+					c = Color("8d939a") if d.x + d.y < 4.0 else Color("737980")
+			elif rr < 17.0:
+				c = cas.darkened(0.22 if d.x + d.y > 0.0 else 0.08)  # the bezel recess, shaded on its lower right
+			elif rr < 18.0 and d.x + d.y < 0.0:
+				c = cas.lightened(0.18)
+			else:
+				if px >= 45 and px <= 58 and py >= 7 and py <= 10:
+					c = Color("5d7088") if py > 7 else Color("7a8ca3")  # the maker's badge
+				elif px >= 44 and px <= 60 and py >= 26 and py <= 36:
+					c = cas.darkened(0.1)
+					if px == 44 or py == 26:
+						c = cas.darkened(0.24)
+					elif px == 60 or py == 36:
+						c = cas.lightened(0.1)
+					elif px >= 49 and px <= 55 and (py == 30 or py == 32):
+						c = Color("8a8b88")  # slots in the valve cover
+				if py == 23 and px > 40:
+					c = c.darkened(0.12)
+				var streak := smoothstep(14.0, 39.0, py) * (0.1 if posmod(px * 7 + 3, 11) < 3 else 0.03)
+				c = c.darkened(streak + r.randf_range(0.0, 0.025))
+			if py < 2:
+				c = c.darkened(0.3 - py * 0.12)  # the lid's shadow
+			elif px == 0 or py == 39:
+				c = c.darkened(0.2)
+			elif px == 63:
+				c = c.darkened(0.1)
+			img.set_pixel(px, py, c * 0.9)
+		for px in 32:
+			var c := cas
+			if px > 1 and px < 30 and py > 3 and py < 37:
+				c = Color("7c8783") if px % 2 == 0 else Color("94a09c")  # the coil's fins
+				c = c.darkened(smoothstep(4.0, 36.0, py) * 0.15)
+				if py % 5 == 0:
+					c = Color("b6babb")  # the guard's wires
+				elif py % 5 == 1:
+					c = c.darkened(0.25)
+			elif py < 2:
+				c = c.darkened(0.3 - py * 0.12)
+			elif px <= 1 or py >= 37:
+				c = c.darkened(0.08)
+			img.set_pixel(64 + px, py, c * 0.75)
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	m.texture_repeat = false
+	condenser_m = m
+	return m
 
 
 ## The city's streets (rects) and avenue pieces ([a, b, half width]) that cross the set, in the street frame.
@@ -6081,23 +6171,17 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		block(parent, e[0], e[1], Color("e6e2d8"))
 	stair_house(parent, Vector3(span.x + 1.4, 4.2, -14.9), not rv.defeated)
 	skylights(parent, [span.x + 3.2, span.x + 5.8], not rv.defeated)
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var kit := surface(km)
+	var faces := surface(condenser())
 	for k in 3:
 		var ac := Vector3(span.x + 4.2 + k * 1.6, 4.25, -14.4)
-		block(parent, Vector3(1.25, 0.1, 1.05), ac + Vector3(0, 0.05, 0), Color("8e8d88"))
-		block(parent, Vector3(1.05, 0.6, 0.85), ac + Vector3(0, 0.4, 0), Color("dcddd8"))
-		block(parent, Vector3(0.85, 0.36, 0.03), ac + Vector3(0, 0.38, 0.43), Color("7a8088"))
-		block(parent, Vector3(0.1, 0.1, 0.75), ac + Vector3(0.3, 0.1, -0.8), Color("c9c6bd"))
-		for ring in [[0.32, Color("41464c")], [0.09, Color("a7adb3")]]:
-			var fan := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = ring[0]
-			cm.bottom_radius = ring[0]
-			cm.height = 0.02
-			cm.radial_segments = 16
-			fan.mesh = cm
-			fan.material_override = mat(ring[1])
-			fan.position = ac + Vector3(0, 0.71 + (0.01 if ring[0] < 0.2 else 0.0), 0)
-			parent.add_child(fan)
+		box_into(kit, ac + Vector3(-0.625, 0, -0.525), ac + Vector3(0.625, 0.1, 0.525), Color("8e8d88"))
+		condenser_into(kit, faces, ac + Vector3(0, 0.1, 0), Vector3(1.05, 0.6, 0.85))
+		box_into(kit, ac + Vector3(0.25, 0.05, -0.425), ac + Vector3(0.35, 0.15, -1.175), Color("c9c6bd"))
+	commit([kit, faces], parent)
 	block(parent, Vector3(span.y - span.x - 5.0, 0.12, 0.12), Vector3((span.x + 4.5 + span.y - 0.5) / 2, 4.35, -15.25), Color("c9c6bd"))
 	# the shop floor behind the glass (the chain's shelves, lit at night), mullions, the sliding door; a beaten chain's
 	# shop is shut behind roll-down shutters and stays dark
