@@ -5986,10 +5986,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	for e in [[Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -7.3)], [Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -16.1)],
 			[Vector3(0.2, 0.34, 9.0), Vector3(span.x + 0.1, 4.37, -11.7)], [Vector3(0.2, 0.34, 9.0), Vector3(span.y - 0.1, 4.37, -11.7)]]:
 		block(parent, e[0], e[1], Color("e6e2d8"))
-	var hatch := Vector3(span.x + 1.4, 4.2, -14.9)
-	block(parent, Vector3(1.8, 1.3, 1.6), hatch + Vector3(0, 0.65, 0), Color("dedad0"))
-	block(parent, Vector3(1.95, 0.1, 1.75), hatch + Vector3(0, 1.35, 0), Color("aca89f"))
-	block(parent, Vector3(0.7, 1.0, 0.04), hatch + Vector3(0.3, 0.5, 0.81), Color("7d8590"))
+	stair_house(parent, Vector3(span.x + 1.4, 4.2, -14.9), not rv.defeated)
 	skylights(parent, [span.x + 3.2, span.x + 5.8], not rv.defeated)
 	for k in 3:
 		var ac := Vector3(span.x + 4.2 + k * 1.6, 4.25, -14.4)
@@ -6087,6 +6084,70 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	block(parent, Vector3(0.02, 0.22, 0.6), Vector3(ex + 0.045, 1.86, -8.3), c)
 	for k in 3:
 		block(parent, Vector3(0.02, 0.04, 0.44 - k * 0.1), Vector3(ex + 0.045, 1.6 - k * 0.12, -8.3), Color("3d3a36"))
+
+
+## The stair house on the rival's roof, footprint 1.8 x 1.6 m from `at` on the membrane, in one mesh: plastered walls
+## jointed in panels over the membrane turned up their foot under a metal bar, grimed under an overhanging slab whose
+## lip throws a shadow line; a steel door in a frame with a louvre, kick plate, lever and staff-only plate, up a step
+## under a hood and a bulkhead lamp that lights after dark; a louvred vent and a downpipe down the sunny side.
+func stair_house(parent: Node3D, at: Vector3, lit: bool) -> void:
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var st := surface(km)
+	var b := func(p0: Vector3, p1: Vector3, col: Color) -> void:
+		box_into(st, at + p0, at + p1, col)
+	var wall := Color("dedad0")
+	var skin := Color(Sim.City.FLAT_ROOFS[4]).darkened(0.12)
+	b.call(Vector3(-0.9, 0, -0.8), Vector3(0.9, 1.2, 0.8), wall)
+	b.call(Vector3(-0.905, 1.04, -0.805), Vector3(0.905, 1.2, 0.805), wall.darkened(0.1))  # grime under the slab
+	b.call(Vector3(-0.93, 0, -0.83), Vector3(0.93, 0.16, 0.83), skin)
+	b.call(Vector3(-0.935, 0.16, -0.835), Vector3(0.935, 0.185, 0.835), Color("c3c7ca"))
+	for z in [-0.28, 0.26]:
+		b.call(Vector3(0.9, 0.19, z - 0.012), Vector3(0.907, 1.04, z + 0.012), wall.darkened(0.16))
+	b.call(Vector3(-0.462, 0.19, 0.8), Vector3(-0.438, 1.04, 0.807), wall.darkened(0.16))
+	b.call(Vector3(-0.96, 1.17, -0.86), Vector3(0.96, 1.2, 0.86), Color("6f6c66"))  # the shadow line under its lip
+	b.call(Vector3(-0.98, 1.2, -0.88), Vector3(0.98, 1.3, 0.88), Color("cfcbc1"))
+	b.call(Vector3(-0.94, 1.3, -0.84), Vector3(0.94, 1.31, 0.84), skin.lightened(0.08))  # coated like the roof below
+	for x in [-0.32, 0.32]:
+		b.call(Vector3(x - 0.012, 1.31, -0.84), Vector3(x + 0.012, 1.315, 0.84), skin.darkened(0.12))
+	b.call(Vector3(-0.98, 1.3, -0.88), Vector3(0.98, 1.34, -0.84), Color("cfcbc1"))
+	b.call(Vector3(-0.98, 1.3, -0.88), Vector3(-0.94, 1.34, 0.88), Color("cfcbc1"))
+	b.call(Vector3(-0.98, 1.3, 0.84), Vector3(0.98, 1.34, 0.88), Color("ebe7dd"))  # its upturned lip, lit
+	b.call(Vector3(0.94, 1.3, -0.88), Vector3(0.98, 1.34, 0.88), Color("e4e0d6"))
+	b.call(Vector3(-0.6, 1.31, -0.5), Vector3(-0.38, 1.52, -0.28), Color("9aa0a6"))  # a vent cowl
+	b.call(Vector3(-0.64, 1.52, -0.54), Vector3(-0.34, 1.56, -0.24), Color("6e737d"))
+	b.call(Vector3(-0.38, 1.31, -0.5), Vector3(-0.2, 1.312, -0.28), skin.darkened(0.25))  # and its shadow
+	# the door: frame, leaf lit along its closing edge, a louvre and kick plate, lever, a staff-only plate
+	b.call(Vector3(-0.08, 0.185, 0.8), Vector3(0.68, 1.06, 0.83), Color("5e6670"))
+	b.call(Vector3(-0.03, 0.185, 0.8), Vector3(0.63, 1.01, 0.845), Color("8c95a0"))
+	b.call(Vector3(-0.03, 0.185, 0.845), Vector3(0.0, 1.01, 0.848), Color("a9b1ba"))
+	b.call(Vector3(0.02, 0.185, 0.845), Vector3(0.61, 0.28, 0.852), Color("b4bbc2"))
+	for k in 4:
+		var y := 0.36 + k * 0.055
+		b.call(Vector3(0.12, y, 0.845), Vector3(0.48, y + 0.03, 0.858), Color("6c747e"))
+	b.call(Vector3(0.02, 0.6, 0.845), Vector3(0.06, 0.66, 0.86), Color("b9b6ae"))
+	b.call(Vector3(0.02, 0.62, 0.86), Vector3(0.17, 0.645, 0.885), Color("e2dfd8"))
+	b.call(Vector3(0.18, 0.74, 0.845), Vector3(0.48, 0.88, 0.85), Color("f4f1e8"))
+	b.call(Vector3(0.18, 0.845, 0.85), Vector3(0.48, 0.88, 0.852), Color("c8423a"))
+	b.call(Vector3(-0.12, 1.06, 0.8), Vector3(0.72, 1.1, 1.08), Color("b9b5ab"))  # its hood
+	b.call(Vector3(-0.12, 1.1, 1.05), Vector3(0.72, 1.12, 1.08), Color("d6d2c8"))
+	b.call(Vector3(-0.12, 0, 0.83), Vector3(0.72, 0.12, 1.14), Color("b8b3a8"))  # the step, lit along its nose
+	b.call(Vector3(-0.12, 0.12, 1.1), Vector3(0.72, 0.125, 1.14), Color("d7d2c6"))
+	b.call(Vector3(-0.38, 0.86, 0.8), Vector3(-0.2, 1.0, 0.83), Color("8f8c85"))
+	# the sunny side: a louvred vent and a downpipe from the slab to a shoe on the membrane
+	b.call(Vector3(0.9, 0.62, -0.62), Vector3(0.915, 0.98, -0.02), Color("9aa0a6"))
+	for k in 5:
+		var y := 0.66 + k * 0.064
+		b.call(Vector3(0.915, y, -0.58), Vector3(0.935, y + 0.032, -0.06), Color("70767f"))
+	b.call(Vector3(0.91, 0.16, 0.6), Vector3(0.98, 1.2, 0.67), Color("b4b1a9"))
+	b.call(Vector3(0.91, 0.04, 0.58), Vector3(1.1, 0.1, 0.69), Color("a19e96"))
+	commit([st], parent)
+	var lens := block(parent, Vector3(0.16, 0.11, 0.06), at + Vector3(-0.29, 0.93, 0.86), Color("fff3cf"))
+	if lit:
+		light_up(lens, 1.0)
+		if parent == set_node:
+			plane(parent, Vector2(2.0, 2.0), at + Vector3(-0.1, 0.07, 1.4), pool_mat)
 
 
 ## The canopy over the rival's glass, 20 px a metre: standing-seam sheet in the chain's colour, each pan a shade off
