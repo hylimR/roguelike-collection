@@ -293,6 +293,25 @@ float window_in(float along, float bay, float wall, float seed) {
 	return r < 0.8 ? min(0.75, bay * 0.28) - abs(along - (n + 0.5) * bay) : -1.0;
 }
 
+// a carton seen from above, bc from its centre, half size h: taped down its length over the flaps' seam, its edges
+// lit toward the sun, and a label with a barcode in one corner on about half of them
+vec3 carton(vec2 bc, vec2 h, vec3 c, vec2 sun, float r) {
+	bool lx = h.x >= h.y;
+	float al = lx ? bc.x : bc.y;
+	float ac = lx ? bc.y : bc.x;
+	vec2 ed = h - abs(bc);
+	vec2 en = ed.x < ed.y ? vec2(sign(bc.x), 0.0) : vec2(0.0, sign(bc.y));
+	vec3 o = c * (0.94 + 0.1 * r) * (abs(abs(ac) - 0.05) < 0.012 ? 0.84 : 1.0);
+	o = abs(ac) < 0.04 ? vec3(0.86, 0.75, 0.55) * (abs(ac) < 0.008 ? 0.9 : 1.0) : o;
+	vec2 hl = lx ? h : h.yx;
+	vec2 lb = vec2(al - hl.x * 0.5, abs(ac) - hl.y * 0.6);
+	vec2 ls = min(vec2(0.09, 0.055), hl * vec2(0.25, 0.22));
+	if (r < 0.5 && abs(lb.x) < ls.x && abs(lb.y) < ls.y) {
+		o = ls.y > 0.04 && abs(lb.y) < ls.y * 0.45 && fract(lb.x * 70.0) < 0.5 ? vec3(0.25) : vec3(0.93, 0.92, 0.88);
+	}
+	return min(ed.x, ed.y) < 0.03 ? o * (dot(en, sun) > 0.0 ? 1.18 : 0.72) : o;
+}
+
 void fragment() {
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	// the house's three tones, shared with shaded_box: roofs full, walls turned to the sun 0.9, walls away 0.75 (the
@@ -353,7 +372,7 @@ void fragment() {
 				vec2 room = hi - lo;
 				int side = int(fract(r * 7.13) * 4.0);
 				float run = room[side / 2 == 0 ? 1 : 0] * (0.45 + 0.25 * fract(r * 3.71));
-				float deep = k == 1 ? 0.55 : 0.4;
+				float deep = k == 0 ? 0.4 : 0.55;
 				vec2 ha = side / 2 == 0 ? vec2(deep, run) * 0.5 : vec2(run, deep) * 0.5;
 				vec2 ca = mid + (side / 2 == 0 ? vec2((room.x * 0.5 - ha.x) * (side == 0 ? -1.0 : 1.0), 0.0) : vec2(0.0, (room.y * 0.5 - ha.y) * (side == 2 ? -1.0 : 1.0)));
 				vec2 hb = min(room * (k == 0 ? vec2(0.24, 0.22) : vec2(0.15, 0.12)) + 0.05, vec2(0.75));
@@ -368,7 +387,7 @@ void fragment() {
 				vec2 sb = abs(lpos.xz + sunl * tb - cb) - hb;
 				float ina = max(da.x, da.y);
 				float inb = fract(r * 17.0) < 0.8 ? max(db.x, db.y) : 1.0;
-				if (min(max(sa.x, sa.y), tb > 0.0 ? max(sb.x, sb.y) : 1.0) < 0.0 && min(ina, inb) > 0.0) {
+				if (min(max(sa.x, sa.y), tb > 0.0 && inb < 1.0 ? max(sb.x, sb.y) : 1.0) < 0.0 && min(ina, inb) > 0.0) {
 					fl *= 0.78;
 				}
 				if (k == 1 && fract(r * 17.0) < 0.8) {  // a zabuton on the floor at each long side of the low table
@@ -385,6 +404,34 @@ void fragment() {
 					float zm = max(abs(zl.x), abs(zl.y));
 					float zt = zm < 0.035 && min(abs(zl.x), abs(zl.y)) < 0.012 ? 0.66 : (inz > -0.03 ? 0.74 : 0.86 + 0.18 * smoothstep(0.03, 0.17, -inz) + 0.08 * clamp(dot(zl, sunl) * 3.0, -1.0, 1.0));
 					fl = inz < 0.0 ? zc * zt : fl;
+				}
+				if (k == 3 && inb < 1.0) {  // four chairs drawn up to the table, two a side, each shadowed, its back away from it
+					bool lx = hb.x >= hb.y;
+					vec2 hl = lx ? hb : hb.yx;
+					float inc = 1.0;
+					float shc = 1.0;
+					vec2 cq = vec2(0.0);
+					vec2 cout = vec2(0.0);
+					for (int ci = 0; ci < 4; ci++) {
+						vec2 sg = vec2(ci % 2 == 0 ? -1.0 : 1.0, ci / 2 == 0 ? -1.0 : 1.0);
+						vec2 cc = cb + (lx ? vec2(sg.x * hl.x * 0.5, sg.y * (hl.y + 0.1)) : vec2(sg.y * (hl.y + 0.1), sg.x * hl.x * 0.5));
+						vec2 cd = abs(lpos.xz - cc) - 0.15;
+						vec2 cs = abs(lpos.xz + sunl * 0.1 - cc) - 0.15;
+						if (max(cd.x, cd.y) < inc) {
+							inc = max(cd.x, cd.y);
+							cq = lpos.xz - cc;
+							cout = lx ? vec2(0.0, sg.y) : vec2(sg.y, 0.0);
+						}
+						shc = min(shc, max(cs.x, cs.y));
+					}
+					if (inb > 0.0) {
+						fl *= inc > 0.0 && shc < 0.0 ? 0.8 : 1.0;
+						if (inc < 0.0) {
+							float bk = dot(cq, cout);
+							vec3 seat = mix(ACCENT[(pick + 3) % 8], vec3(0.85, 0.8, 0.7), 0.45);
+							fl = bk > 0.095 ? vec3(0.5, 0.33, 0.2) * (bk > 0.13 ? 0.78 : 1.25) : (inc > -0.025 ? vec3(0.5, 0.33, 0.2) * (dot(cq, sunl) > 0.0 ? 1.15 : 0.75) : seat * (inc > -0.045 ? 0.88 : 1.0));
+						}
+					}
 				}
 				if (k == 0 && fract(r * 17.0) < 0.8 && inb > 0.0) {  // a fringe of cream threads off each short end of the rug
 					vec2 fc = lpos.xz - cb;
@@ -421,8 +468,24 @@ void fragment() {
 							float pl = length(tp);
 							fl = pl < 0.08 ? vec3(0.22, 0.23, 0.25) * (pl < 0.018 ? 0.7 : (length(tp - sunl * 0.035) < 0.025 ? 2.2 : (pl > 0.065 ? 0.8 : 1.0))) : fl;
 						}
-					} else if (k == 2) {  // a strip of tape across each box
-						fl *= abs(lpos.x - cb.x) < 0.04 ? 1.2 : 1.0;
+					} else if (k == 2) {  // a stack of cartons: a smaller one set on the big one, laying its shadow across it
+						vec2 tc = lpos.xz - cb;
+						bool lx = hb.x >= hb.y;
+						vec2 c2 = lx ? vec2(-hb.x * 0.35, hb.y * 0.12) : vec2(hb.x * 0.12, -hb.y * 0.35);
+						vec2 h2 = hb * (lx ? vec2(0.5, 0.62) : vec2(0.62, 0.5));
+						vec2 d2 = abs(tc - c2) - h2;
+						vec2 s2 = abs(tc + sunl * 0.12 - c2) - h2;
+						fl = max(d2.x, d2.y) < 0.0 ? carton(tc - c2, h2, BCol[2] * 1.06, sunl, fract(r * 43.0)) : carton(tc, hb, BCol[2], sunl, fract(r * 47.0)) * (max(s2.x, s2.y) < 0.0 ? 0.78 : 1.0);
+					} else {  // a dining table: its top grained along its length, its rim lit toward the sun, a fruit bowl at its middle
+						vec2 tc = lpos.xz - cb;
+						bool lx = hb.x >= hb.y;
+						float gr = fract((lx ? tc.y : tc.x) * 9.0 + 0.3 * sin((lx ? tc.x : tc.y) * 2.2 + r * 40.0));
+						vec2 en = db.x > db.y ? vec2(sign(tc.x), 0.0) : vec2(0.0, sign(tc.y));
+						fl = vec3(0.68, 0.48, 0.3) * (inb > -0.04 ? (dot(en, sunl) > 0.0 ? 1.22 : 0.7) : 0.93 + 0.1 * gr);
+						fl *= inb < -0.04 && length(tc + sunl * 0.05) < 0.12 ? 0.8 : 1.0;
+						float bl = length(tc);
+						vec2 fr = tc - vec2(0.03, 0.02);
+						fl = bl < 0.12 ? (bl > 0.095 ? vec3(0.95, 0.94, 0.9) * (dot(tc, sunl) > 0.0 ? 1.0 : 0.8) : (length(fr) < 0.045 ? vec3(0.95, 0.55, 0.15) : (length(tc + vec2(0.04, -0.03)) < 0.04 ? vec3(0.8, 0.2, 0.18) : vec3(0.98, 0.85, 0.3)))) : fl;
 					}
 				}
 				if (ina < 0.0) {
@@ -463,9 +526,57 @@ void fragment() {
 						} else {
 							fl *= run - 0.44 - al > -0.04 && al < run ? 0.84 : 1.0;
 						}
-					} else if (k == 3) {  // a steel sink let into the counter
-						vec2 sk = abs(lpos.xz - ca) - min(ha, vec2(0.18));
-						fl = max(sk.x, sk.y) < 0.0 ? vec3(0.66, 0.7, 0.74) : fl;
+					} else {  // steel racking or a kitchen counter, both seen from above against the wall
+						vec2 lc = lpos.xz - ca;
+						float across = (side % 2 == 0 ? 1.0 : -1.0) * (side / 2 == 0 ? lc.x : lc.y) + (side / 2 == 0 ? ha.x : ha.y);
+						float along = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
+						vec2 outw = side / 2 == 0 ? vec2(side == 0 ? 1.0 : -1.0, 0.0) : vec2(0.0, side == 2 ? 1.0 : -1.0);
+						vec2 s2 = vec2(dot(sunl, side / 2 == 0 ? vec2(0.0, 1.0) : vec2(1.0, 0.0)), dot(sunl, outw));
+						if (k == 2) {  // racking: goods on its perforated top shelf, a beam front and back, an end frame each bay
+							float nb = max(1.0, floor(run / 0.8 + 0.5));
+							float bl = run / nb;
+							float bi = floor(along / bl);
+							float ba = along - bi * bl;
+							float hf = step(bl * 0.5, ba);
+							float ih = fract(sin(dot(vec2(bi, hf) + r * 61.0, vec2(12.9898, 78.233))) * 43758.5453);
+							float a0 = bi * bl + hf * bl * 0.5 + 0.06;
+							float a1 = bi * bl + (hf + 1.0) * bl * 0.5 - 0.04;
+							float d1 = deep - 0.07 - 0.1 * fract(ih * 7.0);
+							vec2 ihs = vec2(a1 - a0, d1 - 0.05) * 0.5;
+							vec2 ip = vec2(along - (a0 + a1) * 0.5, across - (0.05 + d1) * 0.5);
+							vec2 ie = abs(ip) - ihs;
+							vec2 ish = abs(ip + s2 * 0.08) - ihs;
+							fl = vec3(0.6, 0.64, 0.68) * (fract(along * 14.0) < 0.3 && fract(across * 14.0) < 0.3 ? 0.84 : 1.0) * (ih > 0.15 && max(ish.x, ish.y) < 0.0 ? 0.74 : 1.0);
+							if (ih > 0.15 && max(ie.x, ie.y) < 0.0) {
+								if (ih < 0.7) {
+									fl = carton(ip, ihs, vec3(0.77, 0.6, 0.4), s2, fract(ih * 13.0));
+								} else {  // a plastic tote, its rim lit and its sunny side wall shading the inside
+									vec3 bc = mix(ACCENT[int(ih * 37.0) % 8], vec3(0.55), 0.3);
+									vec2 bq = abs(ip + s2 * 0.07) - (ihs - 0.025);
+									fl = min(-ie.x, -ie.y) < 0.025 ? bc * 1.15 : bc * (max(bq.x, bq.y) > 0.0 ? 0.55 : 0.75);
+								}
+							}
+							fl = ba < 0.03 || ba > bl - 0.03 ? vec3(0.36, 0.4, 0.46) : fl;
+							fl = across < 0.035 || across > deep - 0.035 ? vec3(0.4, 0.44, 0.5) * (across > deep * 0.5 ? 1.25 : 1.0) : fl;
+						} else {  // the counter: a speckled worktop lit along its front, tiles up the wall, a sink and a hob
+							fl = vec3(0.9, 0.9, 0.87) * (0.97 + 0.05 * fract(sin(dot(floor(lpos.xz * 20.0), vec2(12.9898, 78.233))) * 43758.5453));
+							fl = across > deep - 0.03 ? fl * (dot(outw, sunl) > 0.0 ? 1.08 : 0.78) : (across < 0.06 ? vec3(0.78, 0.86, 0.85) * (fract(along * 10.0) < 0.12 ? 0.82 : 1.0) : fl);
+							vec2 sp = vec2(along - run * 0.3, across - deep * 0.55);
+							vec2 sh = vec2(min(0.18, run * 0.13), 0.12);
+							vec2 se = abs(sp) - sh;
+							if (max(se.x, se.y) < 0.0) {
+								vec2 sq = abs(sp + s2 * 0.06) - (sh - 0.03);
+								fl = max(se.x, se.y) > -0.03 ? vec3(0.74, 0.77, 0.8) : (length(sp) < 0.02 ? vec3(0.3) : vec3(0.62, 0.66, 0.7) * (max(sq.x, sq.y) > 0.0 ? 0.72 : 1.0));
+							}
+							fl = length(sp - vec2(0.0, -sh.y - 0.035)) < 0.025 ? vec3(0.8, 0.82, 0.85) : fl;
+							vec2 hp = vec2(along - run * 0.74, across - deep * 0.52);
+							vec2 hh = vec2(min(0.2, run * 0.15), 0.13);
+							vec2 he = abs(hp) - hh;
+							if (max(he.x, he.y) < 0.0) {
+								float rg = length(vec2(abs(hp.x) - hh.x * 0.5, hp.y));
+								fl = vec3(0.15, 0.16, 0.18) * (abs(rg - 0.06) < 0.012 ? 2.6 : (hp.x + hp.y > hh.x * 0.6 && hp.x + hp.y < hh.x * 0.8 ? 1.8 : 1.0));
+							}
+						}
 					}
 				}
 				fl *= mix(0.72, 1.0, smoothstep(0.0, 0.5, wall));
