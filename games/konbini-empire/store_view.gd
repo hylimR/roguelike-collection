@@ -6827,35 +6827,63 @@ func fixture_shell(kind: String, p: Vector2, pid: String) -> void:
 			block(room, Vector3(w + 0.1, 0.05, 0.9), Vector3(p.x, h + 0.025, p.y), Color("3b3f52"))  # the cap's edge band
 			block(room, Vector3(w + 0.06, 0.05, 0.86), Vector3(p.x, h + 0.075, p.y), Color("f6f2e8"))
 			block(room, Vector3(w + 0.06, 0.025, 0.01), Vector3(p.x, h + 0.0625, p.y + 0.435), LAYOUT.stripe[0])
-			# a POP card on the end panel: the line's pack over its price
-			var ex := p.x + w / 2
-			var cy := h - 0.32
-			block(room, Vector3(0.02, 0.5, 0.56), Vector3(ex + 0.01, cy, p.y), LAYOUT.stripe[1])
-			block(room, Vector3(0.02, 0.42, 0.48), Vector3(ex + 0.02, cy, p.y), Color("fffaf0"))
-			block(room, Vector3(0.02, 0.09, 0.36), Vector3(ex + 0.03, cy - 0.13, p.y), Color("fff3c4"))  # the price flash
-			block(room, Vector3(0.02, 0.025, 0.2), Vector3(ex + 0.04, cy - 0.13, p.y), LAYOUT.stripe[0])
-			var ic: Array = Sim.PRODUCTS[pid].icon
-			var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
-			var s := sprite(ic[0], Rect2(ic[1] * cell, 0, cell, cell), 0.28 / cell, false)
-			s.rotation.y = PI / 2
-			s.position = Vector3(ex + 0.04, cy + 0.05, p.y)
-			room.add_child(s)
+			pop_card(Vector3(p.x + w / 2, h - 0.32, p.y), pid)
 		"fridge":
-			var body := Color("dfe9ef")
+			var body := Color("e3ebf0")
+			var frame := Color("4a5058")
 			var top: float = f.rows[-1][1]  # the header's underside
-			block(room, Vector3(w, h, 0.06), Vector3(p.x, h / 2, p.y - 0.37), Color("eef6fa"))  # the lit back
-			for dx in [-1, 1]:
-				block(room, Vector3(0.06, h, 0.8), Vector3(p.x + dx * (w / 2 - 0.03), h / 2, p.y), body)
-			block(room, Vector3(w, deck, 0.8), Vector3(p.x, deck / 2, p.y), body)
-			block(room, Vector3(w, h - top, 0.8), Vector3(p.x, (h + top) / 2, p.y), body)
-			block(room, Vector3(w, 0.18, 0.02), Vector3(p.x, h - 0.12, p.y + 0.41), LAYOUT.stripe[1])
+			var x0 := p.x - w / 2
+			var x1 := p.x + w / 2
+			var zb := p.y - 0.4
+			var zf := p.y + 0.37  # the door frames' back
+			var m := mat(Color.WHITE, null, true)
+			m.vertex_color_use_as_albedo = true
+			m.vertex_color_is_srgb = true
+			var s := surface(m)
+			box_into(s, Vector3(x0, 0, zb), Vector3(x1, h, zb + 0.06), Color("e4f1f8"))  # the lit back
+			for dx in [-1.09, -0.365, 0.365, 1.09]:  # an LED strip down each door's edge
+				box_into(s, Vector3(p.x + dx - 0.015, deck, zb + 0.06), Vector3(p.x + dx + 0.015, top, zb + 0.065), Color("ffffff"))
+			for e in [x0, x1 - 0.06]:
+				box_into(s, Vector3(e, 0, zb), Vector3(e + 0.06, h, zf), body)
+			box_into(s, Vector3(x1, 0, zf - 0.08), Vector3(x1 + 0.01, h, zf + 0.04), frame)  # the frame wrapped round the end
+			box_into(s, Vector3(x0, 0, zb), Vector3(x1, deck, zf), body)
+			box_into(s, Vector3(x0, top, zb), Vector3(x1, h, zf), body)
+			box_into(s, Vector3(x0 - 0.01, h, zb - 0.01), Vector3(x1 + 0.01, h + 0.02, zf + 0.05), body.darkened(0.06))  # the lid
+			box_into(s, Vector3(x0 + 0.2, h + 0.02, zb + 0.06), Vector3(x1 - 0.2, h + 0.06, zb + 0.34), Color("6d737b"))  # the condenser's grille on top
+			for k in 9:
+				var gx := x0 + 0.26 + k * (w - 0.52) / 8
+				box_into(s, Vector3(gx - 0.012, h + 0.06, zb + 0.08), Vector3(gx + 0.012, h + 0.065, zb + 0.32), Color("a3a9b0"))
+			# the header: a white fascia banded in the stripes, a light strip under it washing the doors
+			box_into(s, Vector3(x0, top, zf), Vector3(x1, h, zf + 0.04), Color("fbfaf5"))
+			box_into(s, Vector3(x0, top + 0.03, zf + 0.04), Vector3(x1, top + 0.07, zf + 0.045), LAYOUT.stripe[0])
+			box_into(s, Vector3(x0, top + 0.08, zf + 0.04), Vector3(x1, top + 0.17, zf + 0.045), LAYOUT.stripe[1])
+			box_into(s, Vector3(x0 + 0.06, top - 0.025, zf - 0.08), Vector3(x1 - 0.06, top, zf - 0.02), Color("ffffff"))
+			# the kick plate: a dark grille slotted across under the doors
+			box_into(s, Vector3(x0, 0, zf), Vector3(x1, deck, zf + 0.04), Color("3a3f46"))
+			for y in [0.035, 0.06, 0.085]:
+				box_into(s, Vector3(x0 + 0.1, y - 0.006, zf + 0.04), Vector3(x1 - 0.1, y + 0.006, zf + 0.045), Color("1f2328"))
 			for r in f.rows.slice(1):  # wire shelves, a price strip on each
-				block(room, Vector3(w - 0.12, 0.02, 0.62), Vector3(p.x, r[0] - 0.01, p.y - 0.03), trim)
-				block(room, Vector3(w - 0.12, 0.03, 0.01), Vector3(p.x, r[0] - 0.015, p.y + 0.285), Color("fbf7ee"))
-			var gh: float = top - deck
-			for dx in [-0.365, 0.365]:  # the door mullions
-				block(room, Vector3(0.05, gh, 0.05), Vector3(p.x + dx, deck + gh / 2, p.y + 0.375), trim)
-			block(room, Vector3(w - 0.12, gh, 0.01), Vector3(p.x, deck + gh / 2, p.y + 0.39), Color(0.78, 0.9, 0.96, 0.12))
+				box_into(s, Vector3(p.x - w / 2 + 0.06, r[0] - 0.02, p.y - 0.34), Vector3(p.x + w / 2 - 0.06, r[0], p.y + 0.28), trim)
+				box_into(s, Vector3(p.x - w / 2 + 0.06, r[0] - 0.03, p.y + 0.28), Vector3(p.x + w / 2 - 0.06, r[0], p.y + 0.29), Color("fbf7ee"))
+			# the door frames: stiles, mullions and rails in graphite, a steel bar handle on each door's closing edge
+			for dx in [[-1.09, -1.05], [-0.395, -0.335], [0.335, 0.395], [1.05, 1.09]]:
+				box_into(s, Vector3(p.x + dx[0], deck, zf), Vector3(p.x + dx[1], top, zf + 0.04), frame)
+			for y in [[deck, deck + 0.04], [top - 0.04, top]]:
+				box_into(s, Vector3(p.x - 1.09, y[0], zf), Vector3(p.x + 1.09, y[1], zf + 0.04), frame)
+			for hx in [-0.45, 0.28, 0.45]:
+				box_into(s, Vector3(p.x + hx - 0.012, 0.66, zf + 0.04), Vector3(p.x + hx + 0.012, 1.32, zf + 0.075), Color("8e969e"))
+				for hy in [0.7, 1.28]:
+					box_into(s, Vector3(p.x + hx - 0.01, hy - 0.012, zf + 0.04), Vector3(p.x + hx + 0.01, hy + 0.012, zf + 0.06), Color("6b727a"))
+			# the glass, faintly blue, with a sheen down each pane
+			var g := surface(mat(Color(0.78, 0.9, 0.96, 0.16), null, true))
+			var sh := surface(mat(Color(1, 1, 1, 0.28), null, true))
+			for d in [[-1.05, -0.395], [-0.335, 0.335], [0.395, 1.05]]:
+				box_into(g, Vector3(p.x + d[0], deck + 0.04, zf + 0.015), Vector3(p.x + d[1], top - 0.04, zf + 0.025), Color.WHITE)
+				for k in 2:
+					var sx: float = p.x + d[0] + 0.1 + k * 0.08
+					box_into(sh, Vector3(sx, deck + 0.04, zf + 0.026), Vector3(sx + 0.05 - k * 0.03, top - 0.04, zf + 0.03), Color.WHITE)
+			commit([s, g, sh], room)
+			pop_card(Vector3(x1 + 0.01, 1.1, p.y - 0.05), pid)
 		"freezer":
 			var body := Color("eef3f6")
 			block(room, Vector3(w, deck, 0.8), Vector3(p.x, deck / 2, p.y), body)
@@ -6866,6 +6894,20 @@ func fixture_shell(kind: String, p: Vector2, pid: String) -> void:
 			block(room, Vector3(w + 0.02, 0.08, 0.82), Vector3(p.x, 0.04, p.y), trim)
 			block(room, Vector3(0.03, 0.025, 0.68), Vector3(p.x, h - 0.0125, p.y), trim)  # where the sliding lids meet
 			block(room, Vector3(w - 0.12, 0.02, 0.68), Vector3(p.x, h - 0.01, p.y), Color(0.78, 0.9, 0.96, 0.18))
+
+
+## A POP card on a fixture's end panel at `at` (its face to +x): the line's pack over its price, framed in the stripes.
+func pop_card(at: Vector3, pid: String) -> void:
+	block(room, Vector3(0.02, 0.5, 0.56), at + Vector3(0.01, 0, 0), LAYOUT.stripe[1])
+	block(room, Vector3(0.02, 0.42, 0.48), at + Vector3(0.02, 0, 0), Color("fffaf0"))
+	block(room, Vector3(0.02, 0.09, 0.36), at + Vector3(0.03, -0.13, 0), Color("fff3c4"))  # the price flash
+	block(room, Vector3(0.02, 0.025, 0.2), at + Vector3(0.04, -0.13, 0), LAYOUT.stripe[0])
+	var ic: Array = Sim.PRODUCTS[pid].icon
+	var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
+	var s := sprite(ic[0], Rect2(ic[1] * cell, 0, cell, cell), 0.28 / cell, false)
+	s.rotation.y = PI / 2
+	s.position = at + Vector3(0.04, 0.05, 0)
+	room.add_child(s)
 
 
 ## A product line's stock on its fixture's boards: packs in its own art, upright to the locked store camera (laid back
