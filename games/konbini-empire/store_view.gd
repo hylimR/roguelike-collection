@@ -761,7 +761,7 @@ var bold: Font  # the HUD's heavy weight, for the clock and street tags
 var styles := {}  # rounded boxes for tags and bars, by color and radius
 var roof_texs := {}  # the rival's roof by the width of its shop, and the vacant unit's by minus its width
 var glass_sheen: StandardMaterial3D  # the knee-height glass front's sheen, tiled per run
-var skylight_pair: Array = []  # weakrefs to the rival's skylight glass and its night glow, shared by both skylights
+var skylight_pair: Array = []  # weakrefs to the rival's skylight glass, its night glow and its unlit glass, shared by both skylights
 
 var walkers: Array = []
 var cars: Array = []
@@ -5873,12 +5873,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	block(parent, Vector3(1.8, 1.3, 1.6), hatch + Vector3(0, 0.65, 0), Color("dedad0"))
 	block(parent, Vector3(1.95, 0.1, 1.75), hatch + Vector3(0, 1.35, 0), Color("aca89f"))
 	block(parent, Vector3(0.7, 1.0, 0.04), hatch + Vector3(0.3, 0.5, 0.81), Color("7d8590"))
-	for k in 2:
-		var sx := span.x + 3.2 + k * 2.6
-		block(parent, Vector3(1.9, 0.2, 1.3), Vector3(sx, 4.3, -10.0), Color("d6d3ca"))
-		plane(parent, Vector2(1.6, 1.0), Vector3(sx, 4.405, -10.0), skylight_mats()[0])
-		if not rv.defeated:
-			plane(parent, Vector2(2.4, 1.6), Vector3(sx, 4.45, -10.0), skylight_mats()[1])
+	skylights(parent, [span.x + 3.2, span.x + 5.8], not rv.defeated)
 	for k in 3:
 		var ac := Vector3(span.x + 4.2 + k * 1.6, 4.25, -14.4)
 		block(parent, Vector3(1.25, 0.1, 1.05), ac + Vector3(0, 0.05, 0), Color("8e8d88"))
@@ -6072,42 +6067,94 @@ func rival_sign(parent: Node3D, rv: Dictionary, cx: float, c: Color) -> void:
 		lit_mats[-1][2] = 1.3
 
 
-## The rival's skylights, 20 px a metre (the glow 10): [four panes in a pale frame, darker sky reflected toward the far edge with a
-## sheen across them, dimming with the day; the shop's cool light through the panes after dark, softly past the frame].
+## The rival's two skylights over the shop floor, in one mesh: a kerb upstand with the membrane turned up its foot under
+## an aluminium frame, and a hipped lantern of glass on it, each slope a tone apart, its hips and ridge capped in
+## aluminium. After dark (unless the chain is beaten) the shop's light glows up through it.
+func skylights(parent: Node3D, xs: Array, lit: bool) -> void:
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var kit := surface(km)
+	var sm := skylight_mats()
+	var glass := surface(sm[0 if lit else 2])
+	var alu := Color("c9ced2")
+	var bar := func(a: Vector3, b: Vector3) -> void:
+		var side := (b - a).cross(Vector3.UP).normalized() * 0.022
+		if side.length() < 0.01:
+			side = Vector3(0.022, 0, 0)
+		kit.set_color(alu)
+		add_quad(kit, [a - side, a + side, b + side, b - side].map(func(v): return v + Vector3(0, 0.012, 0)), [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	for sx: float in xs:
+		var c := Vector3(sx, 0, -10.0)
+		box_into(kit, c + Vector3(-0.98, 4.24, -0.68), c + Vector3(0.98, 4.3, 0.68), Color("aeaba2"))
+		box_into(kit, c + Vector3(-0.95, 4.24, -0.65), c + Vector3(0.95, 4.5, 0.65), Color("d6d3ca"))
+		box_into(kit, c + Vector3(-0.93, 4.5, -0.63), c + Vector3(0.93, 4.56, 0.63), alu)
+		var e := 4.56
+		var r := 4.86
+		var hx := 0.86
+		var hz := 0.56
+		var rx := 0.3
+		var p := [c + Vector3(-hx, e, hz), c + Vector3(hx, e, hz), c + Vector3(hx, e, -hz), c + Vector3(-hx, e, -hz)]
+		var q := [c + Vector3(-rx, r, 0), c + Vector3(rx, r, 0)]
+		var u0 := (hx - rx) / (2 * hx)
+		glass.set_color(Color(0.96, 0.96, 0.96))  # toward the street, catching the sky
+		add_quad(glass, [p[0], p[1], q[1], q[0]], [Vector2(0, 1), Vector2(1, 1), Vector2(1 - u0, 0), Vector2(u0, 0)])
+		glass.set_color(Color(0.72, 0.72, 0.72))
+		add_quad(glass, [p[2], p[3], q[0], q[1]], [Vector2(0, 1), Vector2(1, 1), Vector2(1 - u0, 0), Vector2(u0, 0)])
+		glass.set_color(Color(0.88, 0.88, 0.88))  # the hip ends, the sunny one lighter
+		add_quad(glass, [p[3], p[0], q[0], q[0]], [Vector2(0.18, 1), Vector2(0.82, 1), Vector2(0.5, 0), Vector2(0.5, 0)])
+		glass.set_color(Color(0.66, 0.66, 0.66))
+		add_quad(glass, [p[1], p[2], q[1], q[1]], [Vector2(0.18, 1), Vector2(0.82, 1), Vector2(0.5, 0), Vector2(0.5, 0)])
+		for k in 4:
+			bar.call(p[k], q[0] if k == 0 or k == 3 else q[1])
+		box_into(kit, q[0] + Vector3(-0.03, -0.01, -0.035), q[1] + Vector3(0.03, 0.035, 0.035), alu)
+		if lit:
+			plane(parent, Vector2(3.0, 2.4), c + Vector3(0, 4.58, 0), sm[1])
+	commit([kit, glass], parent)
+
+
+## The skylight glass, 40 px a metre across a slope (the glow 8): [panes between glazing bars running up the slope, the
+## sky reflected darker toward the eaves with a sheen across them, lit from below after dark; the shop's cool light
+## glowing out round the kerb].
 func skylight_mats() -> Array:
-	if skylight_pair.size() == 2 and skylight_pair[0].get_ref() and skylight_pair[1].get_ref():
-		return [skylight_pair[0].get_ref(), skylight_pair[1].get_ref()]
-	var glass := Image.create(32, 20, false, Image.FORMAT_RGB8)
-	for y in 20:
-		for x in 32:
-			var bar := x == 0 or x == 31 or y == 0 or y == 19 or x == 16 or y == 10
-			var c := Color("5d86a0").lerp(Color("93b6c9"), y / 19.0)
-			if posmod(x + y, 16) < 3:
-				c = c.lerp(Color("d8eaf2"), 0.4)
-			glass.set_pixel(x, y, Color("8f989d") if bar else c)
+	if skylight_pair.size() == 3 and skylight_pair.all(func(w): return w.get_ref() != null):
+		return skylight_pair.map(func(w): return w.get_ref())
+	var glass := Image.create(64, 24, false, Image.FORMAT_RGB8)
+	for y in 24:
+		for x in 64:
+			var c := Color("a9c8d8").lerp(Color("4f7890"), y / 23.0)
+			var s := posmod(x - 2 * y, 40)
+			if s < 6:
+				c = c.lerp(Color("e4f1f6"), 0.45 if s > 1 and s < 5 else 0.25)
+			if x % 16 == 0:
+				c = Color("b8bec2")
+			elif x % 16 == 1:
+				c = c.darkened(0.25)  # the bar's shadow on the pane
+			glass.set_pixel(x, y, c)
 	glass.generate_mipmaps()
-	var gm := mat(Color.WHITE, ImageTexture.create_from_image(glass))
-	gm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	gm.texture_repeat = false
-	var mask := Image.create(24, 16, false, Image.FORMAT_RGBA8)
-	for y in 16:
+	var gt := ImageTexture.create_from_image(glass)
+	var gms := []
+	for k in 2:  # lit from below, and a beaten chain's left dark
+		var gm := mat(Color.WHITE, gt)
+		gm.vertex_color_use_as_albedo = true
+		gm.vertex_color_is_srgb = true
+		gm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		gm.texture_repeat = false
+		if k == 0:
+			light_up(gm, 1.0)
+		gms.append(gm)
+	var mask := Image.create(24, 18, false, Image.FORMAT_RGBA8)
+	for y in 18:
 		for x in 24:
-			var px := x - 4
-			var py := y - 3
-			var a := 0.0
-			if px >= 0 and px < 16 and py >= 0 and py < 10:
-				a = 0.3 if px == 0 or px == 15 or py == 0 or py == 9 or px == 8 or py == 5 else 1.0
-			else:
-				var d := Vector2(maxf(maxf(-px, px - 15), 0), maxf(maxf(-py, py - 9), 0)).length()
-				a = 0.3 * pow(clampf(1.0 - d / 4.0, 0.0, 1.0), 2.0)
-			mask.set_pixel(x, y, Color(1, 1, 1, a))
+			var d := Vector2(maxf(absf(x - 11.5) - 7.5, 0), maxf(absf(y - 8.5) - 4.5, 0)).length()
+			mask.set_pixel(x, y, Color(1, 1, 1, 0.8 * pow(clampf(1.0 - d / 4.0, 0.0, 1.0), 2.0)))
 	var lm: StandardMaterial3D = sign_glow_mat.duplicate()
 	lm.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
 	lm.albedo_texture = ImageTexture.create_from_image(mask)
 	lm.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night)
 	fascia_glows.append([weakref(lm), SHOP_LIGHT])
-	skylight_pair = [weakref(gm), weakref(lm)]
-	return [gm, lm]
+	skylight_pair = [weakref(gms[0]), weakref(lm), weakref(gms[1])]
+	return [gms[0], lm, gms[1]]
 
 
 ## The rival's roof as the city's flat roofs are drawn, kept tidier than the vacant unit's: a coating in strips across its
@@ -6127,7 +6174,7 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 		lanes.append(r.randf_range(0.91, 1.04))
 	var casts := [[Rect2(span.x + 0.5, -15.7, 1.8, 1.6), Vector2(0.49, -0.84)]]  # footprint, shadow offset (street frame)
 	for k in 2:
-		casts.append([Rect2(span.x + 2.25 + k * 2.6, -10.65, 1.9, 1.3), Vector2(0.12, -0.2)])
+		casts.append([Rect2(span.x + 2.25 + k * 2.6, -10.65, 1.9, 1.3), Vector2(0.22, -0.38)])
 	for k in 3:
 		casts.append([Rect2(span.x + 3.575 + k * 1.6, -14.925, 1.25, 1.05), Vector2(0.25, -0.42)])
 	var walk := Rect2(span.x + 1.6, -13.8, span.y - span.x - 2.2, 0.8)
