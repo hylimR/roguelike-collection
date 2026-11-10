@@ -28,7 +28,7 @@ const OUTDOOR_CAST := [[[0.0, 0.3, 0.08], [0.12, 1.02, 0.95, true]], [[0.0, 0.3,
 	[[0.0, 0.3, 0.08], [0.12, 1.02, 0.98, true]], [[0.0, 0.2, 0.06], [0.05, 1.05, 0.65, true]], [[-0.1, 0.6, 0.8, true]],
 	[[-0.1, 0.6, 0.75, true]], [[0.0, 0.9, 0.06]], [[0.0, 0.74, 0.3]], [[0.0, 0.62, 0.42]], [[0.0, 0.85, 0.36]],
 	[[0.0, 0.42, 0.72]], [[0.0, 0.72, 0.04], [0.7, 0.96, 0.22]]]
-const DECOR_CAST := {0: [0.0, 0.85, 0.42], 5: [0.0, 0.9, 0.42]}  # the potted plant and the A-board, the same way
+const DECOR_CAST := {0: [0.0, 0.85, 0.42]}  # the potted plant, the same way
 const FACILITY_CAST := {"vending": [0.0, 1.8, 1.0], "gacha": [0.0, 1.35, 1.3], "bench": [0.3, 0.85, 1.2]}  # metres
 const VEHICLE_CELL := Vector2i(128, 96)
 const VEHICLE_PX := 0.025
@@ -4617,6 +4617,129 @@ func garbage_station(gs: Vector3) -> void:
 	blob(set_node, Vector2(gs.x, gs.z - 0.3), 1.0)
 
 
+## The A-board by your door, turned `turn` toward the street: two slanted boards hinged at the top under a cap, each
+## framed in grained wood round a chalkboard lettered オススメ in yellow over a pink underline, an onigiri and a coffee
+## cup chalked beside their prices, smudged where the last menu was wiped off, with a chain between its legs.
+func a_board(at: Vector2, turn: float) -> void:
+	const W := 0.54
+	const H := 0.9
+	const S := 0.2
+	const PX := 64.0
+	var ln := Vector2(S - 0.02, H).length()
+	var iw := roundi(W * PX)
+	var ih := roundi(ln * PX)
+	var r := RandomNumberGenerator.new()
+	r.seed = 29
+	var noise := FastNoiseLite.new()
+	noise.seed = 29
+	noise.frequency = 0.12
+	var wood := Color("8a5a34")
+	var board := Color("2b3833")
+	var img := Image.create(iw, ih, false, Image.FORMAT_RGB8)
+	for y in ih:
+		var grain := r.randf_range(0.92, 1.06)
+		for x in iw:
+			var edge := mini(mini(x, iw - 1 - x), mini(y, ih - 1 - y))
+			var c: Color
+			if edge < 3:
+				c = wood * (grain * r.randf_range(0.96, 1.03) * (1.12 if edge == 0 and y == 0 else (0.82 if edge == 2 else 1.0)))
+			else:
+				var smear := smoothstep(0.35, 0.8, noise.get_noise_2d(x * 1.6, y) * 0.5 + 0.5)
+				c = board.lerp(Color("5f6c66"), smear * 0.3) * r.randf_range(0.95, 1.04)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b))
+	var chalk := func(x: int, y: int, col: Color) -> void:
+		if x >= 3 and x < iw - 3 and y >= 3 and y < ih - 3 and r.randf() < 0.9:
+			img.set_pixel(x, y, col.lerp(img.get_pixel(x, y), r.randf_range(0.0, 0.2)))
+	var glyphs := {"o": ["...#.", "#####", "..##.", ".#.#.", "#..#."], "s": ["####.", "...#.", "..#..", ".#.#.", "#...#"],
+		"m": ["....#", ".#.#.", "..#..", ".#.#.", "#...."],
+		"1": [".#.", "##.", ".#.", ".#.", "###"], "2": ["##.", "..#", ".#.", "#..", "###"], "0": ["###", "#.#", "#.#", "#.#", "###"],
+		"5": ["###", "#..", "##.", "..#", "##."]}
+	var write := func(text: String, x0: int, y0: int, col: Color) -> void:
+		for ch in text:
+			var g: Array = glyphs[ch]
+			for gy in g.size():
+				for gx in g[gy].length():
+					if g[gy][gx] == "#":
+						chalk.call(x0 + gx, y0 + gy, col)
+			x0 += g[0].length() + 1
+	var yellow := Color("f3d873")
+	var pink := Color("f29bb4")
+	var white := Color("eef0e8")
+	write.call("ossm", 4, 5, yellow)
+	for x in range(4, iw - 4):  # the underline, wavering
+		chalk.call(x, 12 + (1 if posmod(x, 6) < 3 else 0), pink)
+	var oc := Vector2(9.5, 22.0)  # the onigiri: a chalk triangle filled in, its nori band left dark and outlined
+	for y in range(15, 27):
+		for x in range(3, 17):
+			var half := (y - 15) * 0.55 + 0.5
+			if absf(x - oc.x) < half:
+				var nori := y >= 22 and absf(x - oc.x) < 2.5
+				if absf(absf(x - oc.x) - half) < 1.0 or y == 26 or (nori and (absf(absf(x - oc.x) - 2.5) < 1.0 or y == 22)):
+					chalk.call(x, y, white)
+				elif not nori and r.randf() < 0.45:
+					chalk.call(x, y, white.lerp(board, 0.4))
+	write.call("120", 17, 19, pink)
+	for y in range(33, 41):  # the coffee cup, its handle and a curl of steam
+		for x in range(5, 13):
+			if x == 5 or x == 11 or y == 40 or y == 33:
+				chalk.call(x, y, white)
+		if y >= 35 and y <= 37:
+			chalk.call(13, y, white)
+	for y in range(28, 32):
+		chalk.call(7 + (y % 2), y, white.lerp(board, 0.3))
+		chalk.call(10 - (y % 2), y, white.lerp(board, 0.3))
+	write.call("150", 17, 35, yellow)
+	for k in 3:  # scrawled lines of small print below
+		for x in range(5, iw - 6 - k * 4):
+			if posmod(x * 7 + k * 3, 5) != 0:
+				chalk.call(x, 46 + k * 3 + (1 if x % 3 == 2 else 0), white.lerp(board, 0.25))
+	img.generate_mipmaps()
+	var face := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	face.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	face.texture_repeat = false
+	var kit := mat(Color.WHITE)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var fs := surface(face)
+	var st := surface(kit)
+	var b := Basis(Vector3.UP, turn)
+	var o := Vector3(at.x, 0, at.y)
+	for side: float in [1.0, -1.0]:
+		var foot := Vector3(0, 0, S * side)
+		var head := Vector3(0, H, 0.02 * side)
+		var n := Vector3(0, S - 0.02, H).normalized() * Vector3(1, 1, side) * 0.025  # the board's thickness, inward
+		var hx := Vector3(W / 2, 0, 0)
+		var q := [foot + hx, head + hx, head - hx, foot - hx].map(func(p): return o + b * p)
+		add_quad(fs, q, [Vector2(1, 1), Vector2(1, 0), Vector2(0, 0), Vector2(0, 1)] if side > 0 else [Vector2(0, 1), Vector2(0, 0), Vector2(1, 0), Vector2(1, 1)])
+		for e: float in [1.0, -1.0]:  # the frame's edge along each side, lit on the sun's side
+			var ex := hx * e
+			var shade := 0.9 if e * side > 0 else 0.75
+			st.set_color(Color(wood.r * shade, wood.g * shade, wood.b * shade))
+			add_quad(st, [foot + ex, head + ex, head + ex - n, foot + ex - n].map(func(p): return o + b * p), [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+		st.set_color(wood * 0.7)
+		add_quad(st, [foot + hx - n, head + hx - n, head - hx - n, foot - hx - n].map(func(p): return o + b * p), [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	var cap := [Vector3(-W / 2 - 0.01, H - 0.02, -0.05), Vector3(W / 2 + 0.01, H + 0.03, 0.05)]
+	st.set_color(wood.darkened(0.2))
+	for p in [[Vector3(-1, 0, 0), 0.9], [Vector3(0, 0, 1), 0.9], [Vector3(0, 1, 0), 1.0], [Vector3(0, 0, -1), 0.75], [Vector3(1, 0, 0), 0.75]]:
+		var fn: Vector3 = p[0]
+		var u := Vector3.UP if absf(fn.y) < 0.5 else Vector3.RIGHT
+		var v := fn.cross(u)
+		var c: Vector3 = (cap[0] + cap[1]) / 2
+		var h: Vector3 = (cap[1] - cap[0]) / 2
+		var ctr := c + fn * absf(fn.dot(h))
+		var hu := u * absf(u.dot(h))
+		var hv := v * absf(v.dot(h))
+		st.set_color(wood.darkened(0.2) * p[1])
+		add_quad(st, [ctr - hu - hv, ctr + hu - hv, ctr + hu + hv, ctr - hu + hv].map(func(q): return o + b * q), [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	for e: float in [1.0, -1.0]:  # the chain holding the legs apart
+		var ex := Vector3(W / 2 - 0.03, 0, 0) * e
+		var a := Vector3(0, 0.32, (S - 0.02) * (1.0 - 0.32 / H) + 0.02 - 0.03)
+		var a2 := Vector3(a.x, a.y, -a.z)
+		st.set_color(Color("9a9c9c"))
+		add_quad(st, [a + ex, a2 + ex, a2 + ex + Vector3(0, 0.012, 0), a + ex + Vector3(0, 0.012, 0)].map(func(p): return o + b * p), [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	commit([fs, st], set_node)
+
+
 ## The car park's furniture in one surface: wheel stops banded in yellow, and a low planter along the back below the
 ## till's sight line, a coped concrete trough holding a clipped hedge of lumpy shrubs with a few azaleas in flower,
 ## their foliage leafed in leaf_tex and each lump bellying out over a shaded waist.
@@ -5151,7 +5274,10 @@ func build_set() -> void:
 		blob(set_node, p[1], PROP_BLOB.get(p[0], OUTDOOR_SCALE[p[0]] * 1.5))
 		outdoor_cast(set_node, p[0], p[1], OUTDOOR_SCALE[p[0]] * 0.55)
 	spill(set_node, Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7, shop_spill_mat)  # your shop's open front
-	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6], [5, Vector2(-8.3, -6.2), 0.7]]:
+	a_board(Vector2(-8.3, -6.2), 0.35)
+	blob(set_node, Vector2(-8.3, -6.2), 0.45)
+	cast(set_node, Vector2(-8.3, -6.2), 0.0, 0.9, 0.44)
+	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6]]:
 		var s := sprite("decor", Rect2(d[0] * DECOR, 0, DECOR, DECOR), DECOR_PX * d[2])
 		s.position = Vector3(d[1].x, DECOR / 2.0 * DECOR_PX * d[2], d[1].y)
 		set_node.add_child(s)
