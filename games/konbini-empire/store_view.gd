@@ -630,6 +630,7 @@ var floor_tex := {}  # shop floor texture by left wall
 var set_sig := ""
 var tarmac_m: StandardMaterial3D
 var slabs_m: StandardMaterial3D
+var tactile_m: StandardMaterial3D
 var car_park_m: StandardMaterial3D
 var road_paint_m: StandardMaterial3D
 var side_tar_m: StandardMaterial3D
@@ -1167,6 +1168,49 @@ func pavers() -> StandardMaterial3D:
 	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	return m
+
+
+## Tenji blocks for a 1.28 m repeat of 32 cm tiles (8 px each): guide tiles ribbed with raised bars along the
+## way to walk in the top half (v 0-0.5), warning tiles studded with a grid of studs in the bottom half, each bar and
+## stud lit on its top edge over the shadow it casts; every tile a shade off, scuffed and grimy, its grout dark.
+func tactile() -> StandardMaterial3D:
+	if tactile_m:
+		return tactile_m
+	var r := RandomNumberGenerator.new()
+	r.seed = 37
+	var base := Color("d8bb5c")
+	var img := Image.create(32, 16, false, Image.FORMAT_RGB8)
+	for t in 8:
+		var tone := r.randf_range(0.97, 1.02) if r.randf() < 0.85 else r.randf_range(0.93, 0.95)
+		for y in 8:
+			for x in 8:
+				var f := tone * r.randf_range(0.97, 1.02)
+				if t < 4 and x >= 1 and x <= 6:
+					f *= [1.04, 1.14, 0.82, 1.0, 1.14, 0.82, 1.0, 1.0][y]
+				elif t >= 4:
+					var dx := posmod(x - 1, 3)
+					var dy := posmod(y - 1, 3)
+					if x < 7 and y < 7:
+						f *= [[1.14, 1.06, 1.0], [1.06, 0.82, 1.0], [1.0, 1.0, 1.0]][dy][dx]
+				if x == 7 or y == 7:
+					f = 0.74 * r.randf_range(0.96, 1.03)
+				elif x == 0 or y == 0:
+					f *= 1.04
+				img.set_pixel((t % 4) * 8 + x, (t / 4) * 8 + y, Color(minf(base.r * f, 1.0), minf(base.g * f, 1.0), minf(base.b * f, 1.0)))
+	img.generate_mipmaps()
+	tactile_m = mat(Color.WHITE, ImageTexture.create_from_image(img))
+	tactile_m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	return tactile_m
+
+
+## A run of tenji tiles over r at height y, laid on the world's 32 cm grid: guide tiles (or warning ones when warn)
+## whose bars run along x, or along z when along_z.
+func tactile_run(st: SurfaceTool, r: Rect2, y: float, warn := false, along_z := false) -> void:
+	var v0 := 0.5 if warn else 0.0
+	var v := [Vector3(r.position.x, y, r.position.y), Vector3(r.end.x, y, r.position.y), Vector3(r.end.x, y, r.end.y), Vector3(r.position.x, y, r.end.y)]
+	var uv := v.map(func(p): return Vector2(p.z / 1.28, v0 + (p.x - r.position.x) / r.size.x * 0.5)) if along_z \
+		else v.map(func(p): return Vector2(p.x / 1.28, v0 + (p.z - r.position.y) / r.size.y * 0.5))
+	add_quad(st, v, uv)
 
 
 ## Poured concrete for a 7.2 m repeat of 1.8 m slabs (32 px each): each slab a shade off, mottled with grime in
@@ -4612,14 +4656,38 @@ func build_set() -> void:
 	kerb_m.vertex_color_use_as_albedo = true
 	kerb_m.vertex_color_is_srgb = true
 	var kerbs := surface(kerb_m)
-	var tactile := surface(mat(Color("d2b862")))  # the yellow guide strip down each sidewalk
+	var tactile := surface(tactile())  # the yellow guide strip down each sidewalk
 	# a raised kerb along each sidewalk, dropped flush at the crossing and, on your side, across the car park's mouth
 	for sd in [[far_gaps, -7.2, -3.8, -5.4, Vector2(-3.4, Sim.CROSS_X + 1.7)], [near_gaps, 3.7, 3.6, 5.0, Vector2(Sim.CROSS_X - 1.7, Sim.CROSS_X + 1.7)]]:
 		var drop: Vector2 = sd[4]
 		for o in open_spans(sd[0]):
 			rect_quad(walk, Rect2(o.x, sd[1], o.y - o.x, 3.5), -0.045, 0.0, false, 0.5)
 			rect_quad(kerb, Rect2(o.x, sd[2], o.y - o.x, 0.2), -0.04)
-			rect_quad(tactile, Rect2(o.x, sd[3], o.y - o.x, 0.32), -0.042)
+			# warning tiles where the strip meets a side road and across the crossing, a guide spur out to a row of
+			# them along the kerb
+			var warn := []
+			if o.x > street_x.x:
+				warn.append(Vector2(o.x, floorf(o.x / 0.32 + 1.0) * 0.32))
+			if o.y < street_x.y:
+				warn.append(Vector2(ceilf(o.y / 0.32 - 1.0) * 0.32, o.y))
+			var cx := floorf(Sim.CROSS_X / 0.32) * 0.32
+			if cx - 0.32 > o.x and cx + 0.64 < o.y:
+				warn.append(Vector2(cx - 0.32, cx + 0.64))
+				var kz: float = sd[2] + 0.22 if sd[2] > 0.0 else sd[2] - 0.02
+				var sz: float = sd[3] if sd[2] > 0.0 else sd[3] + 0.32
+				tactile_run(tactile, Rect2(cx - 1.28, minf(kz, kz + 0.32 * signf(sd[2])), 2.88, 0.32), -0.042, true)
+				var spur := Vector2(kz + 0.32, sz) if sd[2] > 0.0 else Vector2(sz, kz - 0.32)
+				tactile_run(tactile, Rect2(cx, spur.x, 0.32, spur.y - spur.x), -0.042, false, true)
+			warn.sort_custom(func(a, b): return a.x < b.x)
+			var tx: float = o.x
+			for w in warn:
+				if w.x > tx:
+					tactile_run(tactile, Rect2(tx, sd[3], w.x - tx, 0.32), -0.042)
+				if w.y > maxf(w.x, tx):
+					tactile_run(tactile, Rect2(maxf(w.x, tx), sd[3], w.y - maxf(w.x, tx), 0.32), -0.042, true)
+				tx = maxf(tx, w.y)
+			if o.y > tx:
+				tactile_run(tactile, Rect2(tx, sd[3], o.y - tx, 0.32), -0.042)
 			for seg in [Vector2(o.x, minf(o.y, drop.x)), Vector2(maxf(o.x, drop.y), o.y)]:
 				if seg.y - seg.x > 0.3:
 					box_into(kerbs, Vector3(seg.x, -0.045, sd[2]), Vector3(seg.y, 0.09, sd[2] + 0.2), Color("bdb7ab"))
