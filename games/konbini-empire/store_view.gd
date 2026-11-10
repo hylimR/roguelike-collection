@@ -1389,8 +1389,9 @@ func slabs() -> StandardMaterial3D:
 
 
 ## The set's street for a 32 m repeat across its whole 8 m width (uv x/8, z/8, scaled to a quarter along x): coarse
-## grain, both lanes' wheel paths worn darker and smoother with a drip line between them, dust along each kerb, two
-## utility cuts patched in fresher tarmac behind a sealed seam, and a few cracks.
+## grain mottled with grime in broad patches, both lanes' wheel paths worn darker and smoother with a drip line between
+## them blotched with oil, dust along each kerb, two utility cuts patched in fresher tarmac behind a sealed seam, and a
+## few cracks.
 func tarmac() -> StandardMaterial3D:
 	if tarmac_m:
 		return tarmac_m
@@ -1398,6 +1399,14 @@ func tarmac() -> StandardMaterial3D:
 	r.seed = 41
 	var img := Image.create(256, 64, false, Image.FORMAT_RGB8)
 	var patches := [Rect2(40, 50, 56, 7), Rect2(150, 10, 12, 13)]  # pixels; rows 32-63 are the far lane (z < 0)
+	var noise := FastNoiseLite.new()
+	noise.seed = 41
+	noise.frequency = 0.045
+	noise.fractal_octaves = 3
+	var grime := noise.get_seamless_image(256, 64)
+	noise.seed = 43
+	noise.frequency = 0.16
+	var drips := noise.get_seamless_image(256, 64)
 	for py in 64:
 		var z := (py + 0.5) / 8.0
 		if z >= 4.0:
@@ -1407,10 +1416,18 @@ func tarmac() -> StandardMaterial3D:
 			var grain := r.randf()
 			var v := r.randf_range(0.95, 1.03) if grain < 0.8 else (r.randf_range(1.07, 1.12) if grain < 0.9 else r.randf_range(0.86, 0.9))
 			var c := ASPHALT
+			var g := grime.get_pixel(px, py).r
+			v *= lerpf(0.9, 1.08, smoothstep(0.2, 0.8, g))
+			if g < 0.36:
+				c = c.lerp(Color("3d4250"), (0.36 - g) * 1.6)
 			if absf(lane_z - 0.62) < 0.24:
 				v = lerpf(v, 0.87, 0.75)
-			elif lane_z < 0.2 and r.randf() < 0.35:
-				v *= 0.88
+			elif lane_z < 0.22 and absf(z) < 3.3:  # the drip line between the wheel paths, blotched with oil
+				var d := drips.get_pixel(px, py).r
+				if d > 0.56 or r.randf() < 0.3:
+					v *= 0.88
+				if d > 0.62:
+					c = c.lerp(Color("262932"), clampf((d - 0.62) * 3.0, 0.0, 0.5))
 			if absf(z) > 3.3:
 				c = c.lerp(Color("8d8577"), (absf(z) - 3.3) * 0.5)
 			for p: Rect2 in patches:
