@@ -6380,44 +6380,65 @@ func rival_canopy(parent: Node3D, rv: Dictionary, w: float, cx: float, c: Color)
 	parent.add_child(sh)
 
 
-## The chain's lightbox on its fascia: a cream plate with its mascot's head in a roundel ringed in the chain's colour
-## and its name beside it, lit after dark; a beaten chain's goes grey and dark.
+## The chain's lightbox on its fascia: an aluminium cabinet standing proud of the fascia, its returns and a top cap
+## catching the light round a frame banded in the chain's colour at its foot, the face a cream sheet lit unevenly by
+## the tubes behind it, with its mascot's head in a roundel ringed in the chain's colour and its name beside it. After
+## dark the face glows and spills white onto the fascia round it; a beaten chain's goes grey and dark.
 func rival_sign(parent: Node3D, rv: Dictionary, cx: float, c: Color) -> void:
 	var font: Font = bold if bold else get_theme_default_font()
 	var label := Label3D.new()
 	label.text = Sim.RIVALS[rv.id].name
 	label.font = font
-	label.font_size = 64
+	label.font_size = 128
 	label.outline_size = 0
-	label.pixel_size = 0.0072
+	label.pixel_size = 0.0036
 	label.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
 	label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	var tw := font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 64).x * label.pixel_size
+	var tw := font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 128).x * label.pixel_size
 	var pw := tw + 1.7
 	var x0 := cx - pw / 2
+	var x1 := x0 + pw
 	var cream := Color("cfccc4") if rv.defeated else Color("fbfaf5")
-	block(parent, Vector3(pw, 0.72, 0.08), Vector3(cx, 3.65, -6.95), cream)
-	var blank := Image.create(1, 1, false, Image.FORMAT_RGB8)
-	blank.fill(cream)
-	var plate := art_panel(parent, blank, Vector2(pw - 0.04, 0.68), Vector3(cx, 3.65, -6.906), Color.WHITE, 1.0, false)  # the face flat, not shaded as the box's side
-	block(parent, Vector3(pw + 0.06, 0.05, 0.1), Vector3(cx, 3.27, -6.95), c.darkened(0.2))
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var kit := surface(km)
+	var alu := Color("c9cdd1")
+	box_into(kit, Vector3(x0 - 0.05, 3.25, -7.1), Vector3(x1 + 0.05, 4.03, -6.93), Color("9da2a8"))  # the cabinet, its returns
+	box_into(kit, Vector3(x0 - 0.07, 4.0, -7.1), Vector3(x1 + 0.07, 4.05, -6.9), alu.lightened(0.15))  # the top cap
+	box_into(kit, Vector3(x0 - 0.05, 3.95, -6.93), Vector3(x1 + 0.05, 4.0, -6.885), alu)
+	for sx: float in [x0 - 0.05, x1 - 0.01]:
+		box_into(kit, Vector3(sx, 3.31, -6.93), Vector3(sx + 0.06, 3.95, -6.885), alu.darkened(0.06))
+	box_into(kit, Vector3(x0 - 0.06, 3.25, -6.93), Vector3(x1 + 0.06, 3.31, -6.88), c.darkened(0.2))  # the chain's band at its foot
+	box_into(kit, Vector3(x0 - 0.04, 3.2, -7.1), Vector3(x1 + 0.04, 3.25, -7.0), c.darkened(0.5))  # its shadow line on the fascia
+	commit([kit], parent)
+	var sheet := Image.create(128, 32, false, Image.FORMAT_RGB8)
+	for y in 32:
+		var v := (y + 0.5) / 32.0
+		var tubes := 0.035 * pow(maxf(0.0, cos((v - 0.5) * 3.0 * TAU)), 6.0)  # three tubes behind the face
+		for x in 128:
+			var u := (x + 0.5) / 128.0
+			var edge := minf(minf(u, 1.0 - u) * pw, minf(v, 1.0 - v) * 0.64)
+			var k := 0.96 + 0.04 * sin(v * PI) + tubes - 0.07 * (1.0 - smoothstep(0.0, 0.07, edge))
+			sheet.set_pixel(x, y, Color(cream.r * k, cream.g * k, cream.b * k))
+	var plate := art_panel(parent, sheet, Vector2(pw, 0.64), Vector3(cx, 3.63, -6.906), Color.WHITE, 1.0, false)
 	var face: Image = (load("res://art/walk.png") as Texture2D).get_image().get_region(
 			Rect2i(4, (WALK_ROW.mascot + Sim.RIVALS.keys().find(rv.id)) * PERSON.y, 64, 54))
 	face.convert(Image.FORMAT_RGBA8)
-	face.resize(48, 40, Image.INTERPOLATE_LANCZOS)
-	var disc := Image.create(64, 64, false, Image.FORMAT_RGBA8)
-	for y in 64:
-		for x in 64:
-			var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(32, 32))
-			var px := cream if d > 31.0 else (c if d > 26.5 else cream.lightened(0.3))
-			if d < 26.5 and x >= 8 and x < 56 and y >= 12 and y < 52:
-				var f := face.get_pixel(x - 8, y - 12)
+	face.resize(96, 80, Image.INTERPOLATE_LANCZOS)
+	var disc := Image.create(128, 128, false, Image.FORMAT_RGBA8)
+	for y in 128:
+		for x in 128:
+			var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(64, 64))
+			var px := cream.lerp(c, clampf(62.5 - d, 0.0, 1.0)).lerp(cream.lightened(0.3), clampf(53.5 - d, 0.0, 1.0))
+			if d < 54.0 and x >= 16 and x < 112 and y >= 24 and y < 104:
+				var f := face.get_pixel(x - 16, y - 24)
 				if rv.defeated:
 					f = Color(f.get_luminance(), f.get_luminance(), f.get_luminance(), f.a)
 				px = px.lerp(Color(f.r, f.g, f.b), f.a)
 			disc.set_pixel(x, y, px)
-	var roundel := art_panel(parent, disc, Vector2(0.66, 0.66), Vector3(x0 + 0.52, 3.65, -6.9), Color.WHITE, 1.0, false)
-	label.position = Vector3(x0 + 1.05 + tw / 2, 3.64, -6.895)
+	var roundel := art_panel(parent, disc, Vector2(0.6, 0.6), Vector3(x0 + 0.52, 3.63, -6.9), Color.WHITE, 1.0, false)
+	label.position = Vector3(x0 + 1.05 + tw / 2, 3.62, -6.895)
 	parent.add_child(label)
 	var ink := c.darkened(0.15)
 	label.modulate = ink * light
@@ -6426,6 +6447,18 @@ func rival_sign(parent: Node3D, rv: Dictionary, cx: float, c: Color) -> void:
 		light_up(plate, 1.3)  # past 1 so the plate reads white before full night
 		light_up(roundel, 1.3)
 		lit_mats[-1][2] = 1.3
+		var gm := sign_glow_mat.duplicate()
+		gm.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
+		gm.albedo_texture = fascia_glow_tex
+		gm.albedo_color = Color(0, 0, 0, 0)
+		fascia_glows.append([weakref(gm), Color(1.0, 0.97, 0.88, 0.85)])
+		var glow := MeshInstance3D.new()
+		var q := QuadMesh.new()
+		q.size = Vector2(pw * 1.45 + 0.4, 2.4)
+		glow.mesh = q
+		glow.material_override = gm
+		glow.position = Vector3(cx, 3.62, -6.97)
+		parent.add_child(glow)
 
 
 ## The rival's two skylights over the shop floor, in one mesh: a kerb upstand with the membrane turned up its foot under
