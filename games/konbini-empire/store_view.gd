@@ -3182,12 +3182,52 @@ func facade_atlas() -> Array:
 						for c in [Rect2i(25, 11, 2, 1), Rect2i(25, 14, 2, 1), Rect2i(24, 12, 1, 2), Rect2i(27, 12, 1, 2)]:
 							r.call(c.position.x, c.position.y, c.size.x, c.size.y, fixed("f4ecd8"))
 						r.call(21, 31, 10, 1, fixed("8a8a84"))
-				6:  # plaster house
-					if up:
-						sash.call(9, 8, 14, 13, true, true)
+				6:  # house in lapped siding, each board's lip a shade over the one below
+					for y in range(3, 32, 4):
+						r.call(0, y, 32, 1, wall_px(0.93))
+					var shutter_box := func(x: int, y: int, h: int) -> void:  # the storm shutters' case beside a window
+						r.call(x, y, 3, h, fixed("b4b9be"))
+						r.call(x, y, 3, 1, fixed("d4d8db"))
+						r.call(x + 2, y + 1, 1, h - 1, fixed("8f949a"))
+					if up:  # a sliding window beside its shutter case, a vent hood, the belly band at the floor line
+						sash.call(7, 8, 14, 13, true, true)
+						shutter_box.call(22, 7, 15)
+						r.call(26, 3, 3, 2, fixed("d6d8d4"))
+						r.call(26, 5, 3, 1, fixed("5a6068"))
+						r.call(0, 29, 32, 2, wall_px(0.84))
+						r.call(0, 29, 32, 1, wall_px(0.98))
 					else:
-						r.call(4, 12, 8, 20, fixed("7a5a40"))
-						sash.call(16, 12, 12, 10, false, false)
+						# the front door under a hood with a lamp beside it: grained wood with a bar handle in a dark frame,
+						# a frosted sidelight that lights with the hall after dark, up a step
+						var hall := func(x: int, y: int, w: int, h: int, c: Color) -> void:
+							r.call(x, y, w, h, c)
+							mask.fill_rect(Rect2i(s * 32 + x, row * 32 + y, w, h), Color(0, 0, 1))
+						r.call(1, 7, 14, 2, fixed("c8ccd0"))
+						r.call(1, 9, 14, 1, wall_px(0.55))
+						r.call(2, 10, 12, 18, fixed("4e4a46"))
+						hall.call(3, 11, 2, 16, fixed("dcd6c6"))
+						r.call(6, 11, 7, 17, fixed("8a6446"))
+						for x in [7, 9, 12]:
+							r.call(x, 11, 1, 17, fixed("7a5638"))
+						r.call(6, 11, 7, 1, fixed("a07a58"))
+						r.call(7, 16, 1, 6, fixed("cfcfc8"))
+						hall.call(15, 12, 1, 2, fixed("fff1c0"))
+						r.call(1, 28, 14, 1, fixed("c9c5bb"))
+						r.call(1, 29, 14, 1, fixed("a29e95"))
+						# a window behind a grille of bars beside its shutter case
+						sash.call(17, 11, 10, 10, false, false)
+						for x in range(18, 27, 2):
+							r.call(x, 11, 1, 10, fixed("8a8f96"))
+						r.call(17, 11, 10, 1, fixed("8a8f96"))
+						r.call(17, 20, 10, 1, fixed("8a8f96"))
+						shutter_box.call(28, 10, 13)
+						# the concrete foundation along the foot, an underfloor vent let into it
+						r.call(15, 28, 17, 4, fixed("a7a59e"))
+						r.call(15, 28, 17, 1, fixed("bdbbb3"))
+						r.call(0, 30, 15, 2, fixed("a7a59e"))
+						r.call(21, 29, 5, 2, fixed("5a6068"))
+						for x in [22, 24]:
+							r.call(x, 29, 1, 2, fixed("8a8f96"))
 				7:  # warehouse
 					for x in range(0, 32, 3):
 						r.call(x, 0, 1, 32, wall_px(0.82))
