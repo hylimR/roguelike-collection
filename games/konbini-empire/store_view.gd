@@ -4662,8 +4662,8 @@ func ice_stand() -> Node3D:
 	return node
 
 
-## The block's garbage station: a green cage on a kerbed slab, its net walls showing the night's bags heaped inside
-## under a hinged lid, the ward's collection-day board on a post at the sidewalk end and a crate of empties beside it.
+## The block's garbage station: a green cage on a kerbed slab, its fine net walls and netted lid showing the night's
+## bags heaped inside, the ward's collection-day board on a post at the sidewalk end and a crate of empties beside it.
 func garbage_station(gs: Vector3) -> void:
 	var kit := mat(Color.WHITE)
 	kit.vertex_color_use_as_albedo = true
@@ -4681,16 +4681,36 @@ func garbage_station(gs: Vector3) -> void:
 	for z in [-1, 1]:
 		box_into(st, gs + Vector3(-h.x, 0.86, z * h.z - 0.02), gs + Vector3(h.x, 0.9, z * h.z + 0.02), frame)
 	# the bags heaped inside, each a lumpy sack with its neck tied off
+	# the bags heaped inside, each a lumpy sack bellied over its shaded foot with its neck tied off in two ears; one
+	# half-full bag slumped on the heap, the yellow one printed with the ward's mark
 	for bag in [[Vector3(-0.12, 0, -0.45), 0.5, Color("e9edf0")], [Vector3(0.13, 0, -0.38), 0.42, Color("d6e4ec")],
-			[Vector3(-0.08, 0, 0.05), 0.46, Color("f1efe6")], [Vector3(0.14, 0, 0.42), 0.38, Color("e9edf0")], [Vector3(-0.15, 0, 0.5), 0.3, Color("efe3b4")]]:
+			[Vector3(-0.08, 0, 0.05), 0.46, Color("f1efe6")], [Vector3(0.14, 0, 0.42), 0.38, Color("e9edf0")], [Vector3(-0.15, 0, 0.5), 0.3, Color("efe3b4")],
+			[Vector3(0.1, 0.3, -0.12), 0.3, Color("dfe9ef")]]:
 		var bc: Vector3 = gs + bag[0] + Vector3(0, 0.07, 0)
 		var r: float = bag[1] / 2
-		box_into(st, bc + Vector3(-r, 0, -r), bc + Vector3(r, r * 1.3, r), bag[2])
-		box_into(st, bc + Vector3(-r * 0.7, r * 1.3, -r * 0.7), bc + Vector3(r * 0.7, r * 1.75, r * 0.7), bag[2].darkened(0.04))
-		box_into(st, bc + Vector3(-0.03, r * 1.75, -0.03), bc + Vector3(0.03, r * 1.75 + 0.07, 0.03), bag[2].darkened(0.2))
-	# the lid, lipped over the frame, with a grab bar on the sidewalk end
-	box_into(st, gs + Vector3(-h.x - 0.04, 0.9, -h.z - 0.04), gs + Vector3(h.x + 0.04, 0.95, h.z + 0.04), Color("4f8a5c"))
-	box_into(st, gs + Vector3(-0.2, 0.86, h.z + 0.04), gs + Vector3(0.2, 0.9, h.z + 0.08), Color("c9c6be"))
+		var bcol: Color = bag[2]
+		box_into(st, bc + Vector3(-r * 0.85, 0, -r * 0.85), bc + Vector3(r * 0.85, r * 0.3, r * 0.85), bcol.darkened(0.1))
+		box_into(st, bc + Vector3(-r, r * 0.3, -r), bc + Vector3(r, r * 1.2, r), bcol)
+		box_into(st, bc + Vector3(-r * 0.75, r * 1.2, -r * 0.75), bc + Vector3(r * 0.75, r * 1.55, r * 0.75), bcol.lightened(0.06))
+		box_into(st, bc + Vector3(-r * 0.4, r * 1.55, -r * 0.4), bc + Vector3(r * 0.4, r * 1.7, r * 0.4), bcol.darkened(0.04))
+		box_into(st, bc + Vector3(-0.03, r * 1.7, -0.03), bc + Vector3(0.03, r * 1.7 + 0.06, 0.03), bcol.darkened(0.2))
+		for e in [-1, 1]:
+			box_into(st, bc + Vector3(e * 0.03 - 0.02, r * 1.7 + 0.04, -0.015), bc + Vector3(e * 0.07 + 0.02, r * 1.7 + 0.09, 0.015), bcol.darkened(0.12))
+		if bcol == Color("efe3b4"):
+			box_into(st, bc + Vector3(-r * 0.45, r * 0.6, r + 0.002), bc + Vector3(r * 0.45, r * 0.95, r + 0.006), Color("3f6fb8"))
+	# the lid: a lipped steel frame netted over, the bags showing through it, hinged along the back on two knuckles,
+	# braced across its middle, with a grab bar on the sidewalk end
+	var lid := Color("4f8a5c")
+	for z in [-1, 1]:
+		box_into(st, gs + Vector3(-h.x - 0.04, 0.9, z * (h.z + 0.04) - 0.03), gs + Vector3(h.x + 0.04, 0.95, z * (h.z + 0.04) + 0.03), lid)
+	for x in [-1, 1]:
+		box_into(st, gs + Vector3(x * (h.x + 0.04) - 0.03, 0.9, -h.z - 0.01), gs + Vector3(x * (h.x + 0.04) + 0.03, 0.95, h.z + 0.01), lid)
+	box_into(st, gs + Vector3(-h.x, 0.91, -0.02), gs + Vector3(h.x, 0.94, 0.02), lid.darkened(0.12))
+	for z in [-0.45, 0.45]:
+		box_into(st, gs + Vector3(-h.x - 0.09, 0.88, z - 0.06), gs + Vector3(-h.x - 0.04, 0.95, z + 0.06), frame.darkened(0.2))
+	box_into(st, gs + Vector3(-0.2, 0.86, h.z + 0.07), gs + Vector3(0.2, 0.9, h.z + 0.11), Color("c9c6be"))
+	box_into(st, gs + Vector3(-0.2, 0.9, h.z + 0.07), gs + Vector3(-0.17, 0.95, h.z + 0.11), Color("c9c6be"))
+	box_into(st, gs + Vector3(0.17, 0.9, h.z + 0.07), gs + Vector3(0.2, 0.95, h.z + 0.11), Color("c9c6be"))
 	# the collection-day board: white, a blue header, a row of coloured days for burnables, plastics and cans
 	var sp := gs + Vector3(-0.15, 0, h.z + 0.32)
 	box_into(st, sp + Vector3(-0.03, 0, -0.03), sp + Vector3(0.03, 1.2, 0.03), Color("9aa0a6"))
@@ -4709,12 +4729,12 @@ func garbage_station(gs: Vector3) -> void:
 		for j in 3:
 			var bt := cr + Vector3(-0.165 + i * 0.11, 0.3, -0.11 + j * 0.11)
 			box_into(st, bt + Vector3(-0.03, 0, -0.03), bt + Vector3(0.03, 0.08, 0.03), Color("5c8f6a") if (i + j) % 2 else Color("8a5a3a"))
-	# the net: a diamond mesh, see-through, on all four sides
-	var img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
-	for y in 8:
-		for x in 8:
-			if (x + y) % 8 < 2 or (x - y + 8) % 8 < 2:
-				img.set_pixel(x, y, Color("3a6b47"))
+	# the net: a fine diamond mesh, see-through, on all four sides and across the lid
+	var img := Image.create(12, 12, false, Image.FORMAT_RGBA8)
+	for y in 12:
+		for x in 12:
+			if (x + y) % 12 == 0 or (x - y + 12) % 12 == 0:
+				img.set_pixel(x, y, Color("3f7550") if (x + y) % 12 == 0 else Color("335f40"))
 	var nm := mat(Color.WHITE, ImageTexture.create_from_image(img))
 	nm.vertex_color_use_as_albedo = true
 	nm.vertex_color_is_srgb = true
@@ -4725,9 +4745,12 @@ func garbage_station(gs: Vector3) -> void:
 			[Vector3(-h.x, 0, -h.z), Vector3(h.x, 0, -h.z), 0.75], [Vector3(-h.x, 0, h.z), Vector3(-h.x, 0, -h.z), 0.9]]:
 		var a: Vector3 = lo + f[0]
 		var b: Vector3 = lo + f[1]
-		var len_ := (b - a).length() / 0.3
+		var len_ := (b - a).length() / 0.26
 		net.set_color(Color(f[2], f[2], f[2]))
-		add_quad(net, [a, b, b + Vector3(0, 0.78, 0), a + Vector3(0, 0.78, 0)], [Vector2(0, 2.6), Vector2(len_, 2.6), Vector2(len_, 0), Vector2.ZERO])
+		add_quad(net, [a, b, b + Vector3(0, 0.78, 0), a + Vector3(0, 0.78, 0)], [Vector2(0, 3.0), Vector2(len_, 3.0), Vector2(len_, 0), Vector2.ZERO])
+	net.set_color(Color(1.08, 1.08, 1.08))
+	add_quad(net, [gs + Vector3(-h.x, 0.935, -h.z), gs + Vector3(h.x, 0.935, -h.z), gs + Vector3(h.x, 0.935, h.z), gs + Vector3(-h.x, 0.935, h.z)],
+			[Vector2.ZERO, Vector2(h.x * 2 / 0.26, 0), Vector2(h.x * 2 / 0.26, h.z * 2 / 0.26), Vector2(0, h.z * 2 / 0.26)])
 	commit([st, net], set_node)
 	cast(set_node, Vector2(gs.x, gs.z), 0.0, 0.96, 0.8)
 	cast(set_node, Vector2(sp.x, sp.z), 0.0, 1.24, 0.1)
