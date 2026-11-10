@@ -4096,6 +4096,12 @@ func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 	return mi
 
 
+## A unit step toward the store camera along its line of sight: a glow slid this way clears the body it lights.
+func to_eye() -> Vector3:
+	var p := deg_to_rad(PITCH)
+	return Vector3(sin(PI / 4) * cos(p), sin(p), cos(PI / 4) * cos(p))
+
+
 ## Summer Matsuri: paper lanterns, red and white, strung on sagging ropes between poles along both kerbs, glowing after
 ## dark. Not across your shopfront and car park, so the till stays in plain view. Built hidden.
 func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
@@ -4148,7 +4154,7 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 		for c in 2:
 			cm.set_instance_transform(i * 2 + c, Transform3D(Basis().scaled(Vector3(0.21, 0.06, 0.21)), at + Vector3(0, 0.24 if c == 0 else -0.24, 0)))
 			cm.set_instance_color(i * 2 + c, Color("2e2523"))
-		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.25, 1.25, 1.25)), at))
+		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(2.0, 2.0, 2.0)), at + to_eye() * 0.3))
 	var paper := mat(Color.WHITE, ImageTexture.create_from_image(ribs))
 	paper.vertex_color_use_as_albedo = true
 	paper.vertex_color_is_srgb = true
@@ -4243,7 +4249,7 @@ func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 	node.add_child(bl)
 	var gm := multimesh(QuadMesh.new(), hung.size() + 1)
 	for i in hung.size():
-		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.2, 1.2, 1.2)), hung[i]))
+		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.4, 1.4, 1.4)), hung[i] + to_eye() * 0.28))
 	gm.set_instance_transform(hung.size(), Transform3D(Basis().scaled(Vector3(1.6, 1.6, 1.6)), bulb))
 	mm_node(gm, lantern_glow_mat, node)
 	plane(node, Vector2(4.4, 4.4), Vector3((X0 + X1) / 2, -0.031, ZF + 0.4), stall_glow_mat)
