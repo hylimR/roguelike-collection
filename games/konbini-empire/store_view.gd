@@ -2917,11 +2917,26 @@ func facade_atlas() -> Array:
 						r.call(0, 30, 32, 2, wall_px(0.88))
 					else:  # a shopfront: striped awning, shelves behind mullioned glass, a glazed door, lit after dark
 						r.call(0, 0, 32, 2, wall_px(0.82))
-						for x in range(0, 32, 4):
-							r.call(x, 2, 2, 7, accent(1.0))
-							r.call(x + 2, 2, 2, 7, accent(0.78))
-							r.call(x + 1, 9, 2, 1, accent(0.78))
-						r.call(0, 10, 32, 1, wall_px(0.55))
+						r.call(0, 2, 32, 1, wall_px(0.5))
+						r.call(0, 10, 32, 1, fixed("3a3f46"))
+						# the awning in canvas stripes, the shop's colour and cream: its slope lit toward the front fold, the
+						# valance a shade darker below, each stripe ending in a scallop over the shadow it casts on the glass
+						# (the cream lights with the shop after dark, as the colour does)
+						var cream := fixed("f2ecdc")
+						for x in range(0, 32, 8):
+							for k in 2:
+								var sx := x + k * 4
+								var put := func(y: int, w: int, v: float) -> void:
+									var c := accent(v) if k == 0 else Color(cream.darkened(1.0 - v), 0.0)
+									r.call(sx + ((4 - w) >> 1), y, w, 1, c)
+									if k == 1:
+										mask.fill_rect(Rect2i(s * 32 + sx + ((4 - w) >> 1), row * 32 + y, w, 1), Color(0, 0, 1))
+								for y in range(3, 7):
+									put.call(y, 4, 0.84 + (y - 3) * 0.04)
+								put.call(7, 4, 1.0)
+								put.call(8, 4, 0.8)
+								put.call(9, 4, 0.76)
+								put.call(10, 2, 0.68)
 						r.call(1, 11, 21, 18, fixed("4a525a"))
 						r.call(2, 12, 19, 16, fixed(SHOP_GLASS))
 						r.call(11, 12, 1, 16, fixed("4a525a"))
