@@ -4029,8 +4029,7 @@ func tv_crew() -> Node3D:
 	var blue := Color("2f6fd0")
 	# the van, nose to the street: a high box with a stepped bonnet, wheels showing under its skirt, the station's
 	# blue band and orange pinstripe right round it and its badge on the side you see
-	box_into(st, Vector3(-1.88, 0.0, -14.75), Vector3(-0.12, 0.55, -14.05), Color("232326"))
-	box_into(st, Vector3(-1.88, 0.0, -12.35), Vector3(-0.12, 0.55, -11.65), Color("232326"))
+	van_wheels(st, -1.85, -0.15, [-14.4, -12.0], 0.275, 0.3)
 	box_into(st, Vector3(-1.85, 0.3, -15.25), Vector3(-0.15, 2.0, -11.6), body)
 	box_into(st, Vector3(-1.85, 0.3, -11.6), Vector3(-0.15, 1.12, -11.05), body)
 	box_into(st, Vector3(-1.87, 0.72, -15.27), Vector3(-0.13, 1.0, -11.03), blue)
@@ -4042,6 +4041,10 @@ func tv_crew() -> Node3D:
 	box_into(st, Vector3(-1.86, 0.26, -15.36), Vector3(-0.14, 0.46, -15.24), Color("9aa0a6"))
 	for x in [-1.7, -0.3]:
 		box_into(st, Vector3(x - 0.13, 0.8, -11.06), Vector3(x + 0.13, 0.92, -11.02), Color("fff3c4"))
+	van_nose(st, -1.85, -0.15, -11.05, 0.8, 0.26, Rect2(-1.75, 1.18, 1.5, 0.7), -11.57)
+	for z in [-12.5, -14.3]:  # the cab door's and the slide door's shut lines, each with its handle
+		box_into(st, Vector3(-0.15, 0.32, z - 0.015), Vector3(-0.14, 1.98, z + 0.015), body.darkened(0.35))
+		box_into(st, Vector3(-0.15, 1.12, z - 0.22), Vector3(-0.13, 1.16, z - 0.08), Color("9aa0a6"))
 	box_into(st, Vector3(-0.14, 1.28, -14.0), Vector3(-0.11, 1.86, -12.85), blue)
 	box_into(st, Vector3(-0.11, 1.42, -13.68), Vector3(-0.1, 1.72, -13.17), Color("fbfaf5"))
 	box_into(st, Vector3(-0.1, 1.51, -13.5), Vector3(-0.09, 1.63, -13.35), Color("e8392c"))
@@ -4115,6 +4118,48 @@ func tv_crew() -> Node3D:
 	return node
 
 
+## A van's running gear (body from x0 to x1, its floor at y): the chassis dark between the axles, and at each end of
+## each axle a tyre rounded off in steps, a silver hub with its nut on the outer face, sat in a dark wheel arch.
+func van_wheels(st: SurfaceTool, x0: float, x1: float, axles: Array, r: float, y: float) -> void:
+	var tyre := Color("232326")
+	box_into(st, Vector3(x0 + 0.2, 0.14, axles.min() - 0.4), Vector3(x1 - 0.2, y, axles.max() + 0.4), Color("1d1d20"))
+	for z: float in axles:
+		box_into(st, Vector3(x0 - 0.008, y - 0.01, z - r - 0.1), Vector3(x1 + 0.008, 2 * r + 0.1, z + r + 0.1), Color("29292c"))
+		for side in [-1.0, 1.0]:
+			var out: float = (x1 if side > 0 else x0) + side * 0.02
+			var a := minf(out, out - side * 0.26)
+			var b := maxf(out, out - side * 0.26)
+			box_into(st, Vector3(a, 0.05, z - r), Vector3(b, 2 * r - 0.05, z + r), tyre)
+			box_into(st, Vector3(a, 0.0, z - r + 0.09), Vector3(b, 2 * r, z + r - 0.09), tyre)
+			var hub := Vector3(out + side * 0.006, r, z)
+			box_into(st, hub - Vector3(0.006, r * 0.42, r * 0.6), hub + Vector3(0.006, r * 0.42, r * 0.6), Color("b9bcc0"))
+			box_into(st, hub - Vector3(0.006, r * 0.6, r * 0.42), hub + Vector3(0.006, r * 0.6, r * 0.42), Color("b9bcc0"))
+			box_into(st, hub + Vector3(side * 0.006, 0, 0) - Vector3(0.006, r * 0.16, r * 0.16), hub + Vector3(side * 0.006, 0, 0) + Vector3(0.006, r * 0.16, r * 0.16), Color("55585e"))
+
+
+## A van's face (body x0 to x1, its nose at zf): a grille between the lamps at lamp_y with an indicator outside each,
+## the number plate on the bumper at bumper_y, and over the windscreen g (x, y, width, height, its glass at zg) the
+## sky caught along its top, two wipers parked at its foot and a mirror out on each door.
+func van_nose(st: SurfaceTool, x0: float, x1: float, zf: float, lamp_y: float, bumper_y: float, g: Rect2, zg: float) -> void:
+	box_into(st, Vector3(x0 + 0.5, lamp_y - 0.02, zf - 0.02), Vector3(x1 - 0.5, lamp_y + 0.13, zf + 0.025), Color("3a3c41"))
+	for k in 3:
+		box_into(st, Vector3(x0 + 0.52, lamp_y + 0.01 + k * 0.04, zf + 0.025), Vector3(x1 - 0.52, lamp_y + 0.025 + k * 0.04, zf + 0.03), Color("6c7077"))
+	for x in [x0 + 0.08, x1 - 0.24]:
+		box_into(st, Vector3(x, lamp_y - 0.09, zf - 0.02), Vector3(x + 0.16, lamp_y - 0.03, zf + 0.035), Color("f0a03a"))
+	var mid := (x0 + x1) / 2
+	box_into(st, Vector3(mid - 0.2, bumper_y + 0.03, zf + 0.09), Vector3(mid + 0.2, bumper_y + 0.15, zf + 0.105), Color("f4f2e8"))
+	box_into(st, Vector3(mid - 0.14, bumper_y + 0.06, zf + 0.105), Vector3(mid + 0.14, bumper_y + 0.08, zf + 0.11), Color("2e6b48"))
+	box_into(st, Vector3(mid - 0.17, bumper_y + 0.1, zf + 0.105), Vector3(mid - 0.02, bumper_y + 0.12, zf + 0.11), Color("2e6b48"))
+	box_into(st, Vector3(g.position.x, g.end.y - g.size.y * 0.28, zg - 0.01), Vector3(g.end.x, g.end.y, zg + 0.005), Color("6f8aa0"))
+	box_into(st, Vector3(g.position.x + g.size.x * 0.12, g.end.y - g.size.y * 0.42, zg - 0.01), Vector3(g.position.x + g.size.x * 0.3, g.end.y - g.size.y * 0.28, zg + 0.005), Color("536b80"))
+	for x in [g.position.x + 0.08, mid + 0.04]:
+		box_into(st, Vector3(x, g.position.y + 0.02, zg), Vector3(x + g.size.x * 0.4, g.position.y + 0.045, zg + 0.03), Color("1d1d20"))
+	for side in [-1.0, 1.0]:
+		var x: float = x1 if side > 0 else x0
+		box_into(st, Vector3(minf(x, x + side * 0.16), g.position.y + 0.02, zg - 0.32), Vector3(maxf(x, x + side * 0.16), g.position.y + 0.06, zg - 0.26), Color("2b2c30"))
+		box_into(st, Vector3(minf(x + side * 0.1, x + side * 0.18), g.position.y + 0.02, zg - 0.3), Vector3(maxf(x + side * 0.1, x + side * 0.18), g.position.y + 0.24, zg - 0.22), Color("2b2c30"))
+
+
 ## Health Inspection: the ward health centre's white wagon nosed into your free bay, a green band round it and a green
 ## cross on its roof sign, and a sanitiser stand set out by your door; the sign lights up after dark. Built hidden.
 func health_check() -> Node3D:
@@ -4128,11 +4173,9 @@ func health_check() -> Node3D:
 	var body := Color("f4f3ee")
 	var green := Color("2e9a5c")
 	var glass := Color("33414f")
-	var tyre := Color("232326")
 	# a compact wagon, nose to the street: wheels under the skirt, a low bonnet, a glass house over the cabin and the
 	# band along its sides, the centre's badge on the door you see
-	for z in [-14.4, -12.1]:
-		box_into(st, Vector3(-1.72, 0.0, z - 0.32), Vector3(-0.28, 0.5, z + 0.32), tyre)
+	van_wheels(st, -1.7, -0.3, [-14.4, -12.1], 0.25, 0.26)
 	box_into(st, Vector3(-1.7, 0.26, -14.95), Vector3(-0.3, 0.92, -11.35), body)
 	box_into(st, Vector3(-1.6, 0.92, -14.88), Vector3(-0.4, 1.5, -12.3), body)
 	box_into(st, Vector3(-1.72, 0.58, -14.97), Vector3(-0.28, 0.72, -11.33), green)
@@ -4145,6 +4188,13 @@ func health_check() -> Node3D:
 	box_into(st, Vector3(-1.72, 0.22, -15.02), Vector3(-0.28, 0.4, -14.92), Color("9aa0a6"))
 	for x in [-1.55, -0.45]:
 		box_into(st, Vector3(x - 0.12, 0.74, -11.36), Vector3(x + 0.12, 0.84, -11.32), Color("fff3c4"))
+	van_nose(st, -1.7, -0.3, -11.35, 0.74, 0.22, Rect2(-1.52, 0.97, 1.04, 0.46), -12.27)
+	for x in [-1.62, -0.42]:  # the sky caught along the top of the side glass
+		box_into(st, Vector3(x + 0.04, 1.34, -14.72), Vector3(x + 0.045, 1.43, -13.62), Color("6f8aa0"))
+		box_into(st, Vector3(x + 0.04, 1.34, -13.46), Vector3(x + 0.045, 1.43, -12.42), Color("6f8aa0"))
+	for z in [-13.54, -12.36]:  # the doors' shut lines below the glass, each with its handle
+		box_into(st, Vector3(-0.3, 0.3, z - 0.015), Vector3(-0.29, 0.92, z + 0.015), body.darkened(0.35))
+		box_into(st, Vector3(-0.3, 0.82, z - 0.22), Vector3(-0.28, 0.86, z - 0.08), Color("9aa0a6"))
 	box_into(st, Vector3(-0.3, 0.76, -13.3), Vector3(-0.27, 0.9, -12.95), Color("fbfaf5"))
 	box_into(st, Vector3(-0.27, 0.8, -13.18), Vector3(-0.26, 0.86, -13.07), green)
 	# the roof sign on two feet, side-on like a taxi's lamp
