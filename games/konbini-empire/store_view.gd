@@ -1845,22 +1845,38 @@ func stripes(a: Color, b: Color, w: int, h: int, on: int) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-## Your chain's pole-sign face in pixels: a roundel in the stripes' colors and "24" for open all hours.
+## Your chain's pole-sign face in pixels: a roundel in the stripes' colors and "24" for open all hours, in strokes
+## whose edges are blended by coverage, so the face stays clean when the camera zooms in.
 func sign_face() -> ImageTexture:
 	if sign_tex:
 		return sign_tex
-	var img := Image.create(48, 24, false, Image.FORMAT_RGB8)
-	img.fill(Color("fbfaf5"))
-	for x in 24:
-		for y in 24:
-			var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(12, 12))
-			if d < 10.5:
-				img.set_pixel(x, y, LAYOUT.stripe[0] if d > 7.0 else (Color("fbfaf5") if d > 4.5 else LAYOUT.stripe[1]))
-	var glyphs := ["111001111100111", "101101111001001"]  # 2 and 4, 3x5 columns top to bottom
-	for g in glyphs.size():
-		for i in 15:
-			if glyphs[g][i] == "1":
-				img.fill_rect(Rect2i(25 + g * 12 + (i % 3) * 3, 5 + floori(i / 3.0) * 3, 3, 3), LAYOUT.stripe[1])
+	var paper := Color("fbfaf5")
+	var img := Image.create(96, 48, false, Image.FORMAT_RGB8)
+	img.fill(paper)
+	var segs: Array = []  # the digits as strokes: a 2 of an arc, a diagonal and a foot, a 4 of a diagonal, bar and stem
+	var prev := Vector2.ZERO
+	for i in 9:
+		var t := deg_to_rad(165.0 - i * 25.0)
+		var q := Vector2(60.5 + 7.5 * cos(t), 17.5 - 7.5 * sin(t))
+		if i > 0:
+			segs.append([prev, q])
+		prev = q
+	segs.append_array([[prev, Vector2(52.5, 37.0)], [Vector2(52.5, 37.0), Vector2(69.5, 37.0)],
+		[Vector2(86.5, 10.5), Vector2(76.0, 30.0)], [Vector2(76.0, 30.0), Vector2(92.5, 30.0)], [Vector2(86.5, 10.5), Vector2(86.5, 38.0)]])
+	for y in 48:
+		for x in 96:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var c := paper
+			var d := p.distance_to(Vector2(24, 24))
+			c = c.lerp(LAYOUT.stripe[0], clampf(21.5 - d, 0.0, 1.0) * clampf(d - 12.5, 0.0, 1.0))
+			c = c.lerp(LAYOUT.stripe[1], clampf(8.5 - d, 0.0, 1.0))
+			if x > 45:
+				var near := 99.0
+				for sg in segs:
+					near = minf(near, p.distance_to(Geometry2D.get_closest_point_to_segment(p, sg[0], sg[1])))
+				c = c.lerp(LAYOUT.stripe[1], clampf(3.3 - near, 0.0, 1.0))
+			img.set_pixel(x, y, c)
+	img.generate_mipmaps()
 	sign_tex = ImageTexture.create_from_image(img)
 	return sign_tex
 
@@ -2668,6 +2684,18 @@ func box_into(st: SurfaceTool, p0: Vector3, p1: Vector3, col: Color, world_uv :=
 			uv = q.map(func(p): return Vector2(p.dot(v.abs()), -p.dot(u)) * world_uv)
 		st.set_color(Color(col.r * fc[1], col.g * fc[1], col.b * fc[1]))
 		add_quad(st, q, uv)
+
+
+## A unit box under xf into a vertex-coloured surface, each face in the house's tones by where it ends up facing.
+func turned_box_into(st: SurfaceTool, xf: Transform3D, col: Color) -> void:
+	for n: Vector3 in [Vector3.UP, Vector3.DOWN, Vector3.BACK, Vector3.FORWARD, Vector3.LEFT, Vector3.RIGHT]:
+		var u := Vector3.UP if absf(n.y) < 0.5 else Vector3.RIGHT
+		var v := n.cross(u)
+		var wn := (xf.basis.orthonormalized() * n)
+		var side := 0.9 if wn.z - wn.x > 0.0 else 0.75
+		var t := lerpf(side, 1.0, wn.y) if wn.y > 0.0 else lerpf(side, 0.7, -wn.y)
+		st.set_color(Color(col.r * t, col.g * t, col.b * t))
+		add_quad(st, [n - u - v, n + u - v, n + u + v, n - u + v].map(func(o): return xf * (o * 0.5)), [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
 
 
 ## A box into a surface: centre c, size, turned `turn` about y (unshaded flat colour, as the walls round it).
@@ -6679,6 +6707,7 @@ func pole_sign(parent: Node3D) -> void:
 		var lf := MeshInstance3D.new()
 		lf.mesh = face
 		lf.material_override = mat(Color.WHITE, sign_face(), true)
+		lf.material_override.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 		if parent == set_node:
 			set_sign_mats.append(lf.material_override)
 		lf.position = ps + Vector3(0, 6.7, 0.175 * side)
@@ -6701,12 +6730,30 @@ func pole_sign(parent: Node3D) -> void:
 	glow.material_override = sign_glow_mat
 	glow.position = ps + Vector3(0, 6.45, 0.4)
 	parent.add_child(glow)
-	for arm in [Vector3(-0.55, 0, 0), Vector3(0, 0, 0.55)]:  # floodlights aimed into the bays
-		block(parent, Vector3(0.08, 0.08, 0.08) + arm.abs(), ps + Vector3(0, 4.9, 0) + arm / 2, Color("9aa0a6"))
+	var fk := surface(km)
+	box_into(fk, ps + Vector3(-0.13, 4.98, -0.13), ps + Vector3(0.13, 5.22, 0.13), frame)  # the floodlights' collar
+	for a: Vector3 in [Vector3.LEFT, Vector3.BACK]:  # an LED flood on each bracket, tipped down into the bays
+		var s := Vector3(a.z, 0, -a.x)
+		box_into(fk, ps + a * 0.12 - s * 0.03 + Vector3(0, 5.12, 0), ps + a * 0.64 + s * 0.03 + Vector3(0, 5.19, 0), steel)
+		var strut := ps + a * 0.3 + Vector3(0, 4.98, 0)
+		turned_box_into(fk, Transform3D(Basis(s, -0.62) * Basis(s, Vector3.UP, a) * Basis.from_scale(Vector3(0.04, 0.04, 0.4)), strut), steel)
+		for k: float in [-1.0, 1.0]:  # the yoke's arms either side of the housing
+			box_into(fk, ps + a * 0.6 + s * (0.2 * k - 0.014) + Vector3(0, 4.94, 0), ps + a * 0.66 + s * (0.2 * k + 0.014) + Vector3(0, 5.19, 0), frame)
+		var b := Basis(s, -0.9 - 0.25 * a.z) * Basis(s, Vector3.UP, a)
+		var c := ps + a * 0.68 + Vector3(0, 4.98, 0)
+		turned_box_into(fk, Transform3D(b * Basis.from_scale(Vector3(0.36, 0.1, 0.3)), c), Color("c4c8cc"))
+		for fx: float in [-0.12, -0.04, 0.04, 0.12]:  # heat-sink fins down its back
+			turned_box_into(fk, Transform3D(b * Basis.from_scale(Vector3(0.022, 0.05, 0.26)), c + b * Vector3(fx, 0.07, 0)), Color("9ea4aa"))
+		turned_box_into(fk, Transform3D(b * Basis.from_scale(Vector3(0.33, 0.02, 0.27)), c + b * Vector3(0, -0.055, 0)), Color("585d65"))  # the bezel
+	commit([fk], parent)
+	var lens := QuadMesh.new()
+	lens.size = Vector2(0.29, 0.23)
+	for a: Vector3 in [Vector3.LEFT, Vector3.BACK]:  # each flood's lens, facing out of its bezel
+		var s := Vector3(a.z, 0, -a.x)
+		var b := Basis(s, -0.9 - 0.25 * a.z) * Basis(s, Vector3.UP, a)
 		var head := MeshInstance3D.new()
-		head.mesh = shaded_box()
-		head.scale = Vector3(0.3, 0.14, 0.3)
-		head.position = ps + Vector3(0, 4.82, 0) + arm * 1.2
+		head.mesh = lens
+		head.transform = Transform3D(b * Basis(Vector3.RIGHT, PI / 2), ps + a * 0.68 + Vector3(0, 4.98, 0) + b * Vector3(0, -0.068, 0))
 		head.material_override = lamp_mat
 		parent.add_child(head)
 	var lot := ps + Vector3(-2.8, 0, 4.2)
