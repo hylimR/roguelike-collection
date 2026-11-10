@@ -6485,12 +6485,7 @@ func build_room() -> void:
 	block(room, Vector3(0.2, 0.35, 9.25), Vector3(6.6, 0.175, 0.0), Color("efe6d2"))
 	glass_front(zl, Sim.DOOR_IN.x - 0.8)
 	glass_front(Sim.DOOR_IN.x + 0.8, 6.6)
-	# the sliding door's floor track between its jambs, and the entrance mat inside it
-	block(room, Vector3(1.6, 0.02, 0.14), Vector3(Sim.DOOR_IN.x, 0.01, 4.6), Color("8b96a1"))
-	block(room, Vector3(1.5, 0.02, 0.95), Vector3(Sim.DOOR_IN.x, 0.01, 3.95), Color("3d434b"))
-	block(room, Vector3(1.26, 0.025, 0.71), Vector3(Sim.DOOR_IN.x, 0.012, 3.95), Color("525a64"))
-	block(room, Vector3(1.26, 0.03, 0.08), Vector3(Sim.DOOR_IN.x, 0.012, 3.75), L.stripe[0])
-	block(room, Vector3(1.26, 0.03, 0.08), Vector3(Sim.DOOR_IN.x, 0.012, 3.87), L.stripe[1])
+	entrance_mat(Sim.DOOR_IN.x)
 	# counter and registers
 	build_counter(L.stripe, st.registers.filter(func(r): return r.active).map(func(r): return Sim.REGISTERS[r.id].pos.y))
 	for reg in st.registers:
@@ -6591,6 +6586,46 @@ func build_counter(stripe: Array, tills: Array) -> void:
 					box_into(s, Vector3(XB + 0.03, y + j * 0.04, z0 + 0.06), Vector3(XF - 0.03, y + j * 0.04 + 0.05, z0 + 0.46), Color("3f7fc8").darkened(0.08 * j))
 				box_into(s, Vector3(XB + 0.03, y, z1 - 0.32), Vector3(XF - 0.03, y + 0.17, z1 - 0.06), Color("7d858d"))
 				box_into(s, Vector3(XB + 0.03, y + 0.17, z1 - 0.32), Vector3(XF - 0.03, y + 0.18, z1 - 0.06), Color("5d646b"))
+	commit([s], room)
+
+
+## The sliding door's floor track between its jambs and the entrance mat inside it (shop-local, centred on x dx), in
+## one mesh: a track lit along its lip over two dark guide grooves, and a mat sunk in an aluminium well, its rubber
+## ribbed across the way in, each rib a shade off, worn pale down the middle where feet tread and dusty toward the
+## door, inside a dark binding with the chain's stripes woven across its inner end.
+func entrance_mat(dx: float) -> void:
+	var m := mat(Color.WHITE, null, true)
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	var s := surface(m)
+	box_into(s, Vector3(dx - 0.8, 0.0, 4.53), Vector3(dx + 0.8, 0.012, 4.67), Color("8b96a1"))
+	for z in [4.565, 4.62]:
+		box_into(s, Vector3(dx - 0.8, 0.0, z), Vector3(dx + 0.8, 0.014, z + 0.015), Color("3a4047"))
+	box_into(s, Vector3(dx - 0.8, 0.0, 4.655), Vector3(dx + 0.8, 0.015, 4.67), Color("c4cdd5"))
+	box_into(s, Vector3(dx - 0.77, 0.0, 3.455), Vector3(dx + 0.77, 0.012, 4.445), Color("b3bcc5"))
+	box_into(s, Vector3(dx - 0.72, 0.0, 3.505), Vector3(dx + 0.72, 0.016, 4.395), Color("1f2327"))
+	const SEG := 12
+	var sw := 1.32 / SEG
+	for k in 2:  # the stripes woven across the inner end, worn through a little where the feet go
+		var z0 := 3.56 + k * 0.075
+		for i in SEG:
+			var x0 := dx - 0.66 + i * sw
+			var wear := exp(-pow((x0 + sw / 2 - dx) / 0.36, 2.0))
+			box_into(s, Vector3(x0, 0.0, z0), Vector3(x0 + sw, 0.022, z0 + 0.06), LAYOUT.stripe[k].lerp(Color("9a9690"), 0.4 * wear))
+	var rib := Color("5a616a")
+	var z := 3.73
+	var row := 0
+	while z < 4.3:
+		var dust := clampf((z - 3.95) / 0.4, 0.0, 1.0)
+		for i in SEG:
+			var x0 := dx - 0.66 + i * sw
+			var wear := exp(-pow((x0 + sw / 2 - dx) / 0.36, 2.0))
+			var n := fposmod(sin(row * 12.9898 + i * 78.233) * 43758.5453, 1.0)
+			var c := rib.lightened(0.08 * n).lerp(Color("a3a6a8"), 0.6 * wear)
+			c = c.lerp(Color("7a6f5e"), 0.45 * dust * (0.6 + 0.4 * n))
+			box_into(s, Vector3(x0, 0.0, z), Vector3(x0 + sw, 0.022, z + 0.085), c)
+		z += 0.125
+		row += 1
 	commit([s], room)
 
 
