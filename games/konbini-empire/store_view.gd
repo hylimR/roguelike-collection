@@ -376,7 +376,15 @@ void fragment() {
 					vec2 z1 = abs(lpos.xz - cb - off) - 0.24;
 					vec2 z2 = abs(lpos.xz - cb + off) - 0.24;
 					float inz = min(max(z1.x, z1.y), max(z2.x, z2.y));
-					fl = inz < 0.0 ? mix(ACCENT[(pick + 2) % 8], vec3(0.55, 0.3, 0.3), 0.35) * (inz > -0.04 ? 0.8 : (inz > -0.2 ? 1.0 : 0.88)) : fl;
+					vec2 zs1 = abs(lpos.xz + sunl * 0.07 - cb - off) - 0.24;
+					vec2 zs2 = abs(lpos.xz + sunl * 0.07 - cb + off) - 0.24;
+					fl *= inz > 0.0 && min(max(zs1.x, zs1.y), max(zs2.x, zs2.y)) < 0.0 ? 0.8 : 1.0;
+					// stuffed plump: piped round its edge, rounding up to a tuft of thread at its middle
+					vec2 zl = max(z1.x, z1.y) < max(z2.x, z2.y) ? lpos.xz - cb - off : lpos.xz - cb + off;
+					vec3 zc = mix(ACCENT[(pick + 2) % 8], vec3(0.55, 0.3, 0.3), 0.35);
+					float zm = max(abs(zl.x), abs(zl.y));
+					float zt = zm < 0.035 && min(abs(zl.x), abs(zl.y)) < 0.012 ? 0.66 : (inz > -0.03 ? 0.74 : 0.86 + 0.18 * smoothstep(0.03, 0.17, -inz) + 0.08 * clamp(dot(zl, sunl) * 3.0, -1.0, 1.0));
+					fl = inz < 0.0 ? zc * zt : fl;
 				}
 				if (k == 0 && fract(r * 17.0) < 0.8 && inb > 0.0) {  // a fringe of cream threads off each short end of the rug
 					vec2 fc = lpos.xz - cb;
@@ -397,6 +405,22 @@ void fragment() {
 						fl = d < 0.07 ? rug * 0.6 : (d < 0.2 ? cream * 0.9 : (d < 0.26 ? rug * 0.72 : (m < 0.16 ? cream : (m < 0.36 ? rug * 0.78 : (m < 0.52 ? mix(rug, cream, 0.55) : rug)))));
 						vec2 pp = floor(lpos.xz * 24.0);
 						fl *= 0.95 + 0.08 * fract(sin(dot(pp, vec2(12.9898, 78.233))) * 43758.5453);
+					} else if (k == 1) {  // a low table: its top grained down its length, its rim lit toward the sun, tea set out on it
+						vec2 tc = lpos.xz - cb;
+						bool lx = hb.x >= hb.y;
+						float gr = fract((lx ? tc.y : tc.x) * 11.0 + 0.35 * sin((lx ? tc.x : tc.y) * 2.6 + r * 40.0));
+						vec2 en = db.x > db.y ? vec2(sign(tc.x), 0.0) : vec2(0.0, sign(tc.y));
+						fl = vec3(0.52, 0.32, 0.19) * (inb > -0.05 ? (dot(en, sunl) > 0.0 ? 1.28 : 0.66) : (inb > -0.07 ? 0.86 : 0.93 + 0.12 * gr));
+						if (fract(r * 23.0) < 0.75 && inb < -0.07) {
+							vec2 tp = tc - (lx ? vec2(hb.x * 0.35, -hb.y * 0.2) : vec2(-hb.x * 0.2, hb.y * 0.35));
+							vec2 cu = (lx ? vec2(hb.x * 0.25, 0.0) : vec2(0.0, hb.y * 0.25));
+							float c1 = min(length(tc + cu - (lx ? vec2(0.0, hb.y * 0.3) : vec2(hb.x * 0.3, 0.0))), length(tc + cu + (lx ? vec2(0.0, hb.y * 0.3) : vec2(hb.x * 0.3, 0.0))));
+							float c1s = min(length(tc + sunl * 0.04 + cu - (lx ? vec2(0.0, hb.y * 0.3) : vec2(hb.x * 0.3, 0.0))), length(tc + sunl * 0.04 + cu + (lx ? vec2(0.0, hb.y * 0.3) : vec2(hb.x * 0.3, 0.0))));
+							fl *= length(tp + sunl * 0.07) < 0.08 || c1s < 0.04 ? 0.72 : 1.0;
+							fl = c1 < 0.04 ? (c1 < 0.022 ? vec3(0.55, 0.6, 0.28) : vec3(0.92, 0.9, 0.84)) : fl;
+							float pl = length(tp);
+							fl = pl < 0.08 ? vec3(0.22, 0.23, 0.25) * (pl < 0.018 ? 0.7 : (length(tp - sunl * 0.035) < 0.025 ? 2.2 : (pl > 0.065 ? 0.8 : 1.0))) : fl;
+						}
 					} else if (k == 2) {  // a strip of tape across each box
 						fl *= abs(lpos.x - cb.x) < 0.04 ? 1.2 : 1.0;
 					}
@@ -416,8 +440,29 @@ void fragment() {
 						fl = ina > -0.05 ? fl : ACol[k] * (frame ? 1.2 : (min(fract(cu), 1.0 - fract(cu)) < 0.06 ? 0.78 : (tuck < 0.04 ? 0.74 : (front < 0.06 ? 0.86 : 0.98))));
 						vec2 pil = vec2(across - 0.24, along - 0.26);  // a throw cushion at one end, propped against the back
 						fl = !frame && abs(pil.x) < 0.09 && abs(pil.y) < 0.11 ? vec3(0.9, 0.85, 0.74) * (pil.x < -0.05 ? 0.82 : 1.0) : fl;
-					} else if (k == 1) {  // a futon: a blue quilt up to the pillow at its head
-						fl = dot(lpos.xz - ca, side / 2 == 0 ? vec2(0.0, 1.0) : vec2(1.0, 0.0)) < run * 0.28 && ina < -0.04 ? vec3(0.45, 0.58, 0.8) : fl;
+					} else if (k == 1) {  // a futon: a patterned quilt turned down below the pillow, the mattress showing round them
+						vec2 lc = lpos.xz - ca;
+						float al = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
+						float ac = side / 2 == 0 ? lc.x : lc.y;
+						float hw = 0.5 * deep;
+						float qr = fract(r * 31.7);
+						vec3 quilt = qr < 0.5 ? vec3(0.3, 0.42, 0.68) : (qr < 0.75 ? vec3(0.78, 0.46, 0.5) : vec3(0.46, 0.58, 0.42));
+						float qe = min(min(al - 0.03, run - 0.44 - al), hw - 0.02 - abs(ac));
+						vec2 pq = vec2(run - 0.22 - al, 0.17 - abs(ac));
+						if (ina > -0.04) {
+							fl *= dot(side / 2 == 0 ? vec2(sign(lc.x), 0.0) : vec2(0.0, sign(lc.y)), sunl) > 0.0 ? 1.1 : 0.9;
+						} else if (qe > 0.0) {
+							vec2 kp = vec2(al, ac + floor(al / 0.16) * 0.08) / 0.16;
+							vec2 kf = abs(fract(kp) - 0.5);
+							float body = 1.06 - 0.24 * smoothstep(hw * 0.35, hw, abs(ac)) + 0.06 * sign(ac) * sign(dot(side / 2 == 0 ? vec2(1.0, 0.0) : vec2(0.0, 1.0), sunl));
+							fl = run - 0.44 - al < 0.13 ? mix(quilt, vec3(0.95, 0.93, 0.88), 0.72) * (run - 0.44 - al < 0.025 ? 1.08 : 0.96) : quilt * body * (min(kf.x, kf.y) < 0.07 && max(kf.x, kf.y) < 0.28 ? 1.32 : 1.0);
+							fl *= qe < 0.025 ? 0.8 : (abs(run - 0.57 - al) < 0.025 ? 0.7 : 1.0);
+						} else if (abs(pq.x) < 0.14 && pq.y > 0.0) {
+							float pe = min(0.14 - abs(pq.x), pq.y);
+							fl = vec3(0.88, 0.82, 0.68) * (pe < 0.025 ? 0.8 : 0.94 + 0.12 * smoothstep(0.02, 0.1, pe));
+						} else {
+							fl *= run - 0.44 - al > -0.04 && al < run ? 0.84 : 1.0;
+						}
 					} else if (k == 3) {  // a steel sink let into the counter
 						vec2 sk = abs(lpos.xz - ca) - min(ha, vec2(0.18));
 						fl = max(sk.x, sk.y) < 0.0 ? vec3(0.66, 0.7, 0.74) : fl;
