@@ -269,7 +269,7 @@ varying flat float rseed;
 varying flat vec2 viewl;  // run along the roof (local x, z) toward the camera per metre of height
 varying flat float square;  // set square to the world, as the city's rooftop kit boxes are
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
-const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.68, 0.64, 0.42), vec3(0.52, 0.52, 0.5), vec3(0.68, 0.66, 0.61));  // boards, tatami, concrete, tile
+const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.68, 0.64, 0.42), vec3(0.5, 0.6, 0.56), vec3(0.8, 0.76, 0.66));  // boards, tatami, painted concrete, tile
 const vec3 ROOF[8] = vec3[8](FLAT_ROOFS);  // Sim.City.FLAT_ROOFS
 
 void vertex() {
@@ -363,11 +363,13 @@ void fragment() {
 				float wall = min(min(e.x, e.y) - 0.3, min(wd.x, wd.y) - 0.06);
 				float r = fract(sin(dot(floor(rc) + seed * 37.0, vec2(12.9898, 78.233))) * 43758.5453);
 				int k = int(r * 4.0);
-				vec2 g = fract(lpos.xz * (k == 0 ? vec2(0.0, 4.0) : (k == 1 ? vec2(1.1, 0.55) : vec2(1.0))));
-				float seam = min(k == 0 ? 1.0 : min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)) < 0.05 ? 0.86 : 1.0;
+				vec2 cell = k == 0 ? vec2(0.0, 4.0) : (k == 1 ? vec2(1.1, 0.55) : (k == 2 ? vec2(0.42) : vec2(3.3)));
+				vec2 g = fract(lpos.xz * cell);
+				float seam = min(k == 0 ? 1.0 : min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)) < (k == 2 ? 0.012 : 0.07) ? (k == 2 ? 0.8 : 0.84) : 1.0;
 				// laid piece by piece: boards a shade apart and staggered at their butt joints, tatami edged in dark cloth
-				// down their long sides and each mat's rush catching the light its own way, concrete mottled, tiles each a shade
-				vec2 pc = floor(lpos.xz * (k == 0 ? vec2(0.0, 4.0) : (k == 1 ? vec2(1.1, 0.55) : vec2(1.0))));
+				// down their long sides and each mat's rush catching the light its own way, concrete painted, worn in patches between saw cuts
+				// every 2.4 m, the kitchen's 30 cm tiles cream and buff in a check, each a shade off
+				vec2 pc = floor(lpos.xz * cell);
 				float ph = fract(sin(dot(pc + seed * 41.0, vec2(78.233, 12.9898))) * 43758.5453);
 				if (k == 0) {
 					float bu = lpos.x / 1.8 + ph;
@@ -382,7 +384,7 @@ void fragment() {
 					vec4 h = fract(sin(vec4(dot(ci, vec2(12.9898, 78.233)), dot(ci + vec2(1.0, 0.0), vec2(12.9898, 78.233)), dot(ci + vec2(0.0, 1.0), vec2(12.9898, 78.233)), dot(ci + 1.0, vec2(12.9898, 78.233)))) * 43758.5453);
 					seam *= 0.91 + 0.14 * mix(mix(h.x, h.y, cf.x), mix(h.z, h.w, cf.x), cf.y);
 				} else {
-					seam *= 0.95 + 0.09 * ph;
+					seam *= (0.96 + 0.06 * ph) * (mod(pc.x + pc.y, 2.0) < 0.5 ? 1.04 : 0.92);
 				}
 				vec3 fl = FLOOR[k] * seam;
 				// furnished to suit the floor: a piece against one wall (sofa, futon, steel racking, a kitchen counter)
@@ -392,6 +394,10 @@ void fragment() {
 				vec2 hi = min(o + bay - 0.06, info.xz - 0.3);
 				vec2 mid = (lo + hi) * 0.5;
 				vec2 room = hi - lo;
+				if (k == 2) {  // a yellow line painted round the storeroom, keeping the aisle clear of the racking
+					vec2 ed = min(lpos.xz - lo, hi - lpos.xz);
+					fl = abs(min(ed.x, ed.y) - 0.72) < 0.03 ? vec3(0.88, 0.72, 0.22) * seam : fl;
+				}
 				int side = int(fract(r * 7.13) * 4.0);
 				float run = room[side / 2 == 0 ? 1 : 0] * (0.45 + 0.25 * fract(r * 3.71));
 				float deep = k == 0 ? 0.4 : 0.55;
