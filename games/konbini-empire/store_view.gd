@@ -15,7 +15,7 @@ signal lot_clicked(li: int)
 const Sim := preload("res://sim.gd")
 const Sheets := preload("res://art/sheets.gd")
 const PERSON_PX := 0.017
-const STRIDE := 2.2  # walk frames per unit walked (art/walk.png: column 0 stands, 1-4 walk)
+const STRIDE := 2.2  # walk frames per unit walked (the walk sheet: column 0 stands, 1-4 walk)
 const MAX_FPS := 11.0
 const ITEM_PX := 0.007
 const DECOR_PX := 0.014
@@ -26,8 +26,8 @@ const Vehicles := preload("res://art/vehicles.gd")
 const ITEM := 64
 const PERSON := Vector2i(72, 96)
 const DECOR := 96
-# art/props.png: fittings drawn in the store camera's own 2:1 view, each cell's footprint centre at (64, 150).
-# name: [cell, metres per texel, footprint along x and z]
+# the props sheet (art/fittings.gd): fittings painted in the store camera's own 2:1 view, each cell's footprint centre
+# at (64, 150). name: [cell, metres per texel, footprint along x and z]
 const PROP := Vector2i(128, 176)
 const PROPS := {"till": [0, 0.0075, Vector2(0.34, 0.44)], "coffee": [1, 0.0075, Vector2(0.42, 0.45)], "atm": [2, 0.014, Vector2(0.7, 0.8)],
 	"vending": [3, 0.014, Vector2(1.0, 0.75)], "gacha": [4, 0.014, Vector2(1.5, 0.5)], "bench": [5, 0.014, Vector2(1.5, 0.4)],
@@ -42,7 +42,7 @@ const WALK_NEAR := 1.2  # customers' sidewalk line in front of the shop
 const MAX_WALKERS := 70
 const MAX_CARS := 70
 const SET := Rect2(-52, -32, 104, 52)  # the street set round your shop, in the street frame
-# art/walk.png rows past the seven customers: staff and threats, then a flyer girl and a mascot per rival chain in
+# walk sheet rows past the seven customers: staff and threats, then a flyer girl and a mascot per rival chain in
 # Sim.RIVALS order
 const WALK_ROW := {"cashier": 7, "guard": 8, "cleaner": 9, "promoter": 10, "stocker": 11, "shoplifter": 12, "suit": 13, "review": 14, "flyer": 15, "mascot": 21}
 const MASCOT_SCALE := 1.35  # a 2 m costume over the 1.5 m adults
@@ -1099,7 +1099,7 @@ func sprite(sheet: String, region: Rect2, px: float, billboard := true) -> Sprit
 	return s
 
 
-## A fitting from art/props.png with its footprint centred on `at`. Its art is drawn in the store camera's own view
+## A fitting from the props sheet with its footprint centred on `at`. Its art is drawn in the store camera's own view
 ## (the till's front to the clerk, the rest to the street), which holds because that camera's yaw is locked.
 func prop(parent: Node3D, kind: String, at: Vector3) -> Sprite3D:
 	var p: Array = PROPS[kind]

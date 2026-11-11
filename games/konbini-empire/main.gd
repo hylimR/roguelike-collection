@@ -23,7 +23,7 @@ const SHADOW := Color(0.42, 0.3, 0.15, 0.25)
 const RARITY_COLOR := {"common": Color("a08c69"), "rare": Color("3a9bd9"), "epic": Color("a36fd6"), "legendary": Color("e8a317")}
 const DISTRICT_COLOR := {"sakura": Color("d9708f"), "campus": Color("3a9bd9"), "onsen": Color("e0903a"), "ekimae": Color("1f9e8e"), "neon": Color("8a5cc8")}
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
-const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
+const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks sheet frames
 const CARD_ICON := {  # [sheet, frame] for each card's picture; product lines use their product, abilities their key
 	"charm": ["perks", 0], "premium": ["perks", 8], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["perks", 1],
 	"bulk": ["perks", 7], "bow": ["perks", 0], "impulse": ["perks", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
@@ -94,8 +94,8 @@ var dev_js: JavaScriptObject  # keeps the web build's dev hook alive
 
 
 func _ready() -> void:
-	for n in ["products", "perks", "decor", "outdoor", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "props"]:
-		tex[n] = Sheets.texture(n) if n in ["products", "perks", "decor", "walk", "storefronts", "props"] else load("res://art/%s.png" % n)
+	for n in ["products", "perks", "decor", "walk", "storefronts", "props"]:
+		tex[n] = Sheets.texture(n)
 	theme = make_theme()
 	best.load("user://best.cfg")
 	audio = Audio.new()
