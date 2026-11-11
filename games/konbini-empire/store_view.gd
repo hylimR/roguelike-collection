@@ -269,7 +269,7 @@ varying flat float rseed;
 varying flat vec2 viewl;  // run along the roof (local x, z) toward the camera per metre of height
 varying flat float square;  // set square to the world, as the city's rooftop kit boxes are
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
-const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.68, 0.64, 0.42), vec3(0.5, 0.6, 0.56), vec3(0.8, 0.76, 0.66));  // boards, tatami, painted concrete, tile
+const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.8, 0.77, 0.5), vec3(0.5, 0.6, 0.56), vec3(0.8, 0.76, 0.66));  // boards, tatami, painted concrete, tile
 const vec3 ROOF[8] = vec3[8](FLAT_ROOFS);  // Sim.City.FLAT_ROOFS
 
 void vertex() {
@@ -334,6 +334,29 @@ vec3 carton(vec2 bc, vec2 h, vec3 c, vec2 sun, float r) {
 	return min(ed.x, ed.y) < 0.03 ? o * (dot(en, sun) > 0.0 ? 1.18 : 0.72) : o;
 }
 
+// a tatami room laid from its corner p (metres) in the auspicious way, no four corners meeting: a row of mats standing
+// down the room, then a row lying across it, its joints at the standing mats' middles. Each mat's rush catches the
+// light by which way it lies, brightening toward the sun down its length; its long sides are bound in the room's cloth.
+vec3 tatami(vec2 p, vec3 base, vec2 sun, float seed) {
+	float row = floor(p.y / 2.73);
+	float bz = p.y - row * 2.73;
+	bool stand = bz < 1.82;
+	float u = stand ? p.x / 0.91 : (p.x + 0.455) / 1.82;
+	vec2 id = vec2(floor(u), row * 2.0 + (stand ? 0.0 : 1.0));
+	float across = stand ? (fract(u) - 0.5) * 0.91 : bz - 2.275;
+	float along = stand ? bz - 0.91 : (fract(u) - 0.5) * 1.82;
+	float h = fract(sin(dot(id + seed * 31.0, vec2(12.9898, 78.233))) * 43758.5453);
+	vec3 c = base * (stand ? 1.05 : 0.93) * (0.96 + 0.08 * h);
+	c *= 1.0 + 0.05 * along / 0.91 * (stand ? sun.y : sun.x);
+	if (0.91 - abs(along) < 0.014) {
+		c *= 0.78;
+	}
+	float hs = fract(seed * 7.31);
+	vec3 heri = hs < 0.4 ? vec3(0.13, 0.16, 0.26) : (hs < 0.7 ? vec3(0.16, 0.13, 0.11) : vec3(0.13, 0.2, 0.16));
+	vec2 ow = stand ? vec2(sign(across), 0.0) : vec2(0.0, sign(across));
+	return 0.455 - abs(across) < 0.055 ? heri * (dot(ow, sun) > 0.0 ? 1.2 : 0.9) * (0.455 - abs(across) < 0.01 ? 0.75 : 1.0) : c;
+}
+
 void fragment() {
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	// the house's three tones, shared with shaded_box: roofs full, walls turned to the sun 0.9, walls away 0.75 (the
@@ -366,8 +389,7 @@ void fragment() {
 				vec2 cell = k == 0 ? vec2(0.0, 4.0) : (k == 1 ? vec2(1.1, 0.55) : (k == 2 ? vec2(0.42) : vec2(3.3)));
 				vec2 g = fract(lpos.xz * cell);
 				float seam = min(k == 0 ? 1.0 : min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)) < (k == 2 ? 0.012 : 0.07) ? (k == 2 ? 0.8 : 0.84) : 1.0;
-				// laid piece by piece: boards a shade apart and staggered at their butt joints, tatami edged in dark cloth
-				// down their long sides and each mat's rush catching the light its own way, concrete painted, worn in patches between saw cuts
+				// laid piece by piece: boards a shade apart and staggered at their butt joints, tatami (see tatami()), concrete painted, worn in patches between saw cuts
 				// every 2.4 m, the kitchen's 30 cm tiles cream and buff in a check, each a shade off
 				vec2 pc = floor(lpos.xz * cell);
 				float ph = fract(sin(dot(pc + seed * 41.0, vec2(78.233, 12.9898))) * 43758.5453);
@@ -375,8 +397,6 @@ void fragment() {
 					float bu = lpos.x / 1.8 + ph;
 					float bh = fract(sin((pc.y * 7.0 + floor(bu) + seed * 13.0) * 12.9898) * 43758.5453);
 					seam *= (0.9 + 0.16 * bh) * (min(fract(bu), 1.0 - fract(bu)) < 0.018 ? 0.84 : 1.0);
-				} else if (k == 1) {
-					seam = min(g.x, 1.0 - g.x) < 0.04 ? 0.42 : seam * (mod(pc.x + pc.y, 2.0) < 0.5 ? 1.06 : 0.93) * (0.97 + 0.06 * ph);
 				} else if (k == 2) {
 					vec2 cp = lpos.xz * 0.9 + seed * 7.0;
 					vec2 ci = floor(cp);
@@ -397,6 +417,9 @@ void fragment() {
 				if (k == 2) {  // a yellow line painted round the storeroom, keeping the aisle clear of the racking
 					vec2 ed = min(lpos.xz - lo, hi - lpos.xz);
 					fl = abs(min(ed.x, ed.y) - 0.72) < 0.03 ? vec3(0.88, 0.72, 0.22) * seam : fl;
+				}
+				if (k == 1) {
+					fl = tatami(lpos.xz - lo, FLOOR[1], sunl, fract(seed * 13.0 + r));
 				}
 				int side = int(fract(r * 7.13) * 4.0);
 				float run = room[side / 2 == 0 ? 1 : 0] * (0.45 + 0.25 * fract(r * 3.71));
