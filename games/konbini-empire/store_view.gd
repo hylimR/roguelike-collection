@@ -194,12 +194,18 @@ void fragment() {
 """
 # Open water on the map: the sea's blue, mottled in broad patches, with short wave crests over a darker trough
 # scattered across it at a steady size on screen at any zoom (two sizes crossfaded), slowly glinting in and out.
+# After dark the crests catch the moon, and off the built-up shore the water carries the city's lights: a warm haze
+# over each light's reflection broken into ripple bars down the view, lamp-gold, shop-white or neon, thinning out away from the land.
 const SWELL_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled;
 uniform vec3 sea : source_color = vec3(0.23, 0.55, 0.78);
 uniform vec3 light = vec3(1.0);
+uniform float night = 0.0;
+uniform sampler2D town : filter_linear, repeat_disable;  // the built-up blocks, blurred
+uniform vec4 town_rect = vec4(0.0, 0.0, 1.0, 1.0);  // its origin and size on the ground
 varying vec2 wp;
+varying vec2 gp;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -225,8 +231,24 @@ vec2 crests(vec2 p, float s, float aa) {
 	return vec2(crest, trough);
 }
 
+// x: a reflected light's ripple bars, y: which light, for columns s metres apart; each light's reflection runs a few
+// bars down the view, and shows where `g` (nearness to town) is
+vec2 dashes(vec2 p, float s, float g) {
+	vec2 q = p / vec2(s * 0.35, s * 0.2);
+	float c = floor(q.x);
+	float run = floor(q.y / 7.0 + hash(vec2(c, 2.0)));
+	float r = hash(vec2(c, run) + 11.0);
+	float fl = hash(vec2(c, floor(q.y)) + 3.0);
+	vec2 f = fract(q) - 0.5;
+	f.x += 0.16 * sin(TIME * 1.3 + fl * 30.0);
+	float hw = 0.1 + 0.22 * fl;
+	float d = (1.0 - smoothstep(hw, hw + 0.1, abs(f.x))) * (1.0 - smoothstep(0.14, 0.3, abs(f.y))) * step(1.0 - g * 0.8, r) * step(0.2, fl);
+	return vec2(d, hash(vec2(c, run) + 5.0));
+}
+
 void vertex() {
 	vec2 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	gp = w;
 	wp = vec2(w.x - w.y, w.x + w.y) * 0.7071;  // crests lie across the view at the map's usual heading
 }
 
@@ -240,7 +262,20 @@ void fragment() {
 	vec3 col = sea * (0.92 + 0.14 * m);
 	col = mix(col, sea * 0.82, w.y * 0.6);
 	col = mix(col, mix(sea, vec3(1.0), 0.55), w.x * 0.85);
-	ALBEDO = col * light;
+	col *= light;
+	if (night > 0.0) {
+		vec2 tu = (gp - town_rect.xy) / town_rect.zw;
+		vec2 tx = 1.5 / vec2(textureSize(town, 0));
+		float g = (texture(town, tu).r * 2.0 + texture(town, tu + vec2(tx.x, 0.0)).r + texture(town, tu - vec2(tx.x, 0.0)).r
+			+ texture(town, tu + vec2(0.0, tx.y)).r + texture(town, tu - vec2(0.0, tx.y)).r) / 6.0;
+		g = smoothstep(0.01, 0.5, g) * step(0.0, min(tu.x, tu.y)) * step(max(tu.x, tu.y), 1.0);
+		col += vec3(1.0, 0.72, 0.42) * 0.16 * g * night * (0.8 + 0.4 * m);
+		col = mix(col, vec3(0.5, 0.58, 0.74), w.x * 0.55 * night);
+		vec2 d = mix(dashes(wp, s, g), dashes(wp, s * 2.0, g), fract(lv));
+		vec3 lc = d.y < 0.6 ? vec3(1.0, 0.8, 0.5) : (d.y < 0.82 ? vec3(0.88, 0.95, 1.0) : (d.y < 0.92 ? vec3(1.0, 0.45, 0.75) : vec3(0.45, 0.9, 1.0)));
+		col = mix(col, lc, d.x * (0.55 + 0.45 * g) * night);
+	}
+	ALBEDO = col;
 }
 """
 # Buildings: boxes in a MultiMesh. Custom data = size and facade style (-1: plain shaded colour, for roofs); colour =
@@ -1306,6 +1341,7 @@ func update_light() -> void:
 		sea_mat.albedo_color = dusk_sea
 		shore_mat.albedo_color = dusk_sea
 		swell_mat.set_shader_parameter("light", Vector3(dusk_sea.r, dusk_sea.g, dusk_sea.b))
+		swell_mat.set_shader_parameter("night", night)
 	if field_mat:
 		field_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
 		field_mat.set_shader_parameter("night", night)
@@ -2322,6 +2358,15 @@ func build_static() -> void:
 	swell_mat.shader.code = SWELL_SHADER
 	swell_mat.set_shader_parameter("sea", Vector3(SEA.r, SEA.g, SEA.b))
 	swell_mat.set_shader_parameter("light", Vector3(sea.albedo_color.r, sea.albedo_color.g, sea.albedo_color.b))
+	swell_mat.set_shader_parameter("night", night)
+	var tr: Rect2 = C.bounds.grow(80.0)
+	var town := Image.create(256, 256, false, Image.FORMAT_L8)
+	for bl in C.blocks:
+		var r: Rect2 = bl.rect
+		town.fill_rect(Rect2i(Vector2i((r.position - tr.position) / tr.size * 256.0), Vector2i((r.size / tr.size * 256.0).ceil())), Color.WHITE)
+	town.resize(40, 40, Image.INTERPOLATE_TRILINEAR)
+	swell_mat.set_shader_parameter("town", ImageTexture.create_from_image(town))
+	swell_mat.set_shader_parameter("town_rect", Vector4(tr.position.x, tr.position.y, tr.size.x, tr.size.y))
 	var ws := surface(swell_mat)
 	poly_fill(ws, C.bay, -0.14)
 	poly_fill(ws, bay_mouth, -0.14)
