@@ -6089,14 +6089,42 @@ func shop_roofs(list: Array) -> void:
 		box_into(kit, pipe + off - Vector3(0.05, 0, 0.05), end_ + off + Vector3(0.05, 0.1, 0.05), Color("bdb8ad"))
 		var pa := Vector2(minf(pipe.x, end_.x) + off.x - 0.05, minf(pipe.z, end_.z) + off.z - 0.05)
 		casts.append([Rect2(pa, Vector2(absf(end_.x - pipe.x), absf(end_.z - pipe.z)) + Vector2(0.1, 0.1)), Vector2(0.05, -0.08)])
+		# the hatch: a plastered kerb with the membrane turned up its foot under a galvanised lid that overhangs it, its
+		# top a raised panel pressed with a cross, a hinge along the back, a grab handle and padlocked hasp at the front
 		var hatch: Vector3 = at.call(long_ * 0.72, -0.1)
-		box_into(kit, hatch + Vector3(-0.45, 0, -0.45), hatch + Vector3(0.45, 0.28, 0.45), Color("a9a49a"))
-		box_into(kit, hatch + Vector3(-0.38, 0.28, -0.38), hatch + Vector3(0.38, 0.32, 0.38), Color("8c949b"))
+		var v3 := func(x: float, y: float, z: float) -> Vector3: return hatch + Vector3(x, y, z)
+		box_into(kit, v3.call(-0.44, 0, -0.44), v3.call(0.44, 0.08, 0.44), skin.darkened(0.12))
+		box_into(kit, v3.call(-0.4, 0.08, -0.4), v3.call(0.4, 0.24, 0.4), Color("b8b2a6"))
+		box_into(kit, v3.call(-0.47, 0.2, -0.47), v3.call(0.47, 0.27, 0.47), Color("8e979f"))
+		box_into(kit, v3.call(-0.39, 0.27, -0.39), v3.call(0.39, 0.29, 0.39), Color("a6afb6"))
+		box_into(kit, v3.call(-0.37, 0.29, -0.025), v3.call(0.37, 0.3, 0.025), Color("9aa3ab"))
+		box_into(kit, v3.call(-0.025, 0.29, -0.37), v3.call(0.025, 0.3, 0.37), Color("9aa3ab"))
+		var fwd := Vector3(0, 0, 1) if along_z else Vector3(1, 0, 0)
+		var side := Vector3(1, 0, 0) if along_z else Vector3(0, 0, 1)
+		var bar := func(c: Vector3, along: float, across: float, h0: float, h1: float, col: Color) -> void:  # a box centred on c, `along` wide across the hatch's front, `across` deep
+			var hw: Vector3 = (side * along + fwd * across).abs() / 2
+			box_into(kit, c - hw + Vector3(0, h0, 0), c + hw + Vector3(0, h1, 0), col)
+		bar.call(hatch + fwd * 0.335, 0.6, 0.05, 0.29, 0.295, Color("d4dade"))  # sheen down the front of the panel
+		bar.call(hatch - fwd * 0.475, 0.8, 0.05, 0.26, 0.3, Color("6d747b"))
+		for k in [-1.0, 1.0]:
+			bar.call(hatch + fwd * 0.43 + side * k * 0.12, 0.03, 0.03, 0.27, 0.33, Color("3f4349"))
+		bar.call(hatch + fwd * 0.43, 0.27, 0.03, 0.32, 0.345, Color("3f4349"))
+		bar.call(hatch + fwd * 0.41 + side * 0.25, 0.07, 0.07, 0.11, 0.21, Color("c9a24a"))
+		# the vent stack: a pipe out of a flashing boot, under a rain cap on three straps that throws a shadow ring
 		var vent: Vector3 = at.call(0.9 + r.randf_range(0.0, 0.5), minf(sz.x, sz.z) / 2 - 0.55)
-		box_into(kit, vent + Vector3(-0.09, 0, -0.09), vent + Vector3(0.09, 0.6, 0.09), Color("9aa0a6"))
-		box_into(kit, vent + Vector3(-0.17, 0.6, -0.17), vent + Vector3(0.17, 0.67, 0.17), Color("6e737d"))
-		casts.append([Rect2(hatch.x - 0.45, hatch.z - 0.45, 0.9, 0.9), Vector2(0.13, -0.22)])
-		casts.append([Rect2(vent.x - 0.12, vent.z - 0.12, 0.24, 0.24), Vector2(0.3, -0.5)])
+		drum_into(kit, vent, 0.16, 0.05, skin.darkened(0.15), 10)
+		drum_into(kit, vent + Vector3(0, 0.05, 0), 0.11, 0.08, Color("8a9097"), 10)
+		drum_into(kit, vent + Vector3(0, 0.13, 0), 0.075, 0.47, Color("b9bec3"), 10)
+		drum_into(kit, vent + Vector3(0, 0.56, 0), 0.085, 0.03, Color("9aa0a6"), 10)
+		for k in 3:
+			var a := TAU * k / 3.0 + 0.5
+			var sp := vent + Vector3(cos(a) * 0.09, 0.59, sin(a) * 0.09)
+			box_into(kit, sp - Vector3(0.012, 0, 0.012), sp + Vector3(0.012, 0.07, 0.012), Color("6e737d"))
+		drum_into(kit, vent + Vector3(0, 0.66, 0), 0.19, 0.03, Color("767c85"), 12)
+		drum_into(kit, vent + Vector3(0, 0.69, 0), 0.13, 0.03, Color("8a9098"), 12)
+		casts.append([Rect2(hatch.x - 0.47, hatch.z - 0.47, 0.94, 0.94), Vector2(0.14, -0.24)])
+		casts.append([Rect2(vent.x - 0.08, vent.z - 0.08, 0.16, 0.16), Vector2(0.3, -0.5)])
+		casts.append([Rect2(vent.x - 0.19, vent.z - 0.19, 0.38, 0.38), Vector2(0.36, -0.6)])
 		plane(set_node, Vector2(sz.x - 0.3, sz.z - 0.3), Vector3(e[1].x, y + 0.035, e[1].z),
 				roof_mat(shop_roof_tex(Rect2(x0 + 0.15, z0 + 0.15, sz.x - 0.3, sz.z - 0.3), along_z, skin, Vector2(drain.x, drain.z), casts, branch.lot * 977 + int(e[1].x * 10.0))))
 	commit([kit, faces], set_node)
