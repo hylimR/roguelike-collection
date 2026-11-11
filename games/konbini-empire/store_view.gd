@@ -822,6 +822,7 @@ var car_park_m: StandardMaterial3D
 var road_paint_m: StandardMaterial3D
 var side_tar_m: StandardMaterial3D
 var manhole_m: StandardMaterial3D
+var tree_pit_m: StandardMaterial3D
 var condenser_m: StandardMaterial3D
 var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
 var entries := []  # x of the side roads that meet the set's street, where cars come in when both its ends are quays
@@ -1587,6 +1588,75 @@ func manhole() -> StandardMaterial3D:
 	m.texture_repeat = false
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 	manhole_m = m
+	return m
+
+
+## A street tree's pit in the sidewalk, 1.2 x 0.9 m at 40 px a metre: a kerb of granite setts, each a shade off with
+## a lit inner lip and a grimy joint, round a cast-iron grate in two halves, its bars ringing the trunk's opening
+## between radial ribs, each bar lit on its sunward edge over the dark soil showing through the slots, rust bled
+## into a few, a sprig of weeds at the gap and leaf litter on the soil round the trunk.
+func tree_pit() -> StandardMaterial3D:
+	if tree_pit_m:
+		return tree_pit_m
+	var r := RandomNumberGenerator.new()
+	r.seed = 41
+	const W := 48
+	const H := 36
+	var img := Image.create(W, H, false, Image.FORMAT_RGB8)
+	var iron := Color("62666e")
+	var soil := Color("3a2e26")
+	var stone := Color("b9b4aa")
+	var setts := []
+	for i in 12:
+		setts.append(r.randf_range(-0.06, 0.05))
+	for py in H:
+		for px in W:
+			var edge := mini(mini(px, W - 1 - px), mini(py, H - 1 - py))
+			var c: Color
+			if edge < 4:  # the setts, 8 px long, joints between them
+				var along := px if (py < 4 or py > H - 5) else py
+				var k := posmod(floori(along / 8.0) + (0 if py < 4 else (3 if py > H - 5 else (6 if px < 4 else 9))), 12)
+				c = stone.lightened(setts[k]) if posmod(along, 8) != 0 else stone.darkened(0.28)
+				if edge == 0:
+					c = c.darkened(0.22)
+				elif edge == 3:
+					c = c.lightened(0.12)
+				c = c.lerp(Color("8f8a80"), r.randf_range(0.0, 0.12))
+			elif edge == 4:
+				c = Color("26282c")
+			else:
+				var d := Vector2((px - (W - 1) / 2.0) / 1.25, py - (H - 1) / 2.0)
+				var rr := d.length()
+				var ang := absf(fmod(d.angle() + TAU, PI / 4) - PI / 8)
+				if rr < 5.5:  # the soil round the trunk, strewn with leaves
+					c = soil.lerp(Color("4a3a2e"), r.randf() * 0.5)
+					if r.randf() < 0.18:
+						c = [Color("8a7a3c"), Color("a5683a"), Color("6f7a3a")][r.randi() % 3]
+				elif rr < 7.0:  # the opening's rim
+					c = iron.lightened(0.18 if d.y < 0.0 else 0.0)
+				elif px == 24 or px == 23:  # the seam between the two halves
+					c = iron.darkened(0.45) if px == 24 else iron.lightened(0.1)
+				elif ang > PI / 8 - 0.12 or edge < 7:  # radial ribs and the outer frame
+					c = iron.lightened(0.06 if edge == 6 or edge == 5 else 0.0)
+				else:
+					var ring := fmod(rr - 7.0, 3.0)
+					if ring < 1.2:
+						c = soil.darkened(0.35)
+						if r.randf() < 0.1:
+							c = Color("8a5a3a").darkened(0.2)
+					else:
+						c = iron.lightened(0.24) if ring < 1.9 else iron
+						if r.randf() < 0.06:
+							c = c.lerp(Color("8a5a3a"), 0.45)
+				c = c.lerp(Color("8c8f94"), clampf(0.25 - rr / 60.0, 0.0, 0.25) * (1.0 if c.v > 0.25 else 0.0))
+				if edge == 5 and r.randf() < 0.2:
+					c = Color("6c8f45").lightened(r.randf_range(-0.1, 0.1))
+			img.set_pixel(px, py, c)
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	m.texture_repeat = false
+	tree_pit_m = m
 	return m
 
 
@@ -5591,7 +5661,7 @@ func build_set() -> void:
 	commit([seam], set_node)
 	# street furniture
 	var props_at := [[6, Vector2(-22.0, -4.3)], [6, Vector2(-38.0, -4.3)], [6, Vector2(9.0, -4.3)], [6, Vector2(34.0, -4.3)],
-		[1, Vector2(-30.0, 5.6)], [2, Vector2(-14.0, 5.6)], [1, Vector2(12.0, 5.6)], [0, Vector2(26.0, 5.6)], [1, Vector2(42.0, 5.6)],
+		[1, Vector2(-30.0, 6.0)], [2, Vector2(-14.0, 6.0)], [1, Vector2(12.0, 6.0)], [0, Vector2(26.0, 6.0)], [1, Vector2(42.0, 6.0)],
 		[6, Vector2(-6.0, 4.3)], [6, Vector2(20.0, 4.3)], [7, Vector2(-1.6, -4.6)], [10, Vector2(-22.6, -6.6)],
 		[8, Vector2(-2.75, -12.3)], [8, Vector2(-2.75, -13.5)], [4, Vector2(3.3, -15.2)]]
 	if b.quirk == "busStop":
@@ -5602,6 +5672,8 @@ func build_set() -> void:
 		if p[0] == 6:
 			street_lamp(Vector3(p[1].x, 0, p[1].y))
 			continue
+		if p[0] <= 2:  # a tree stands in its pit, the grate's long side along the kerb, its trunk's foot drawn a little in
+			plane(set_node, Vector2(1.2, 0.9), Vector3(p[1].x, -0.041, p[1].y - 0.2), tree_pit())
 		var s := sprite("outdoor", Rect2(p[0] * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55)
 		s.position = Vector3(p[1].x, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55 - 0.05, p[1].y)
 		set_node.add_child(s)
