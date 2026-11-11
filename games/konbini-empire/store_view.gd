@@ -1782,8 +1782,7 @@ func tree_pit() -> StandardMaterial3D:
 
 ## Your car park across its whole 7.1 x 8.8 m (uv 0-1 over Rect2(-3.4, -16, 7.1, 8.8)), 16 px a metre: the street's
 ## coarse grain a shade paler, tyre paths polished darker into each bay and scuffed across the aisle, an oil stain
-## where each car's engine stands, dust along the kerbs, and the bay lines and arrow painted in, worn thin at
-## their ends and wherever the tyres run over them.
+## where each car's engine stands and dust along the kerbs. Its bay lines and arrow are laid over it in road paint.
 func car_park() -> StandardMaterial3D:
 	if car_park_m:
 		return car_park_m
@@ -1792,12 +1791,9 @@ func car_park() -> StandardMaterial3D:
 	r.seed = 53
 	var img := Image.create(114, 141, false, Image.FORMAT_RGB8)
 	var base := ASPHALT.lightened(0.08)
-	var paint := Color("ebe7dc")
 	var noise := FastNoiseLite.new()
 	noise.seed = 53
 	noise.frequency = 0.9
-	var lines := [Rect2(-2.2, -15.6, 0.12, 4.6), Rect2(0.2, -15.6, 0.12, 4.6), Rect2(2.6, -15.6, 0.12, 4.6), Rect2(-2.2, -15.6, 4.92, 0.12), Rect2(0.95, -9.6, 0.24, 1.5)]
-	var head := PackedVector2Array([Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55)])
 	var grain := {}
 	for py in img.get_height():
 		var z := -16.0 + (py + 0.5) / PX
@@ -1824,13 +1820,7 @@ func car_park() -> StandardMaterial3D:
 					c = c.lerp(Color("2c2f38"), 0.55 * (1.0 - e * e))
 			if z < -15.75 or x > 3.45:
 				c = c.lerp(Color("8d8577"), 0.35 + 0.25 * noise.get_noise_2d(x * 2.0, z * 2.0))
-			var col := Color(c.r * v, c.g * v, c.b * v)
-			var at := Vector2(x, z)
-			if lines.any(func(l: Rect2): return l.has_point(at)) or Geometry2D.is_point_in_polygon(at, head):
-				var wear := 0.03 + tyre * 0.22 + (0.12 if z > -12.0 and z < -11.0 else 0.0) + 0.2 * noise.get_noise_2d(x * 4.0, z * 4.0)
-				if r.randf() > wear:
-					col = paint.lerp(col, clampf(wear, 0.0, 0.5))
-			img.set_pixel(px, py, col)
+			img.set_pixel(px, py, Color(c.r * v, c.g * v, c.b * v))
 	img.generate_mipmaps()
 	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
@@ -5784,8 +5774,16 @@ func build_set() -> void:
 				rect_quad(paint, Rect2(zx, sd[2], 0.45, 2.9), -0.04, 0.0, false, 0.125)
 				zx += 0.9
 	# your parking: bays and bicycles between your shop and the alley, nothing tall to hide the till
-	var bay := surface(car_park())  # its lines and the arrow leading drivers in off the street are painted on it
+	var bay := surface(car_park())
 	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042, 1.0)
+	# its bay lines and the arrow leading drivers in off the street, laid in the street's paint as geometry so they
+	# stay whole at every zoom; uv runs along each line through a band of the paint clear of the lanes' wheel paths
+	for bx in [-2.2, 0.2, 2.6]:
+		add_quad(paint, [Vector3(bx, -0.04, -15.6), Vector3(bx + 0.13, -0.04, -15.6), Vector3(bx + 0.13, -0.04, -11.0), Vector3(bx, -0.04, -11.0)],
+			[Vector2(-1.95, 0.03), Vector2(-1.95, 0.046), Vector2(-1.375, 0.046), Vector2(-1.375, 0.03)])
+	add_quad(paint, [Vector3(-2.2, -0.04, -15.6), Vector3(2.73, -0.04, -15.6), Vector3(2.73, -0.04, -15.47), Vector3(-2.2, -0.04, -15.47)],
+		[Vector2(-0.275, 0.06), Vector2(0.341, 0.06), Vector2(0.341, 0.076), Vector2(-0.275, 0.076)])
+	poly_fill(paint, PackedVector2Array([Vector2(0.95, -8.1), Vector2(0.95, -9.55), Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55), Vector2(1.19, -9.55), Vector2(1.19, -8.1)]), -0.04)
 	for kb in [Rect2(-3.4, -16.25, 7.1, 0.25), Rect2(3.45, -16.25, 0.25, 9.05)]:  # kerb round the back and side
 		rect_quad(kerb, kb, -0.036)
 	var hatch := surface(mat(Color("e2c048")))
