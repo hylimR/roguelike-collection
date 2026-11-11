@@ -4,6 +4,7 @@ extends SceneTree
 ## godot --headless --path games/konbini-empire --script res://tests/balance.gd
 
 const Sim := preload("res://sim.gd")
+const Sheets := preload("res://art/sheets.gd")
 const DAYS := 8
 const SEEDS := [1000, 1077]
 
@@ -28,6 +29,7 @@ func _init() -> void:
 	decks()
 	railway()
 	shelves()
+	sheets()
 	colours()
 	water()
 	quays()
@@ -55,8 +57,8 @@ func shelves() -> void:
 			s.add_line(st, pid)
 	var SV = load("res://store_view.gd")
 	var v = SV.new()
-	for n in ["products", "perks", "decor", "bg_konbini", "props"]:
-		v.tex[n] = load("res://art/%s.png" % n)
+	for n in ["products", "perks", "decor", "props"]:
+		v.tex[n] = Sheets.texture(n)
 	v.room = Node3D.new()
 	v.branch = s.branches[0]
 	v.build_room()
@@ -122,6 +124,25 @@ func shelves() -> void:
 	check(bad.is_empty(), "every pack stands on its fixture's boards and nothing on a fixture's top (%s)" % [bad])
 	v.room.free()
 	v.free()
+
+
+## Every sheet painted in code comes out at the size its consumers cut into cells, with art in every cell, and the
+## shops' back walls fill their panels edge to edge.
+func sheets() -> void:
+	var cells := {"walk": [Vector2i(360, 2592), Vector2i(72, 96)], "products": [Vector2i(1600, 64), Vector2i(64, 64)],
+		"perks": [Vector2i(1040, 80), Vector2i(80, 80)], "decor": [Vector2i(1152, 96), Vector2i(96, 96)],
+		"props": [Vector2i(1152, 176), Vector2i(128, 176)], "storefronts": [Vector2i(2560, 192), Vector2i(256, 192)],
+		"konbini_wall": [Vector2i(316, 201), Vector2i(316, 201)], "super_shelves": [Vector2i(560, 119), Vector2i(560, 119)]}
+	for n in cells:
+		var img: Image = Sheets.image(n)
+		var size: Vector2i = cells[n][0]
+		var cell: Vector2i = cells[n][1]
+		check(img.get_size() == size, "sheet %s is %s (want %s)" % [n, img.get_size(), size])
+		for y in range(0, size.y, cell.y):
+			for x in range(0, size.x, cell.x):
+				check(not img.get_region(Rect2i(Vector2i(x, y), cell)).is_invisible(), "sheet %s has art in its cell at %d,%d" % [n, x, y])
+		if n.ends_with("_wall") or n.ends_with("_shelves"):
+			check(img.detect_alpha() == Image.ALPHA_NONE, "%s is opaque" % n)
 
 
 ## The world in colour, measured on what the city builds rather than on its palettes: its walls, gable roofs and flat

@@ -134,7 +134,7 @@ const QUIRKS := {
 	"office": {"name": "Office tower above", "w": 2, "demand": {"coffee": 2.0, "bento": 2.0}},
 }
 
-# front = storefront frame in art/storefronts.png
+# front = the chain's cell in the storefronts sheet (art/fittings.gd)
 const RIVALS := {
 	"tanuki": {"name": "Tanuki Mart", "tier": 0, "hp": 3600, "appeal": 10.0, "heal": 6.0, "escalation": 0.10, "interval": [24.0, 32.0], "first": 28.0, "door": 14.0, "width": 13.0, "color": "e04a3a", "front": 4,
 		"sells": ["drink", "onigiri", "snack", "coffee", "bento", "manga"], "attacks": ["flyer", "trash", "priceWar", "mascot"]},

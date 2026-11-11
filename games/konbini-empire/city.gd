@@ -57,7 +57,8 @@ const TRAIN_V := 14.0
 const TRAIN_A := 2.5
 const DWELL := 5.0
 
-# [name, profile, x, z, landmark sheet, frame (-1: none), shop lots]. x east, z south; ~40 units a kilometre.
+# [name, profile, x, z, landmark set, index (landmark_models.gd's key; -1: none), shop lots]. x east, z south; ~40
+# units a kilometre.
 const DISTRICTS := [
 	["Imperial Palace", "palace", 0, 0, "tokyo", 8, 0],
 	["Tokyo Station", "hub", 55, 8, "tokyo", 3, 2],

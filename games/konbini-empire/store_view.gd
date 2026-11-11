@@ -1,8 +1,9 @@
 extends Control
 ## The city stage: Tokyo (city.gd) as a city builder sees it, through an orthographic isometric camera. Streets,
 ## avenues, the elevated expressway and the Yamanote are generated meshes; buildings are boxes in one MultiMesh
-## with a pixel facade shader, as are most landmarks (traced from their drawings); each branch's shop and its rival
-## are boxes too; trees, the other landmarks, cars and people are Codex sprites. In store mode the focused branch's
+## with a pixel facade shader, as are the landmarks (landmark_models.gd); each branch's shop and its rival are boxes
+## too; trees, street furniture (art/trees.gd) and cars (art/vehicles.gd) are models built in code; people, fittings
+## and goods stand on billboards cut from sheets painted in code (art/sheets.gd). In store mode the focused branch's
 ## street set is carved into the city on its lot: your shop as a cutaway, the rival next door, the street with its
 ## crossing, and the sim's pedestrians, threats and staff live. Clicks on threats, tills and
 ## shelves go out as actions; in city mode you pick lots. Labels draw on a 2D overlay. Street-frame nodes live
@@ -12,47 +13,36 @@ signal act_requested(a: Dictionary)
 signal lot_clicked(li: int)
 
 const Sim := preload("res://sim.gd")
+const Sheets := preload("res://art/sheets.gd")
 const PERSON_PX := 0.017
-const STRIDE := 2.2  # walk frames per unit walked (art/walk.png: column 0 stands, 1-4 walk)
+const STRIDE := 2.2  # walk frames per unit walked (the walk sheet: column 0 stands, 1-4 walk)
 const MAX_FPS := 11.0
 const ITEM_PX := 0.007
 const DECOR_PX := 0.014
-const OUTDOOR_PX := 0.03
-# per-prop size: trees full, street furniture smaller (art/outdoor.png draws every prop the same size)
-const OUTDOOR_SCALE := [1.0, 1.0, 0.95, 1.05, 0.45, 0.45, 0.6, 0.84, 0.66, 0.38, 0.5, 1.23]
-const PROP_BLOB := {7: 0.35, 8: 0.5, 10: 0.6, 11: 0.25}  # street props whose shadow is narrower than their art
-# each art/outdoor.png prop's sun shadow, as [from, to, width] fractions of its drawn size, soft all round when marked:
-# a tree's trunk and crown, a bush, the lamp, the post box, a bicycle, the stone lantern, the planter, the bus stop's
-# pole and its disc
-const OUTDOOR_CAST := [[[0.0, 0.3, 0.08], [0.12, 1.02, 0.95, true]], [[0.0, 0.3, 0.08], [0.12, 1.02, 0.95, true]],
-	[[0.0, 0.3, 0.08], [0.12, 1.02, 0.98, true]], [[0.0, 0.2, 0.06], [0.05, 1.05, 0.65, true]], [[-0.1, 0.6, 0.8, true]],
-	[[-0.1, 0.6, 0.75, true]], [[0.0, 0.9, 0.06]], [[0.0, 0.74, 0.3]], [[0.0, 0.62, 0.42]], [[0.0, 0.85, 0.36]],
-	[[0.0, 0.42, 0.72]], [[0.0, 0.72, 0.04], [0.7, 0.96, 0.22]]]
 const DECOR_CAST := {0: [0.0, 0.85, 0.42]}  # the potted plant, the same way
 const FACILITY_CAST := {"vending": [0.0, 1.8, 1.0], "gacha": [0.0, 1.35, 1.3], "bench": [0.3, 0.85, 1.2]}  # metres
-const VEHICLE_CELL := Vector2i(128, 96)
-const VEHICLE_PX := 0.025
+const Vehicles := preload("res://art/vehicles.gd")
 # atlas cells (art is cut at 2x its own pixel grid)
 const ITEM := 64
 const PERSON := Vector2i(72, 96)
 const DECOR := 96
-const OUTDOOR := 128
-# art/props.png: fittings drawn in the store camera's own 2:1 view, each cell's footprint centre at (64, 150).
-# name: [cell, metres per texel, footprint along x and z]
+# the props sheet (art/fittings.gd): fittings painted in the store camera's own 2:1 view, each cell's footprint centre
+# at (64, 150). name: [cell, metres per texel, footprint along x and z]
 const PROP := Vector2i(128, 176)
 const PROPS := {"till": [0, 0.0075, Vector2(0.34, 0.44)], "coffee": [1, 0.0075, Vector2(0.42, 0.45)], "atm": [2, 0.014, Vector2(0.7, 0.8)],
 	"vending": [3, 0.014, Vector2(1.0, 0.75)], "gacha": [4, 0.014, Vector2(1.5, 0.5)], "bench": [5, 0.014, Vector2(1.5, 0.4)],
 	"cat": [6, 0.009, Vector2.ZERO], "karaage": [7, 0.0075, Vector2(0.47, 0.52)], "oden": [8, 0.0075, Vector2(0.4, 0.55)]}
 const COUNTER_H := 0.75  # the counter top, at the staff's elbows
-const LANDMARK := 256
 const Models := preload("res://landmark_models.gd")  # landmarks traced from their drawings into boxes
-const LANDMARK_H := {"landmarks": 256, "tokyo": 384}  # the Tokyo sheet has tall cells for the towers
-const LANDMARK_SPAN := 29.5  # screen width of a landmark: most of the 22 m square the city reserves for it
+const Trees := preload("res://art/trees.gd")  # trees, bushes and street furniture as models
+const TREE_CHUNK := [INF, 512.0, 256.0]  # the city's trees in each form are drawn from squares this wide, culled out of view
+const TREE_NEAR := 160.0  # the view's height in metres under which trees are drawn in full
+const TREE_FAR := 400.0  # and over which in their tiny forms
 const WALK_NEAR := 1.2  # customers' sidewalk line in front of the shop
 const MAX_WALKERS := 70
 const MAX_CARS := 70
 const SET := Rect2(-52, -32, 104, 52)  # the street set round your shop, in the street frame
-# art/walk.png rows past the seven customers: staff and threats, then a flyer girl and a mascot per rival chain in
+# walk sheet rows past the seven customers: staff and threats, then a flyer girl and a mascot per rival chain in
 # Sim.RIVALS order
 const WALK_ROW := {"cashier": 7, "guard": 8, "cleaner": 9, "promoter": 10, "stocker": 11, "shoplifter": 12, "suit": 13, "review": 14, "flyer": 15, "mascot": 21}
 const MASCOT_SCALE := 1.35  # a 2 m costume over the 1.5 m adults
@@ -807,10 +797,9 @@ void fragment() {
 }
 """
 # the back wall's art: a crop of the side-view background, tiled along the wall
-const LAYOUT := {"bg": "bg_konbini", "wall": Rect2i(208, 44, 316, 201), "floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]}
+const LAYOUT := {"floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]}
 
 var tex := {}
-var sheet_imgs := {}  # sheet images read back for their cells' used rects
 var sim
 var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
 var floor_tex := {}  # shop floor texture by left wall
@@ -846,16 +835,16 @@ var cars: Array = []
 var next_walker := 0.0
 var next_car := 0.0
 var set_cars: Array = []  # traffic on the set's own street, which city movers keep off
+var parked: Array = []  # vehicles standing on a new set, given their lamp light once the set is built
 var next_set_car := 0.0
 var mode := "store"  # store | city
 var city_sig := ""
 var lm_ground := {}  # "water" / "grass" -> [material, uv per metre]: the city's ground, for landmarks' own pools and lawns
-var lm_sprites: Array = []  # [Sprite3D, half width]: landmarks, cleared when they cover the street
 var lot_nodes: Array = []  # [Node3D, footprint centre]: the shops built on other branches' lots, hidden under the set
 var rails: Array = []  # [pts, offset, segment]: the city's bridge and quay railings, one piece per segment
 var rail_node: MeshInstance3D  # those railings, rebuilt without the pieces that would stand on the set's street
 var rail_sig := Rect2(1, 1, -1, -1)
-var lm_trees: Array = []  # [world position, scale, outdoor frame]: trees planted by landmark models
+var lm_trees: Array = []  # [world position, scale, kind in art/trees.gd]: trees planted by landmark models
 var lot_feet: Array = []  # their world footprints (your shop's and the rival's), where the city gives way
 var hover_lot := -1
 var pick := ""  # city mode: "" | listing
@@ -877,6 +866,9 @@ var roof_mm: MultiMesh
 var roof_base: Array = []
 var pillar_mm: MultiMesh
 var tree_mms: Array = []  # [MultiMesh, base transforms, height]
+var tree_nodes: Array = [[], [], []]  # the trees' MultiMeshInstance3Ds by form (art/trees.gd), per kind and TREE_CHUNK square
+var outdoor_mat: StandardMaterial3D  # the trees' and street furniture's vertex colours, taking the hour's light
+var leaf_mat: StandardMaterial3D  # the same over the trees' leaf texture
 var mask_vp: SubViewport  # the city seen from the sun, for ground shadows
 var shadow_mat: ShaderMaterial
 var run_off_shadow_mat: StandardMaterial3D  # the shadows the expressway lays out of town, past shadow_mat's reach
@@ -1156,7 +1148,7 @@ func sprite(sheet: String, region: Rect2, px: float, billboard := true) -> Sprit
 	return s
 
 
-## A fitting from art/props.png with its footprint centred on `at`. Its art is drawn in the store camera's own view
+## A fitting from the props sheet with its footprint centred on `at`. Its art is drawn in the store camera's own view
 ## (the till's front to the clerk, the rest to the street), which holds because that camera's yaw is locked.
 func prop(parent: Node3D, kind: String, at: Vector3) -> Sprite3D:
 	var p: Array = PROPS[kind]
@@ -1264,6 +1256,7 @@ func update_light() -> void:
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
 	if car_glass:
 		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
+	Vehicles.relight(light, night, LAMP)
 	soft_mat.albedo_color.a = 0.34 - 0.14 * night
 	ao_mat.albedo_color.a = 0.3 - 0.1 * night
 	lit_sprites = lit_sprites.filter(func(s): return is_instance_valid(s))
@@ -1287,11 +1280,16 @@ func light_at(p: Vector3) -> Color:
 		return light
 	if shop_area.has_point(Vector2(p.x, p.z)):
 		return room_dim
+	return light.lerp(LAMP, lamp_lift(p) * night) if night > 0.0 else light
+
+
+## How far toward the lamps' light p stands on the set after dark (0-0.8): light_at lifts a sprite there by it, and a
+## vehicle takes it as its `lift`.
+func lamp_lift(p: Vector3) -> float:
 	var k := 0.0
-	if night > 0.0:
-		for q in pools:
-			k = maxf(k, 1.0 - Vector2(p.x - q.x, p.z - q.y).length() / q.z)
-	return light.lerp(LAMP, k * night * 0.8)
+	for q in pools:
+		k = maxf(k, 1.0 - Vector2(p.x - q.x, p.z - q.y).length() / q.z)
+	return k * 0.8
 
 
 func shine(s: Sprite3D) -> void:
@@ -1859,8 +1857,6 @@ func set_mode(m: String) -> void:
 	zoom = 1.0
 	yaw = PI / 4  # the shop cutaway is drawn for this angle
 	yaw_drag = 0.0
-	for e in lm_sprites:
-		anchor(e)
 	pick = "" if m == "store" else pick
 	hover = {}
 	refresh_city()
@@ -1883,6 +1879,7 @@ func update_camera() -> void:
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * cam_dist
 	cam.far = cam_dist * 2.0 + 100.0
 	cam.look_at(target)
+	tree_detail()
 	overlay.queue_redraw()
 
 
@@ -1950,37 +1947,6 @@ func tiled(tex_: Texture2D, reps: Vector2) -> StandardMaterial3D:
 	m.uv1_scale = Vector3(reps.x, reps.y, 1)
 	m.texture_repeat = true
 	return m
-
-
-## A city sprite drawn in 2:1 (a landmark, a storefront), its footprint centred on `center` and its drawing `span`
-## wide on screen: the cell's empty top trimmed off and the billboard's foreshortening undone (the art already is the
-## tilted view). The footprint centre is midway across the drawing, a quarter of its width above its lowest point.
-func city_sprite(parent: Node3D, sheet: String, cell: Rect2, span: float, center: Vector3, list: Array) -> Sprite3D:
-	if not sheet_imgs.has(sheet):
-		sheet_imgs[sheet] = tex[sheet].get_image()
-	var u: Rect2i = sheet_imgs[sheet].get_region(Rect2i(cell)).get_used_rect()
-	var r := Rect2(cell.position.x, cell.position.y + u.position.y, cell.size.x, u.size.y)
-	var px := span / u.size.x
-	var s := sprite(sheet, r, px)
-	s.scale.y = 1.0 / cos(deg_to_rad(PITCH))
-	var ox := r.size.x / 2.0 - u.get_center().x
-	s.offset = Vector2(ox, u.size.y / 2.0 - u.size.x / 4.0)
-	parent.add_child(s)
-	var e := [s, span / 2.0, center, u.size.y * px, u.size.x / 4.0 * px, ox]  # sprite, half width, footprint, height, drop, offset x
-	list.append(e)
-	anchor(e)
-	lit_sprites.append(s)
-	return s
-
-
-## Mirrors a city sprite on the odd quarter turns and slides it along the view line, so its near half stands clear of
-## the ground (the ortho view keeps it in place on screen).
-func anchor(e: Array) -> void:
-	var s: Sprite3D = e[0]
-	s.flip_h = posmod(roundi((yaw - PI / 4) / (PI / 2)), 2) == 1
-	s.offset.x = -e[5] if s.flip_h else e[5]
-	var p := deg_to_rad(PITCH)
-	s.position = e[2] + Vector3(sin(yaw) * cos(p), sin(p), cos(yaw) * cos(p)) * ((e[4] * s.scale.y - 0.1) / sin(p))
 
 
 func surface(m: Material) -> SurfaceTool:
@@ -2100,7 +2066,6 @@ func build_static() -> void:
 	C = Sim.City.get_city()
 	for c in city.get_children():
 		c.free()
-	lm_sprites.clear()
 	elevated.clear()
 	var b: Rect2 = C.bounds
 	var mid := b.get_center()
@@ -2217,11 +2182,6 @@ func build_static() -> void:
 	build_buildings()
 	build_trees()
 	build_shadows()
-	for L in C.landmarks:
-		var lm: Array = C.districts[L.d].lm
-		if Models.MODELS.has("%s:%d" % lm):
-			continue
-		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_SPAN * L.size / 22.0, Vector3(L.pos.x, 0, L.pos.y), lm_sprites)
 	build_paths()
 
 
@@ -2883,8 +2843,8 @@ func build_buildings() -> void:
 	mm_node(roof_mm, building_mat, city)
 
 
-## Ground shadows: the buildings, pillars and decks rendered from the sun into a mask, then a shadow plane over the
-## ground looks each point up in it. Overlapping shadows don't darken twice; hidden buildings drop their shadow.
+## Ground shadows: the buildings, trees, pillars and decks rendered from the sun into a mask, then a shadow plane over
+## the ground looks each point up in it. Overlapping shadows don't darken twice; hidden buildings drop their shadow.
 func build_shadows() -> void:
 	if mask_vp:
 		mask_vp.free()
@@ -2899,6 +2859,8 @@ func build_shadows() -> void:
 	white.cull_mode = BaseMaterial3D.CULL_DISABLED
 	for mm in [box_mm, roof_mm, pillar_mm]:
 		mm_node(mm, white, mask_vp)
+	for n in tree_nodes[Trees.SIMPLE]:
+		mm_node(n.multimesh, white, mask_vp)
 	for rec in brecs:
 		for n in rec.get("shapes", []).duplicate():
 			if n is MultiMeshInstance3D:
@@ -3409,12 +3371,14 @@ static func fixed(hex: String) -> Color:
 	return c
 
 
-## Trees fill the parks, line the avenues and scatter over the countryside round the city: one MultiMesh of
-## billboards per kind of tree.
+## Trees fill the parks, line the avenues and scatter over the countryside round the city, as models (art/trees.gd)
+## each turned, stretched and shaded a little its own way: seen whole in their tiny forms, further in in their simple
+## ones and close up in full, one MultiMesh per kind and TREE_CHUNK square of that form, so the squares out of view are
+## culled.
 func build_trees() -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = 77
-	var spots := {}  # outdoor frame -> [Vector3 with w-less scale in y]
+	var spots := {}  # kind -> [[position, scale]]
 	var add := func(id: int, p: Vector2, s: float) -> void:
 		if not spots.has(id):
 			spots[id] = []
@@ -3458,30 +3422,61 @@ func build_trees() -> void:
 			if country(Rect2(p - Vector2.ONE, Vector2(2, 2)), 8.0):
 				add.call([1, 1, 3, 1, 4][r.randi() % 5], p, r.randf_range(0.7, 1.1))
 	tree_mms.clear()
+	tree_nodes = [[], [], []]
+	var own := RandomNumberGenerator.new()
+	own.seed = 78
 	for id in spots:
-		var qs: Vector2 = Vector2(OUTDOOR, OUTDOOR) * OUTDOOR_PX * OUTDOOR_SCALE[id]
-		var q := QuadMesh.new()
-		q.size = qs
-		q.center_offset = Vector3(0, qs.y / 2 - 0.1, 0)
-		var m := StandardMaterial3D.new()
-		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		m.albedo_texture = tex.outdoor
-		m.uv1_scale = Vector3(1.0 / 12.0, 1, 1)
-		m.uv1_offset = Vector3(id / 12.0, 0, 0)
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-		m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
-		m.billboard_keep_scale = true
-		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		lit_mats.append([weakref(m), Color.WHITE, 0.0])
-		var list: Array = spots[id]
-		var mm := multimesh(q, list.size())
-		var base := []
-		for k in list.size():
-			var tf := Transform3D(Basis.from_scale(Vector3.ONE * list[k][1]), list[k][0])
-			mm.set_instance_transform(k, tf)
-			base.append(tf)
-		mm_node(mm, m, city)
-		tree_mms.append([mm, base, qs.y])
+		var tfs := []
+		var tints := []
+		for e in spots[id]:
+			tfs.append(Trees.placed(own, e[0], e[1]))
+			tints.append(Trees.tint(own))
+		for detail in [Trees.TINY, Trees.SIMPLE, Trees.FULL]:
+			var mesh := Trees.mesh(id, detail)
+			dress(mesh)
+			var chunks := {}
+			for k in tfs.size():
+				var key := Vector2i((Vector2(tfs[k].origin.x, tfs[k].origin.z) / TREE_CHUNK[detail]).floor())
+				if not chunks.has(key):
+					chunks[key] = []
+				chunks[key].append(k)
+			for group in chunks.values():
+				var mm := multimesh(mesh, group.size(), true)
+				var base := []
+				for k in group.size():
+					mm.set_instance_transform(k, tfs[group[k]])
+					mm.set_instance_color(k, tints[group[k]])
+					base.append(tfs[group[k]])
+				tree_nodes[detail].append(mm_node(mm, null, city))
+				tree_mms.append([mm, base, Trees.height(id)])
+	tree_detail()
+
+
+## Shows the trees in the form for the view: in full close up, simple further out, tiny seen whole.
+func tree_detail() -> void:
+	var detail := Trees.FULL if cam.size < TREE_NEAR else (Trees.SIMPLE if cam.size < TREE_FAR else Trees.TINY)
+	for i in tree_nodes.size():
+		for n in tree_nodes[i]:
+			n.visible = i == detail
+
+
+## The trees' and street furniture's material: their vertex colours, taking the hour's light; `leaves` over the
+## leaf texture, mipmapped so a crown seen small settles to its average.
+func outdoor_kit(leaves := false) -> StandardMaterial3D:
+	if not outdoor_mat:
+		outdoor_mat = mat(Color.WHITE)
+		leaf_mat = mat(Color.WHITE, Trees.leaf_texture())
+		leaf_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+		for m in [outdoor_mat, leaf_mat]:
+			m.vertex_color_use_as_albedo = true
+			m.vertex_color_is_srgb = true
+	return leaf_mat if leaves else outdoor_mat
+
+
+## Gives a model from art/trees.gd its materials, its leaves textured.
+func dress(mesh: ArrayMesh) -> void:
+	for i in mesh.get_surface_count():
+		mesh.surface_set_material(i, outdoor_kit(mesh.surface_get_name(i) == "leaves"))
 
 
 ## Plots, and in city mode every branch's storefront with its rival beside it (the focused one is the street set).
@@ -3552,13 +3547,6 @@ func update_fade() -> void:
 		build_rails([front] + set_feet if on else [])
 	for e in lot_nodes:
 		e[0].visible = not taken.call(Rect2(e[1] - Vector2(0.5, 0.5), Vector2.ONE))
-	for e in lm_sprites:
-		var s: Sprite3D = e[0]
-		var at_ := Vector2(e[2].x, e[2].z)
-		var base := iso(e[2])
-		var r := Rect2(base + Vector2(-e[1], e[4] - e[3]), Vector2(e[1] * 2, e[3]))
-		# cleared like the trees when in front of the street, rather than left as a see-through ghost over it
-		s.visible = not taken.call(Rect2(at_ - Vector2(0.5, 0.5), Vector2.ONE)) and not (on and r.intersects(scr) and at_.x + at_.y > depth)
 	var away := Transform3D(Basis.from_scale(Vector3.ONE * 0.001), Vector3(0, -50, 0))
 	# city buildings in front of the street are cut down to their ground floor (cut back to the far edge of the
 	# near sidewalk when they reach over it), so the street shows over a block that still reads as city
@@ -3623,10 +3611,13 @@ func update_fade() -> void:
 			dirty[roof_mm] = true
 		for n in rec.get("shapes", []):
 			n.visible = state == STANDING
+	var cuts := {}  # a tree's origin -> whether it goes, the same for each of its forms
 	for tm in tree_mms:
 		for k in tm[1].size():
 			var p: Vector3 = tm[1][k].origin
-			var cut: bool = taken.call(Rect2(p.x - 1.5, p.z - 1.5, 3, 3)) or lot_feet.any(func(q): return q.has_point(Vector2(p.x, p.z))) or (on and p.x + p.z > depth and foot_rect(Rect2(p.x - 1.5, p.z - 1.5, 3, 3), tm[2]).intersects(scr))
+			if not cuts.has(p):
+				cuts[p] = taken.call(Rect2(p.x - 1.5, p.z - 1.5, 3, 3)) or lot_feet.any(func(q): return q.has_point(Vector2(p.x, p.z))) or (on and p.x + p.z > depth and foot_rect(Rect2(p.x - 1.5, p.z - 1.5, 3, 3), tm[2]).intersects(scr))
+			var cut: bool = cuts[p]
 			if tm[0].get_instance_transform(k) != (away if cut else tm[1][k]):
 				tm[0].set_instance_transform(k, away if cut else tm[1][k])
 				dirty[tm[0]] = true
@@ -3820,13 +3811,36 @@ func place(m: Dictionary) -> void:
 	m.dir = dir * signf(m.v)
 
 
-## Picks the sprite frame for something travelling along `dir` (art: frame 0 heads down-right, 1 up-left).
-func facing(node: Sprite3D, dir: Vector3, frame0: int, cell: Vector2i) -> void:
-	var b := cam.global_transform.basis
-	var toward := dir.dot(b.y) < 0.0
-	var sx := dir.dot(b.x)
-	node.region_rect = Rect2((frame0 + (0 if toward else 1)) * cell.x, node.region_rect.position.y, cell.x, cell.y)
-	node.flip_h = sx < 0.0 if toward else sx > 0.0
+## A vehicle of kind kv (art/vehicles.gd; a kei car in paint `paint`) over its soft shadow; unless it is parked, its
+## lamps light up after dark and its headlights wash the road ahead.
+func vehicle(kv: int, paint := 0, lamps := true) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	node.mesh = Vehicles.mesh(kv, paint)
+	var sh := MeshInstance3D.new()
+	sh.mesh = Vehicles.shadow(kv)
+	sh.material_override = soft_mat
+	node.add_child(sh)
+	if not lamps:
+		node.material_override = Vehicles.material(false)
+		return node
+	var reach := 1.0 if kv == Vehicles.SCOOTER else 1.6
+	var beam := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(2.0, 1.375) * reach
+	beam.mesh = pm
+	beam.material_override = pool_mat
+	beam.position = Vector3(Vehicles.SIZE[kv].x / 2 + reach - 0.2, 0.07, 0)
+	node.add_child(beam)
+	return node
+
+
+## Turns a vehicle to head along the unit vector dir, pitched up or down a ramp, its shadow (its first child) kept a
+## little off its sunny side.
+func steer(node: Node3D, dir: Vector3) -> void:
+	var right := dir.cross(Vector3.UP).normalized()
+	node.basis = Basis(dir, right.cross(dir), right)
+	var off := node.basis.transposed() * (Vector3(-SUN.x, 0, -SUN.z) / SUN.y * 0.4)
+	(node.get_child(0) as Node3D).position = Vector3(off.x, 0.03, off.z)
 
 
 func view_rect() -> Rect2:
@@ -3871,16 +3885,15 @@ func spawn_mover(is_car: bool, mid := false) -> void:
 		return
 	var dir: float = p.get("dir", 1.0 if randf() < 0.5 else -1.0)
 	var m := {"path": p, "s": s, "v": 0.0, "lat": 0.0, "y": 0.0, "dir": Vector3.RIGHT}
-	var node: Sprite3D
+	var node: Node3D
 	if is_car:
 		m.lat = lane(p, dir, randi() % 2)
 		if cars.any(func(o): return o.path == p and signf(o.v) == dir and absf(o.lat - m.lat) < 0.5 and absf(o.s - s) < 7.0):
 			return  # keep cars apart in their lane
 		m.kv = randi() % 4
-		node = sprite("vehicles", Rect2(m.kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
-		m.v = dir * randf_range(5.0, 8.0) * (0.6 if m.kv == 3 else 1.0) * (1.6 if p.kind == "shuto" else 1.0)
-		m.y = VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
-		node.add_child(shadow(m.y, 1.5))
+		node = vehicle(m.kv, randi() % Vehicles.PAINTS.size())
+		m.v = dir * randf_range(5.0, 8.0) * (0.6 if m.kv == Vehicles.SCOOTER else 1.0) * (1.6 if p.kind == "shuto" else 1.0)
+		m.y = -0.1 if p.kind in ["street", "avenue"] else 0.0  # down onto the tarmac; deck and ramp paths ride on theirs
 		cars.append(m)
 	else:
 		m.a = randi() % 7
@@ -3894,6 +3907,8 @@ func spawn_mover(is_car: bool, mid := false) -> void:
 	m.node = node
 	street.add_child(node)
 	place(m)
+	if is_car:
+		steer(node, m.dir)
 
 
 ## Lateral offset of a lane for traffic going `dir` along path p (keep left; lane 0 is the inner one).
@@ -3979,11 +3994,14 @@ func cast(parent: Node3D, at: Vector2, h0: float, h1: float, w: float, round := 
 	casts.append(mi)
 
 
-## The sun's shadow of art/outdoor.png prop `id` standing at `at`, drawn at scale k of its sheet cell.
-func outdoor_cast(parent: Node3D, id: int, at: Vector2, k: float) -> void:
-	var size: float = OUTDOOR * OUTDOOR_PX * k
-	for c in OUTDOOR_CAST[id]:
-		cast(parent, at, c[0] * size, c[1] * size, c[2] * size, c.size() > 3)
+## A tree or piece of street furniture (art/trees.gd) built into st, its leaves into `leaves`, standing at `at` on the
+## set, scaled k and turned `turn` about y, with its contact shadow and its sun shadows sized from the model.
+func outdoor(st: SurfaceTool, leaves: SurfaceTool, kind: int, at: Vector2, k := 1.0, turn := 0.0, variant := 0) -> void:
+	Trees.build(st, kind, Transform3D(Basis(Vector3.UP, turn).scaled(Vector3.ONE * k), Vector3(at.x, 0, at.y)), Trees.FULL, variant, leaves)
+	var sh := Trees.shadows(kind)
+	blob(set_node, at, sh[0] * k)
+	for c in sh.slice(1):
+		cast(set_node, at, c[0] * k, c[1] * k, c[2] * k, c.size() > 3)
 
 
 ## City walkers and traffic round the view (walkers only when close enough to see), kept out of the street set.
@@ -4012,13 +4030,13 @@ func street_life(delta: float) -> void:
 			gone.append(o)
 			continue
 		place(o)
-		shine(o.node)
 		o.node.visible = not area.has_point(Vector2(o.node.position.x, o.node.position.z)) or o.node.position.y > 3.0
 		if o.has("a"):
+			shine(o.node)
 			stride(o, absf(o.v), delta)
 			o.node.flip_h = o.dir.dot(cam.global_transform.basis.x) < 0.0
 		else:
-			facing(o.node, o.dir, o.kv * 2, VEHICLE_CELL)
+			steer(o.node, o.dir)
 	for o in gone:
 		o.node.queue_free()
 	walkers = walkers.filter(func(o): return not gone.has(o))
@@ -4036,6 +4054,10 @@ func street_open(dir: float) -> bool:
 
 func street_traffic(delta: float) -> void:
 	delta = minf(delta, 0.5)
+	for v in parked:
+		if is_instance_valid(v):
+			v.set_instance_shader_parameter("lift", lamp_lift(v.global_position))
+	parked.clear()
 	var lt: Array = sim.lights()
 	var held: bool = lt[0] or lt[2]
 	next_set_car -= delta * (Sim.band(sim.hour()).traffic / 1.2 if sim.phase == "playing" else 1.0)
@@ -4050,20 +4072,11 @@ func street_traffic(delta: float) -> void:
 			x0 = INF if entries.is_empty() else entries[randi() % entries.size()]
 		if x0 < INF and not set_cars.any(func(o): return o.dir == dir and absf(o.x - x0) < 8.0):
 			var kv := randi() % 4
-			var node := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
-			var y := VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
-			node.add_child(shadow(y, 1.5))
-			var beam := MeshInstance3D.new()
-			var pm := PlaneMesh.new()
-			pm.size = Vector2(3.2, 2.2)
-			beam.mesh = pm
-			beam.material_override = pool_mat
-			beam.position = Vector3(3.2 * dir, 0.03 - y, 0)
-			node.add_child(beam)
-			node.position = Vector3(x0, y, -1.7 * dir)
+			var node := vehicle(kv, randi() % Vehicles.PAINTS.size())
+			node.position = Vector3(x0, -0.045, -1.7 * dir)
 			set_node.add_child(node)
-			facing(node, Vector3(dir, 0, 0), kv * 2, VEHICLE_CELL)
-			var cruise := randf_range(5.0, 8.0) * (0.6 if kv == 3 else 1.0)
+			steer(node, Vector3(dir, 0, 0))
+			var cruise := randf_range(5.0, 8.0) * (0.6 if kv == Vehicles.SCOOTER else 1.0)
 			set_cars.append({"node": node, "x": x0, "v": cruise, "dir": dir, "cruise": cruise, "kv": kv, "turn": -1.0, "back": false})
 	var gone := []
 	for o in set_cars:
@@ -4077,15 +4090,13 @@ func street_traffic(delta: float) -> void:
 				o.back = true
 				o.v = 3.0
 				t = Vector3(o.dir, 0, 0)
-			facing(o.node, t, o.kv * 2, VEHICLE_CELL)
-			var beam: Node3D = o.node.get_child(1)
-			beam.position = Vector3(t.x * 3.2, beam.position.y, t.z * 3.2)
-			shine(o.node)
+			steer(o.node, t)
+			o.node.set_instance_shader_parameter("lift", lamp_lift(o.node.global_position))
 			continue
 		var room_ := INF
 		for q in set_cars:
 			if q != o and q.dir == o.dir and (q.x - o.x) * o.dir > 0.0:
-				room_ = minf(room_, (q.x - o.x) * o.dir - 5.5)
+				room_ = minf(room_, (q.x - o.x) * o.dir - (Vehicles.SIZE[o.kv].x + Vehicles.SIZE[q.kv].x) / 2 - 1.4)
 		var line: float = (Sim.CROSS_X - 4.0 * o.dir - o.x) * o.dir  # the car's centre to its stop line
 		if held and line > -0.2:
 			room_ = minf(room_, line)
@@ -4096,7 +4107,7 @@ func street_traffic(delta: float) -> void:
 		var was: float = o.x
 		o.x += o.dir * o.v * delta
 		o.node.position.x = o.x
-		shine(o.node)
+		o.node.set_instance_shader_parameter("lift", lamp_lift(o.node.global_position))
 		if not street_open(o.dir) and (o.x - turn_at) * o.dir >= 0.0:
 			o.x = turn_at
 			o.turn = 0.0
@@ -5283,41 +5294,24 @@ func build_set() -> void:
 	health = health_check()
 	heat = ice_stand()
 	car_park_kit()
-	# a car nosed into the right-hand bay, front wheels at the stop: its art's footprint centre (midway across, a quarter
-	# of its drawn width above its lowest point) held on the bay's centre line, slid along the view to clear the ground
+	# a car nosed into the right-hand bay, its front tyres against the wheel stop (12 cm high, its face at z -15.2)
 	var kv: int = b.lot % 3
-	var car := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
+	var car := vehicle(kv, b.lot % Vehicles.PAINTS.size(), false)
 	set_node.add_child(car)
-	facing(car, Vector3(0, 0, -1), kv * 2, VEHICLE_CELL)
-	var u: Rect2i = tex["vehicles"].get_image().get_region(Rect2i(car.region_rect)).get_used_rect()
-	var fx: float = u.get_center().x if not car.flip_h else VEHICLE_CELL.x - u.get_center().x
-	var fy: float = u.end.y - u.size.x / 4.0
-	car.offset = Vector2(VEHICLE_CELL.x / 2.0 - fx, fy - VEHICLE_CELL.y / 2.0)
-	var long_: float = (u.end.x - u.position.x) * VEHICLE_PX * 0.5 / 0.7071  # roughly its length along the bay
-	var foot := Vector2(1.46, -15.5 + long_ / 2.0)
-	var tilt := deg_to_rad(PITCH)
-	car.position = Vector3(foot.x, 0, foot.y) + Vector3(sin(PI / 4) * cos(tilt), sin(tilt), cos(PI / 4) * cos(tilt)) * ((u.size.x / 4.0 * VEHICLE_PX - 0.05) / sin(tilt))
-	blob(set_node, foot, 1.3)
-	lit_sprites.append(car)
+	steer(car, Vector3(0, 0, -1))
+	var wh: Vector2 = Vehicles.WHEEL[kv]
+	car.position = Vector3(1.4, -0.042, -15.2 + wh.x + sqrt(wh.y * wh.y - pow(wh.y - 0.12, 2.0)))
+	parked.append(car)
 	pole_sign(set_node)
 	# where a city street runs in under the yard and leaves it unbuilt: the block's garbage station at the sidewalk, a
 	# couple of bicycles along the car park's kerb and a tree at the back, all on the side the rival doesn't hide
 	if span.x > 8.0 and free_runs(5.35, span.x, -16.2, -7.2, roads + overhead).is_empty() and free_runs(3.7, span.x, -20.2, -7.2, overhead) == [Vector2(3.7, span.x)]:
 		garbage_station(Vector3(4.55, 0, -9.5))
-		for bz in [-12.4, -13.5]:
-			var bike := sprite("outdoor", Rect2(8 * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[8] * 0.55)
-			bike.position = Vector3(4.35, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[8] * 0.55 - 0.05, bz)
-			set_node.add_child(bike)
-			lit_sprites.append(bike)
-			blob(set_node, Vector2(4.35, bz), PROP_BLOB[8])
-			outdoor_cast(set_node, 8, Vector2(4.35, bz), OUTDOOR_SCALE[8] * 0.55)
-		var tx := minf(6.6, span.x - 1.5)
-		var tree := sprite("outdoor", Rect2(OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * 0.8)
-		tree.position = Vector3(tx, OUTDOOR / 2.0 * OUTDOOR_PX * 0.8 - 0.05, -19.3)
-		set_node.add_child(tree)
-		lit_sprites.append(tree)
-		blob(set_node, Vector2(tx, -19.3), 1.3)
-		outdoor_cast(set_node, 1, Vector2(tx, -19.3), 0.8)
+		var yard_kit := [surface(outdoor_kit()), surface(outdoor_kit(true))]
+		for i in 2:
+			outdoor(yard_kit[0], yard_kit[1], Trees.BICYCLE, Vector2(4.6, -12.4 - 1.1 * i), 1.0, 0.0, b.lot + i)
+		outdoor(yard_kit[0], yard_kit[1], Trees.BROADLEAF, Vector2(minf(6.6, span.x - 1.5), -19.3), 0.8, b.lot * 0.9, b.lot)
+		commit(yard_kit, set_node)
 	for mh in [Vector2(-34.0, -1.9), Vector2(-17.0, 1.9), Vector2(13.0, -1.9), Vector2(33.0, 1.9)]:
 		if mh.x < street_x.x + 0.6 or mh.x > street_x.y - 0.6:
 			continue
@@ -5543,25 +5537,24 @@ func build_set() -> void:
 	for f in fronts:
 		rect_quad(seam, Rect2(f.x, -7.2, f.y - f.x, 0.9), -0.036)
 	commit([seam], set_node)
-	# street furniture
-	var props_at := [[6, Vector2(-22.0, -4.3)], [6, Vector2(-38.0, -4.3)], [6, Vector2(9.0, -4.3)], [6, Vector2(34.0, -4.3)],
-		[1, Vector2(-30.0, 5.6)], [2, Vector2(-14.0, 5.6)], [1, Vector2(12.0, 5.6)], [0, Vector2(26.0, 5.6)], [1, Vector2(42.0, 5.6)],
-		[6, Vector2(-6.0, 4.3)], [6, Vector2(20.0, 4.3)], [7, Vector2(-1.6, -4.6)], [10, Vector2(-22.6, -6.6)],
-		[8, Vector2(-2.75, -12.3)], [8, Vector2(-2.75, -13.5)], [4, Vector2(3.3, -15.2)]]
+	# street furniture: the lamps, then the street's trees, a post box, a planter, bicycles and a bush in one mesh
+	var clear := func(p: Vector2) -> bool:
+		return p.x >= street_x.x + 0.5 and p.x <= street_x.y - 0.5 and not in_gaps(p.x, far_gaps if p.y < 0.0 else near_gaps) and not in_gaps(p.x, under[0] if p.y < 0.0 else under[1])
+	for p in [Vector2(-22.0, -4.3), Vector2(-38.0, -4.3), Vector2(9.0, -4.3), Vector2(34.0, -4.3), Vector2(-6.0, 4.3), Vector2(20.0, 4.3)]:
+		if clear.call(p):
+			street_lamp(Vector3(p.x, 0, p.y))
+	var things := [[Trees.BROADLEAF, Vector2(-30.0, 5.6), 0.55], [Trees.CHERRY, Vector2(-14.0, 5.6), 0.55], [Trees.BROADLEAF, Vector2(12.0, 5.6), 0.55],
+		[Trees.MAPLE, Vector2(26.0, 5.6), 0.55], [Trees.BROADLEAF, Vector2(42.0, 5.6), 0.55], [Trees.POST_BOX, Vector2(-1.6, -4.6), 1.0],
+		[Trees.PLANTER, Vector2(-22.6, -6.6), 1.0], [Trees.BICYCLE, Vector2(-2.75, -12.3), 1.0], [Trees.BICYCLE, Vector2(-2.75, -13.5), 1.0],
+		[Trees.BUSH, Vector2(3.3, -15.2), 0.55]]
 	if b.quirk == "busStop":
-		props_at.append([11, Vector2(-24.5, -4.4)])
-	for p in props_at:
-		if p[1].x < street_x.x + 0.5 or p[1].x > street_x.y - 0.5 or in_gaps(p[1].x, far_gaps if p[1].y < 0.0 else near_gaps) or in_gaps(p[1].x, under[0] if p[1].y < 0.0 else under[1]):
-			continue
-		if p[0] == 6:
-			street_lamp(Vector3(p[1].x, 0, p[1].y))
-			continue
-		var s := sprite("outdoor", Rect2(p[0] * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55)
-		s.position = Vector3(p[1].x, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55 - 0.05, p[1].y)
-		set_node.add_child(s)
-		lit_sprites.append(s)
-		blob(set_node, p[1], PROP_BLOB.get(p[0], OUTDOOR_SCALE[p[0]] * 1.5))
-		outdoor_cast(set_node, p[0], p[1], OUTDOOR_SCALE[p[0]] * 0.55)
+		things.append([Trees.BUS_STOP, Vector2(-24.5, -4.4), 1.0])
+	var kit := [surface(outdoor_kit()), surface(outdoor_kit(true))]
+	for i in things.size():
+		var t: Array = things[i]
+		if clear.call(t[1]):
+			outdoor(kit[0], kit[1], t[0], t[1], t[2], i * 1.7 if Trees.TREES.has(t[0]) else 0.0, i)
+	commit(kit, set_node)
 	spill(set_node, Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7, shop_spill_mat)  # your shop's open front
 	a_board(Vector2(-8.3, -6.2), 0.35)
 	blob(set_node, Vector2(-8.3, -6.2), 0.45)
@@ -5597,12 +5590,11 @@ func build_set() -> void:
 			if f in ["vending", "gacha"]:
 				pool(set_node, at + Vector3(0, 0, 0.6), Vector2(3.5, 3.5))
 	if st.facilities.has("delivery"):  # the courier waits on the car park's apron, nose to the street
-		var dv := sprite("vehicles", Rect2(6 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), 0.016)
-		dv.position = Vector3(-2.0, VEHICLE_CELL.y / 2.0 * 0.016 - 0.05, -8.2)
+		var dv := vehicle(Vehicles.SCOOTER)
+		dv.position = Vector3(-2.0, -0.042, -8.2)
 		set_node.add_child(dv)
-		facing(dv, Vector3(0, 0, 1), 6, VEHICLE_CELL)
-		lit_sprites.append(dv)
-		blob(set_node, Vector2(-2.0, -8.2), 0.6)
+		steer(dv, Vector3(0, 0, 1))
+		parked.append(dv)
 	# the city gives way to everything built behind the street: your shop, the rival and the rows of neighbours
 	var o2 := Vector2(site.position.x, site.position.z)
 	set_feet = [Rect2(o2 + Vector2(-16.5, -20.2), Vector2(span.y + 16.5, 13.0))]
@@ -6270,7 +6262,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		art_panel(parent, slats, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color.WHITE, 1.0, false)
 		block(parent, Vector3(w - 0.6, 0.3, 0.3), Vector3(cx, 2.72, -7.0), Color("8f8c85"))  # the shutter boxes
 	else:
-		var shelves: Image = load("res://art/bg_super.png").get_image().get_region(Rect2i(80, 126, 560, 119))
+		var shelves: Image = Sheets.image("super_shelves").duplicate()
 		art_panel(parent, shelves, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
 	block(parent, Vector3(w - 0.8, 0.12, 0.12), Vector3(cx, 2.6, -7.06), Color("5e6670"))
 	block(parent, Vector3(w - 0.8, 0.16, 0.14), Vector3(cx, 0.08, -7.06), Color("5e6670"))
@@ -6494,7 +6486,7 @@ func rival_sign(parent: Node3D, rv: Dictionary, cx: float, c: Color) -> void:
 			var k := 0.96 + 0.04 * sin(v * PI) + tubes - 0.07 * (1.0 - smoothstep(0.0, 0.07, edge))
 			sheet.set_pixel(x, y, Color(cream.r * k, cream.g * k, cream.b * k))
 	var plate := art_panel(parent, sheet, Vector2(pw, 0.64), Vector3(cx, 3.63, -6.906), Color.WHITE, 1.0, false)
-	var face: Image = (load("res://art/walk.png") as Texture2D).get_image().get_region(
+	var face: Image = Sheets.image("walk").get_region(
 			Rect2i(4, (WALK_ROW.mascot + Sim.RIVALS.keys().find(rv.id)) * PERSON.y, 64, 54))
 	face.convert(Image.FORMAT_RGBA8)
 	face.resize(96, 80, Image.INTERPOLATE_LANCZOS)
@@ -6970,7 +6962,7 @@ func build_shop(parent: Node3D, zl: float) -> void:
 	var cx := o.x + (zl + 6.6) / 2
 	var front := o.y + 4.65
 	block(parent, Vector3(w, 3.1, 9.3), Vector3(cx, 1.55, o.y), Color("f4f1e8"))
-	var crop: Image = tex[LAYOUT.bg].get_image().get_region(LAYOUT.wall)  # the shop's back wall, seen through the glass
+	var crop: Image = Sheets.image("konbini_wall").duplicate()  # the shop's back wall, seen through the glass
 	art_panel(parent, crop, Vector2(w - 1.0, 2.05), Vector3(cx, 1.12, front + 0.04), Color(0.86, 0.94, 1.0), (w - 1.0) / (2.05 * crop.get_width() / crop.get_height()))
 	var x := cx - (w - 1.0) / 2
 	while x <= cx + (w - 1.0) / 2 + 0.01:
@@ -7003,7 +6995,7 @@ func build_room() -> void:
 		floor_tex[zl] = shop_floor(zl, L.floor[0], L.floor[1])
 	plane(room, Vector2(w, 9.0), Vector3(cx, 0.002, 0.0), mat(Color.WHITE, floor_tex[zl], true))
 	# back wall with the shop art, tiled to the width; the left wall plain with the stripes
-	var crop: Image = tex[L.bg].get_image().get_region(L.wall)
+	var crop: Image = Sheets.image("konbini_wall").duplicate()
 	var wall_h := 3.0
 	block(room, Vector3(w + 0.25, wall_h, 0.25), Vector3(cx, wall_h / 2, -4.62), Color("e6dcc6"))
 	art_panel(room, crop, Vector2(w, wall_h), Vector3(cx, wall_h / 2, -4.49), Color.WHITE, w / (wall_h * crop.get_width() / crop.get_height()))
@@ -7035,7 +7027,7 @@ func build_room() -> void:
 			# the magazine racks' art is the fixture with its stock, three of them stood on the floor
 			var ic: Array = Sim.PRODUCTS[pid].icon
 			var region := Rect2(ic[1] * DECOR, 0, DECOR, DECOR)
-			var u: Rect2i = tex[ic[0]].get_image().get_region(Rect2i(region)).get_used_rect()
+			var u: Rect2i = Sheets.image(ic[0]).get_region(Rect2i(region)).get_used_rect()
 			var px := RACK_H / u.size.y
 			var icons := []
 			for k in 3:
@@ -7403,7 +7395,7 @@ func goods(pid: String, kind: String, p: Vector2) -> void:
 	var sheet: Texture2D = tex[ic[0]]
 	var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
 	var region := Rect2i(ic[1] * cell, 0, cell, cell)
-	var u: Rect2i = sheet.get_image().get_region(region).get_used_rect()
+	var u: Rect2i = Sheets.image(ic[0]).get_region(region).get_used_rect()
 	var px: float = minf(f.pack.x / u.size.x, f.pack.y / u.size.y)
 	var q := QuadMesh.new()
 	q.size = Vector2(cell, cell) * px
@@ -7851,13 +7843,11 @@ func _gui_input(e: InputEvent) -> void:
 		accept_event()
 		return
 	if mode == "city" and e is InputEventMouseMotion and e.button_mask & MOUSE_BUTTON_MASK_RIGHT:
-		# turns in quarter steps: the landmarks are drawn for the diagonal views only
+		# turns in quarter steps, keeping the diagonal 2:1 view the city is built for
 		yaw_drag -= e.relative.x * 0.006
 		var snapped_ := PI / 4 + roundf(yaw_drag / (PI / 2)) * PI / 2
 		if not is_equal_approx(snapped_, yaw):
 			yaw = snapped_
-			for s in lm_sprites:
-				anchor(s)
 			update_camera()
 		accept_event()
 		return
@@ -8054,7 +8044,7 @@ func rival_face(id: String) -> ImageTexture:
 	if not faces.has(id):
 		var c := Color(Sim.RIVALS[id].color)
 		var cream := Color(1.0, 0.98, 0.92)
-		var face: Image = tex["walk"].get_image().get_region(Rect2i(4, (WALK_ROW.mascot + Sim.RIVALS.keys().find(id)) * PERSON.y, 64, 54))
+		var face: Image = Sheets.image("walk").get_region(Rect2i(4, (WALK_ROW.mascot + Sim.RIVALS.keys().find(id)) * PERSON.y, 64, 54))
 		face.convert(Image.FORMAT_RGBA8)
 		face.resize(58, 49, Image.INTERPOLATE_LANCZOS)
 		var disc := Image.create(80, 80, false, Image.FORMAT_RGBA8)

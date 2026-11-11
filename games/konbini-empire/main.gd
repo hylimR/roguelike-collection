@@ -4,6 +4,7 @@ extends Control
 
 const Sim := preload("res://sim.gd")
 const StoreView := preload("res://store_view.gd")
+const Sheets := preload("res://art/sheets.gd")
 const Audio := preload("res://audio.gd")
 
 # island-life palette: cream bubbles, cocoa text, mint tags, a yellow highlight under the pointer
@@ -22,7 +23,7 @@ const SHADOW := Color(0.42, 0.3, 0.15, 0.25)
 const RARITY_COLOR := {"common": Color("a08c69"), "rare": Color("3a9bd9"), "epic": Color("a36fd6"), "legendary": Color("e8a317")}
 const DISTRICT_COLOR := {"sakura": Color("d9708f"), "campus": Color("3a9bd9"), "onsen": Color("e0903a"), "ekimae": Color("1f9e8e"), "neon": Color("8a5cc8")}
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
-const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
+const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks sheet frames
 const CARD_ICON := {  # [sheet, frame] for each card's picture; product lines use their product, abilities their key
 	"charm": ["perks", 0], "premium": ["perks", 8], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["perks", 1],
 	"bulk": ["perks", 7], "bow": ["perks", 0], "impulse": ["perks", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
@@ -93,8 +94,8 @@ var dev_js: JavaScriptObject  # keeps the web build's dev hook alive
 
 
 func _ready() -> void:
-	for n in ["products", "perks", "decor", "outdoor", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "bg_konbini", "props"]:
-		tex[n] = load("res://art/%s.png" % n)
+	for n in ["products", "perks", "decor", "walk", "storefronts", "props"]:
+		tex[n] = Sheets.texture(n)
 	theme = make_theme()
 	best.load("user://best.cfg")
 	audio = Audio.new()
@@ -508,7 +509,7 @@ func build() -> void:
 	staff_btn = key_button(show_staff, "", frame("perks", 0, 80), 62, 54, 18, Color("ee9234"))
 	grow_btn = key_button(act_open.bind("openExpansion"), "", frame("perks", 2, 80), 62, 54, 18, Color("5aae55"))
 	store_btn = key_button(act_open.bind("openListings"), "", frame("perks", 10, 80), 62, 54, 18, Color("4a9fdc"))
-	city_btn = key_button(toggle_city, "Tokyo map: your branches and their rivals  [M]", frame("outdoor", 2, 128), 62, 54, 18, Color("e57fa4"))
+	city_btn = key_button(toggle_city, "Tokyo map: your branches and their rivals  [M]", frame("perks", 12, 80), 62, 54, 18, Color("e57fa4"))
 	staff_btn.text = "Staff"
 	grow_btn.text = "Expand"
 	store_btn.text = "Store"
