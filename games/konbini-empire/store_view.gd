@@ -357,6 +357,21 @@ vec3 tatami(vec2 p, vec3 base, vec2 sun, float seed) {
 	return 0.455 - abs(across) < 0.055 ? heri * (dot(ow, sun) > 0.0 ? 1.2 : 0.9) * (0.455 - abs(across) < 0.01 ? 0.75 : 1.0) : c;
 }
 
+// how far p (metres) is from the nearest wall of a cut-down floor plan, size across, in rooms bay by bay: outer walls
+// 0.3 thick, the partitions between rooms 0.18 with a doorway in each, placed by that wall's own hash so the rooms either
+// side agree; below 0 inside a wall
+float plan_wall(vec2 p, vec2 size, vec2 bay, float seed) {
+	vec2 e = min(p, size - p);
+	vec2 rc = p / bay;
+	vec2 wd = min(fract(rc), 1.0 - fract(rc)) * bay;
+	vec2 bnd = floor(rc + 0.5);
+	float dx = fract(sin(dot(vec2(bnd.x, floor(rc.y)) + seed * 23.0, vec2(39.35, 11.13))) * 43758.5453);
+	float dz = fract(sin(dot(vec2(floor(rc.x), bnd.y) + seed * 29.0, vec2(17.71, 51.37))) * 43758.5453);
+	wd.x = abs(fract(rc.y) - 0.3 - 0.4 * dx) * bay.y < 0.4 ? 1.0 : wd.x;
+	wd.y = abs(fract(rc.x) - 0.3 - 0.4 * dz) * bay.x < 0.4 ? 1.0 : wd.y;
+	return min(min(e.x, e.y) - 0.3, min(wd.x, wd.y) - 0.09);
+}
+
 void fragment() {
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	// the house's three tones, shared with shaded_box: roofs full, walls turned to the sun 0.9, walls away 0.75 (the
@@ -375,30 +390,39 @@ void fragment() {
 			vec2 e = min(lpos.xz, info.xz - lpos.xz);
 			if (info.y < 1.0) {  // cut down in front of the street: the walls' section round a floor plan of rooms
 				vec2 bay = info.xz / max(vec2(1.0), floor(info.xz / vec2(3.0, 4.0) + 0.5));
-				vec2 rc = lpos.xz / bay;
-				vec2 wd = min(fract(rc), 1.0 - fract(rc)) * bay;
-				// a doorway in each wall between rooms, placed by that wall's own hash so the rooms either side agree
-				vec2 bnd = floor(rc + 0.5);
-				float dx = fract(sin(dot(vec2(bnd.x, floor(rc.y)) + seed * 23.0, vec2(39.35, 11.13))) * 43758.5453);
-				float dz = fract(sin(dot(vec2(floor(rc.x), bnd.y) + seed * 29.0, vec2(17.71, 51.37))) * 43758.5453);
-				wd.x = abs(fract(rc.y) - 0.3 - 0.4 * dx) * bay.y < 0.4 ? 1.0 : wd.x;
-				wd.y = abs(fract(rc.x) - 0.3 - 0.4 * dz) * bay.x < 0.4 ? 1.0 : wd.y;
-				float wall = min(min(e.x, e.y) - 0.3, min(wd.x, wd.y) - 0.06);
+				// the floor lies sunk below the walls' cut: look down from the cut toward the floor, and where the view meets
+				// a wall on the way, show its face, lit by the way it faces and darkening to its foot
+				const float SINK = 0.45;
+				float wall = plan_wall(lpos.xz, info.xz, bay, seed);
+				vec2 fp = lpos.xz - viewl * SINK;
+				vec3 face = vec3(-1.0);
+				vec2 prev = lpos.xz;
+				for (int i = 1; i <= 8 && wall >= 0.0; i++) {
+					vec2 sp = lpos.xz - viewl * (SINK * float(i) / 8.0);
+					if (plan_wall(sp, info.xz, bay, seed) < 0.0) {
+						vec2 fn = plan_wall(vec2(sp.x, prev.y), info.xz, bay, seed) < 0.0 ? vec2(sign(viewl.x), 0.0) : vec2(0.0, sign(viewl.y));
+						face = tint.rgb * (dot(fn, sunl) > 0.0 ? 0.9 : 0.75) * mix(1.0, 0.8, float(i) / 8.0);
+						fp = sp;
+						break;
+					}
+					prev = sp;
+				}
+				vec2 rc = fp / bay;
 				float r = fract(sin(dot(floor(rc) + seed * 37.0, vec2(12.9898, 78.233))) * 43758.5453);
 				int k = int(r * 4.0);
 				vec2 cell = k == 0 ? vec2(0.0, 4.0) : (k == 1 ? vec2(1.1, 0.55) : (k == 2 ? vec2(0.42) : vec2(3.3)));
-				vec2 g = fract(lpos.xz * cell);
+				vec2 g = fract(fp * cell);
 				float seam = min(k == 0 ? 1.0 : min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)) < (k == 2 ? 0.012 : 0.07) ? (k == 2 ? 0.8 : 0.84) : 1.0;
 				// laid piece by piece: boards a shade apart and staggered at their butt joints, tatami (see tatami()), concrete painted, worn in patches between saw cuts
 				// every 2.4 m, the kitchen's 30 cm tiles cream and buff in a check, each a shade off
-				vec2 pc = floor(lpos.xz * cell);
+				vec2 pc = floor(fp * cell);
 				float ph = fract(sin(dot(pc + seed * 41.0, vec2(78.233, 12.9898))) * 43758.5453);
 				if (k == 0) {
-					float bu = lpos.x / 1.8 + ph;
+					float bu = fp.x / 1.8 + ph;
 					float bh = fract(sin((pc.y * 7.0 + floor(bu) + seed * 13.0) * 12.9898) * 43758.5453);
 					seam *= (0.9 + 0.16 * bh) * (min(fract(bu), 1.0 - fract(bu)) < 0.018 ? 0.84 : 1.0);
 				} else if (k == 2) {
-					vec2 cp = lpos.xz * 0.9 + seed * 7.0;
+					vec2 cp = fp * 0.9 + seed * 7.0;
 					vec2 ci = floor(cp);
 					vec2 cf = smoothstep(0.0, 1.0, fract(cp));
 					vec4 h = fract(sin(vec4(dot(ci, vec2(12.9898, 78.233)), dot(ci + vec2(1.0, 0.0), vec2(12.9898, 78.233)), dot(ci + vec2(0.0, 1.0), vec2(12.9898, 78.233)), dot(ci + 1.0, vec2(12.9898, 78.233)))) * 43758.5453);
@@ -410,16 +434,16 @@ void fragment() {
 				// furnished to suit the floor: a piece against one wall (sofa, futon, steel racking, a kitchen counter)
 				// and one in the room (a rug, a low table, boxes, a dining table), the standing ones shadowed off the sun
 				vec2 o = floor(rc) * bay;
-				vec2 lo = max(o + 0.06, vec2(0.3));
-				vec2 hi = min(o + bay - 0.06, info.xz - 0.3);
+				vec2 lo = max(o + 0.09, vec2(0.3));
+				vec2 hi = min(o + bay - 0.09, info.xz - 0.3);
 				vec2 mid = (lo + hi) * 0.5;
 				vec2 room = hi - lo;
 				if (k == 2) {  // a yellow line painted round the storeroom, keeping the aisle clear of the racking
-					vec2 ed = min(lpos.xz - lo, hi - lpos.xz);
+					vec2 ed = min(fp - lo, hi - fp);
 					fl = abs(min(ed.x, ed.y) - 0.72) < 0.03 ? vec3(0.88, 0.72, 0.22) * seam : fl;
 				}
 				if (k == 1) {
-					fl = tatami(lpos.xz - lo, FLOOR[1], sunl, fract(seed * 13.0 + r));
+					fl = tatami(fp - lo, FLOOR[1], sunl, fract(seed * 13.0 + r));
 				}
 				int side = int(fract(r * 7.13) * 4.0);
 				float run = room[side / 2 == 0 ? 1 : 0] * (0.45 + 0.25 * fract(r * 3.71));
@@ -432,10 +456,10 @@ void fragment() {
 				vec3 BCol[4] = vec3[4](mix(ACCENT[(pick + int(r * 5.0) + 1) % 8], fl, 0.35), vec3(0.42, 0.27, 0.17), vec3(0.77, 0.6, 0.4), vec3(0.74, 0.56, 0.36));
 				float ta = k == 1 ? 0.12 : (k == 0 ? 0.45 : 0.35);  // how far each casts its shadow: a futon barely, a sofa's back far
 				float tb = k == 0 ? 0.0 : 0.25;  // a rug casts none
-				vec2 da = abs(lpos.xz - ca) - ha;
-				vec2 db = abs(lpos.xz - cb) - hb;
-				vec2 sa = abs(lpos.xz + sunl * ta - ca) - ha;
-				vec2 sb = abs(lpos.xz + sunl * tb - cb) - hb;
+				vec2 da = abs(fp - ca) - ha;
+				vec2 db = abs(fp - cb) - hb;
+				vec2 sa = abs(fp + sunl * ta - ca) - ha;
+				vec2 sb = abs(fp + sunl * tb - cb) - hb;
 				float ina = max(da.x, da.y);
 				float inb = fract(r * 17.0) < 0.8 ? max(db.x, db.y) : 1.0;
 				// a living room's TV board against the wall facing the sofa
@@ -443,22 +467,22 @@ void fragment() {
 				vec2 tp = abs(tw.yx);
 				vec2 ht = tw * tw * 0.19 + tp * min(run * 0.42, 0.8);
 				vec2 ct = mid - tw * (dot(abs(tw), room) * 0.5 - 0.19);
-				vec2 dtv = abs(lpos.xz - ct) - ht;
-				vec2 stv = abs(lpos.xz + sunl * 0.3 - ct) - ht;
+				vec2 dtv = abs(fp - ct) - ht;
+				vec2 stv = abs(fp + sunl * 0.3 - ct) - ht;
 				float intv = k == 0 && fract(r * 19.0) < 0.7 ? max(dtv.x, dtv.y) : 1.0;
 				if (min(min(max(sa.x, sa.y), tb > 0.0 && inb < 1.0 ? max(sb.x, sb.y) : 1.0), intv < 1.0 ? max(stv.x, stv.y) : 1.0) < 0.0 && min(min(ina, inb), intv) > 0.0) {
 					fl *= 0.78;
 				}
 				if (k == 1 && fract(r * 17.0) < 0.8) {  // a zabuton on the floor at each long side of the low table
 					vec2 off = hb.x >= hb.y ? vec2(0.0, hb.y + 0.3) : vec2(hb.x + 0.3, 0.0);
-					vec2 z1 = abs(lpos.xz - cb - off) - 0.24;
-					vec2 z2 = abs(lpos.xz - cb + off) - 0.24;
+					vec2 z1 = abs(fp - cb - off) - 0.24;
+					vec2 z2 = abs(fp - cb + off) - 0.24;
 					float inz = min(max(z1.x, z1.y), max(z2.x, z2.y));
-					vec2 zs1 = abs(lpos.xz + sunl * 0.07 - cb - off) - 0.24;
-					vec2 zs2 = abs(lpos.xz + sunl * 0.07 - cb + off) - 0.24;
+					vec2 zs1 = abs(fp + sunl * 0.07 - cb - off) - 0.24;
+					vec2 zs2 = abs(fp + sunl * 0.07 - cb + off) - 0.24;
 					fl *= inz > 0.0 && min(max(zs1.x, zs1.y), max(zs2.x, zs2.y)) < 0.0 ? 0.8 : 1.0;
 					// stuffed plump: piped round its edge, rounding up to a tuft of thread at its middle
-					vec2 zl = max(z1.x, z1.y) < max(z2.x, z2.y) ? lpos.xz - cb - off : lpos.xz - cb + off;
+					vec2 zl = max(z1.x, z1.y) < max(z2.x, z2.y) ? fp - cb - off : fp - cb + off;
 					vec3 zc = mix(ACCENT[(pick + 2) % 8], vec3(0.55, 0.3, 0.3), 0.35);
 					float zm = max(abs(zl.x), abs(zl.y));
 					float zt = zm < 0.035 && min(abs(zl.x), abs(zl.y)) < 0.012 ? 0.66 : (inz > -0.03 ? 0.74 : 0.86 + 0.18 * smoothstep(0.03, 0.17, -inz) + 0.08 * clamp(dot(zl, sunl) * 3.0, -1.0, 1.0));
@@ -474,11 +498,11 @@ void fragment() {
 					for (int ci = 0; ci < 4; ci++) {
 						vec2 sg = vec2(ci % 2 == 0 ? -1.0 : 1.0, ci / 2 == 0 ? -1.0 : 1.0);
 						vec2 cc = cb + (lx ? vec2(sg.x * hl.x * 0.5, sg.y * (hl.y + 0.1)) : vec2(sg.y * (hl.y + 0.1), sg.x * hl.x * 0.5));
-						vec2 cd = abs(lpos.xz - cc) - 0.15;
-						vec2 cs = abs(lpos.xz + sunl * 0.1 - cc) - 0.15;
+						vec2 cd = abs(fp - cc) - 0.15;
+						vec2 cs = abs(fp + sunl * 0.1 - cc) - 0.15;
 						if (max(cd.x, cd.y) < inc) {
 							inc = max(cd.x, cd.y);
-							cq = lpos.xz - cc;
+							cq = fp - cc;
 							cout = lx ? vec2(0.0, sg.y) : vec2(sg.y, 0.0);
 						}
 						shc = min(shc, max(cs.x, cs.y));
@@ -493,7 +517,7 @@ void fragment() {
 					}
 				}
 				if (k == 0 && fract(r * 17.0) < 0.8 && inb > 0.0) {  // a fringe of cream threads off each short end of the rug
-					vec2 fc = lpos.xz - cb;
+					vec2 fc = fp - cb;
 					bool lx = hb.x >= hb.y;
 					float fa = abs(lx ? fc.x : fc.y) - (lx ? hb.x : hb.y);
 					float fw = (lx ? hb.y : hb.x) - 0.03 - abs(lx ? fc.y : fc.x);
@@ -505,14 +529,14 @@ void fragment() {
 						vec3 rug = mix(ACCENT[(pick + int(r * 5.0) + 1) % 8], vec3(0.34, 0.18, 0.16), 0.32);
 						vec3 cream = vec3(0.9, 0.85, 0.74);
 						float bw = min(hb.x, hb.y);
-						vec2 dn = abs(lpos.xz - cb) / hb;
+						vec2 dn = abs(fp - cb) / hb;
 						float m = dn.x + dn.y;
 						float d = -inb / bw;
 						fl = d < 0.07 ? rug * 0.6 : (d < 0.2 ? cream * 0.9 : (d < 0.26 ? rug * 0.72 : (m < 0.16 ? cream : (m < 0.36 ? rug * 0.78 : (m < 0.52 ? mix(rug, cream, 0.55) : rug)))));
-						vec2 pp = floor(lpos.xz * 24.0);
+						vec2 pp = floor(fp * 24.0);
 						fl *= 0.95 + 0.08 * fract(sin(dot(pp, vec2(12.9898, 78.233))) * 43758.5453);
 					} else if (k == 1) {  // a low table: its top grained down its length, its rim lit toward the sun, tea set out on it
-						vec2 tc = lpos.xz - cb;
+						vec2 tc = fp - cb;
 						bool lx = hb.x >= hb.y;
 						float gr = fract((lx ? tc.y : tc.x) * 11.0 + 0.35 * sin((lx ? tc.x : tc.y) * 2.6 + r * 40.0));
 						vec2 en = db.x > db.y ? vec2(sign(tc.x), 0.0) : vec2(0.0, sign(tc.y));
@@ -528,7 +552,7 @@ void fragment() {
 							fl = pl < 0.08 ? vec3(0.22, 0.23, 0.25) * (pl < 0.018 ? 0.7 : (length(tp - sunl * 0.035) < 0.025 ? 2.2 : (pl > 0.065 ? 0.8 : 1.0))) : fl;
 						}
 					} else if (k == 2) {  // a stack of cartons: a smaller one set on the big one, laying its shadow across it
-						vec2 tc = lpos.xz - cb;
+						vec2 tc = fp - cb;
 						bool lx = hb.x >= hb.y;
 						vec2 c2 = lx ? vec2(-hb.x * 0.35, hb.y * 0.12) : vec2(hb.x * 0.12, -hb.y * 0.35);
 						vec2 h2 = hb * (lx ? vec2(0.5, 0.62) : vec2(0.62, 0.5));
@@ -536,7 +560,7 @@ void fragment() {
 						vec2 s2 = abs(tc + sunl * 0.12 - c2) - h2;
 						fl = max(d2.x, d2.y) < 0.0 ? carton(tc - c2, h2, BCol[2] * 1.06, sunl, fract(r * 43.0)) : carton(tc, hb, BCol[2], sunl, fract(r * 47.0)) * (max(s2.x, s2.y) < 0.0 ? 0.78 : 1.0);
 					} else {  // a dining table: its top grained along its length, its rim lit toward the sun, a fruit bowl at its middle
-						vec2 tc = lpos.xz - cb;
+						vec2 tc = fp - cb;
 						bool lx = hb.x >= hb.y;
 						float gr = fract((lx ? tc.y : tc.x) * 9.0 + 0.3 * sin((lx ? tc.x : tc.y) * 2.2 + r * 40.0));
 						vec2 en = db.x > db.y ? vec2(sign(tc.x), 0.0) : vec2(0.0, sign(tc.y));
@@ -548,7 +572,7 @@ void fragment() {
 					}
 				}
 				if (intv < 0.0) {  // low and white-lacquered, its top lit along the front, the set's slim black panel standing at the back on its foot
-					vec2 tl = lpos.xz - ct;
+					vec2 tl = fp - ct;
 					float tac = 0.19 + dot(tl, tw);
 					float tal = dot(tl, tp) + ht.x * tp.x + ht.y * tp.y;
 					float tlen = 2.0 * dot(ht, tp);
@@ -563,7 +587,7 @@ void fragment() {
 				if (ina < 0.0) {
 					fl = ACol[k] * (ina > -0.05 ? 0.8 : 1.0);
 					if (k == 0) {  // a sofa: a cushioned back to the wall and a rolled arm each end round a seat of plump cushions
-						vec2 lc = lpos.xz - ca;
+						vec2 lc = fp - ca;
 						float across = (side % 2 == 0 ? 1.0 : -1.0) * (side / 2 == 0 ? lc.x : lc.y) + (side / 2 == 0 ? ha.x : ha.y);
 						float along = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
 						vec2 outw = -tw;
@@ -603,7 +627,7 @@ void fragment() {
 							}
 						}
 					} else if (k == 1) {  // a futon: a patterned quilt turned down below the pillow, the mattress showing round them
-						vec2 lc = lpos.xz - ca;
+						vec2 lc = fp - ca;
 						float al = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
 						float ac = side / 2 == 0 ? lc.x : lc.y;
 						float hw = 0.5 * deep;
@@ -626,7 +650,7 @@ void fragment() {
 							fl *= run - 0.44 - al > -0.04 && al < run ? 0.84 : 1.0;
 						}
 					} else {  // steel racking or a kitchen counter, both seen from above against the wall
-						vec2 lc = lpos.xz - ca;
+						vec2 lc = fp - ca;
 						float across = (side % 2 == 0 ? 1.0 : -1.0) * (side / 2 == 0 ? lc.x : lc.y) + (side / 2 == 0 ? ha.x : ha.y);
 						float along = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
 						vec2 outw = side / 2 == 0 ? vec2(side == 0 ? 1.0 : -1.0, 0.0) : vec2(0.0, side == 2 ? 1.0 : -1.0);
@@ -658,7 +682,7 @@ void fragment() {
 							fl = ba < 0.03 || ba > bl - 0.03 ? vec3(0.36, 0.4, 0.46) : fl;
 							fl = across < 0.035 || across > deep - 0.035 ? vec3(0.4, 0.44, 0.5) * (across > deep * 0.5 ? 1.25 : 1.0) : fl;
 						} else {  // the counter: a speckled worktop lit along its front, tiles up the wall, a sink and a hob
-							fl = vec3(0.9, 0.9, 0.87) * (0.97 + 0.05 * fract(sin(dot(floor(lpos.xz * 20.0), vec2(12.9898, 78.233))) * 43758.5453));
+							fl = vec3(0.9, 0.9, 0.87) * (0.97 + 0.05 * fract(sin(dot(floor(fp * 20.0), vec2(12.9898, 78.233))) * 43758.5453));
 							fl = across > deep - 0.03 ? fl * (dot(outw, sunl) > 0.0 ? 1.08 : 0.78) : (across < 0.06 ? vec3(0.78, 0.86, 0.85) * (fract(along * 10.0) < 0.12 ? 0.82 : 1.0) : fl);
 							vec2 sp = vec2(along - run * 0.3, across - deep * 0.55);
 							vec2 sh = vec2(min(0.18, run * 0.13), 0.12);
@@ -678,7 +702,10 @@ void fragment() {
 						}
 					}
 				}
-				fl *= mix(0.72, 1.0, smoothstep(0.0, 0.5, wall));
+				// and each wall casts its shadow across the floor away from the sun
+				float cast = min(plan_wall(fp + sunl * 0.3, info.xz, bay, seed), plan_wall(fp + sunl * 0.6, info.xz, bay, seed));
+				fl *= mix(0.72, 1.0, smoothstep(0.0, 0.5, plan_wall(fp, info.xz, bay, seed))) * (cast < 0.0 ? 0.8 : 1.0);
+				fl = face.r >= 0.0 ? face : fl;
 				col = wall < 0.0 ? tint.rgb * 1.08 : fl;
 				// windows cut through the outer walls below the cut: the reveal down to the sill, the glass's section across it
 				bool along_x = e.y < e.x;
