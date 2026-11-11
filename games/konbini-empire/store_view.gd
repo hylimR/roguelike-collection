@@ -21,8 +21,7 @@ const ITEM_PX := 0.007
 const DECOR_PX := 0.014
 const DECOR_CAST := {0: [0.0, 0.85, 0.42]}  # the potted plant, the same way
 const FACILITY_CAST := {"vending": [0.0, 1.8, 1.0], "gacha": [0.0, 1.35, 1.3], "bench": [0.3, 0.85, 1.2]}  # metres
-const VEHICLE_CELL := Vector2i(128, 96)
-const VEHICLE_PX := 0.025
+const Vehicles := preload("res://art/vehicles.gd")
 # atlas cells (art is cut at 2x its own pixel grid)
 const ITEM := 64
 const PERSON := Vector2i(72, 96)
@@ -787,6 +786,7 @@ var cars: Array = []
 var next_walker := 0.0
 var next_car := 0.0
 var set_cars: Array = []  # traffic on the set's own street, which city movers keep off
+var parked: Array = []  # vehicles standing on a new set, given their lamp light once the set is built
 var next_set_car := 0.0
 var mode := "store"  # store | city
 var city_sig := ""
@@ -1207,6 +1207,7 @@ func update_light() -> void:
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
 	if car_glass:
 		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
+	Vehicles.relight(light, night, LAMP)
 	soft_mat.albedo_color.a = 0.34 - 0.14 * night
 	ao_mat.albedo_color.a = 0.3 - 0.1 * night
 	lit_sprites = lit_sprites.filter(func(s): return is_instance_valid(s))
@@ -3756,13 +3757,45 @@ func place(m: Dictionary) -> void:
 	m.dir = dir * signf(m.v)
 
 
-## Picks the sprite frame for something travelling along `dir` (art: frame 0 heads down-right, 1 up-left).
-func facing(node: Sprite3D, dir: Vector3, frame0: int, cell: Vector2i) -> void:
-	var b := cam.global_transform.basis
-	var toward := dir.dot(b.y) < 0.0
-	var sx := dir.dot(b.x)
-	node.region_rect = Rect2((frame0 + (0 if toward else 1)) * cell.x, node.region_rect.position.y, cell.x, cell.y)
-	node.flip_h = sx < 0.0 if toward else sx > 0.0
+## A vehicle of kind kv (art/vehicles.gd; a kei car in paint `paint`) over its soft shadow; unless it is parked, its
+## lamps light up after dark and its headlights wash the road ahead.
+func vehicle(kv: int, paint := 0, lamps := true) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	node.mesh = Vehicles.mesh(kv, paint)
+	var sh := MeshInstance3D.new()
+	sh.mesh = Vehicles.shadow(kv)
+	sh.material_override = soft_mat
+	node.add_child(sh)
+	if not lamps:
+		node.material_override = Vehicles.material(false)
+		return node
+	var reach := 1.0 if kv == Vehicles.SCOOTER else 1.6
+	var beam := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(2.0, 1.375) * reach
+	beam.mesh = pm
+	beam.material_override = pool_mat
+	beam.position = Vector3(Vehicles.SIZE[kv].x / 2 + reach - 0.2, 0.07, 0)
+	node.add_child(beam)
+	return node
+
+
+## Turns a vehicle to head along the unit vector dir, pitched up or down a ramp, its shadow (its first child) kept a
+## little off its sunny side.
+func steer(node: Node3D, dir: Vector3) -> void:
+	var right := dir.cross(Vector3.UP).normalized()
+	node.basis = Basis(dir, right.cross(dir), right)
+	var off := node.basis.transposed() * (Vector3(-SUN.x, 0, -SUN.z) / SUN.y * 0.4)
+	(node.get_child(0) as Node3D).position = Vector3(off.x, 0.03, off.z)
+
+
+## How far toward the lamps' light p stands on the set after dark (0-0.8), as light_at lifts a sprite there: a vehicle's
+## `lift`.
+func lamp_lift(p: Vector3) -> float:
+	var k := 0.0
+	for q in pools:
+		k = maxf(k, 1.0 - Vector2(p.x - q.x, p.z - q.y).length() / q.z)
+	return k * 0.8
 
 
 func view_rect() -> Rect2:
@@ -3807,16 +3840,15 @@ func spawn_mover(is_car: bool, mid := false) -> void:
 		return
 	var dir: float = p.get("dir", 1.0 if randf() < 0.5 else -1.0)
 	var m := {"path": p, "s": s, "v": 0.0, "lat": 0.0, "y": 0.0, "dir": Vector3.RIGHT}
-	var node: Sprite3D
+	var node: Node3D
 	if is_car:
 		m.lat = lane(p, dir, randi() % 2)
 		if cars.any(func(o): return o.path == p and signf(o.v) == dir and absf(o.lat - m.lat) < 0.5 and absf(o.s - s) < 7.0):
 			return  # keep cars apart in their lane
 		m.kv = randi() % 4
-		node = sprite("vehicles", Rect2(m.kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
-		m.v = dir * randf_range(5.0, 8.0) * (0.6 if m.kv == 3 else 1.0) * (1.6 if p.kind == "shuto" else 1.0)
-		m.y = VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
-		node.add_child(shadow(m.y, 1.5))
+		node = vehicle(m.kv, randi() % Vehicles.PAINTS.size())
+		m.v = dir * randf_range(5.0, 8.0) * (0.6 if m.kv == Vehicles.SCOOTER else 1.0) * (1.6 if p.kind == "shuto" else 1.0)
+		m.y = -0.1 if p.kind in ["street", "avenue"] else 0.0  # down onto the tarmac; deck and ramp paths ride on theirs
 		cars.append(m)
 	else:
 		m.a = randi() % 7
@@ -3830,6 +3862,8 @@ func spawn_mover(is_car: bool, mid := false) -> void:
 	m.node = node
 	street.add_child(node)
 	place(m)
+	if is_car:
+		steer(node, m.dir)
 
 
 ## Lateral offset of a lane for traffic going `dir` along path p (keep left; lane 0 is the inner one).
@@ -3951,13 +3985,13 @@ func street_life(delta: float) -> void:
 			gone.append(o)
 			continue
 		place(o)
-		shine(o.node)
 		o.node.visible = not area.has_point(Vector2(o.node.position.x, o.node.position.z)) or o.node.position.y > 3.0
 		if o.has("a"):
+			shine(o.node)
 			stride(o, absf(o.v), delta)
 			o.node.flip_h = o.dir.dot(cam.global_transform.basis.x) < 0.0
 		else:
-			facing(o.node, o.dir, o.kv * 2, VEHICLE_CELL)
+			steer(o.node, o.dir)
 	for o in gone:
 		o.node.queue_free()
 	walkers = walkers.filter(func(o): return not gone.has(o))
@@ -3975,6 +4009,10 @@ func street_open(dir: float) -> bool:
 
 func street_traffic(delta: float) -> void:
 	delta = minf(delta, 0.5)
+	for v in parked:
+		if is_instance_valid(v):
+			v.set_instance_shader_parameter("lift", lamp_lift(v.global_position))
+	parked.clear()
 	var lt: Array = sim.lights()
 	var held: bool = lt[0] or lt[2]
 	next_set_car -= delta * (Sim.band(sim.hour()).traffic / 1.2 if sim.phase == "playing" else 1.0)
@@ -3989,20 +4027,11 @@ func street_traffic(delta: float) -> void:
 			x0 = INF if entries.is_empty() else entries[randi() % entries.size()]
 		if x0 < INF and not set_cars.any(func(o): return o.dir == dir and absf(o.x - x0) < 8.0):
 			var kv := randi() % 4
-			var node := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
-			var y := VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
-			node.add_child(shadow(y, 1.5))
-			var beam := MeshInstance3D.new()
-			var pm := PlaneMesh.new()
-			pm.size = Vector2(3.2, 2.2)
-			beam.mesh = pm
-			beam.material_override = pool_mat
-			beam.position = Vector3(3.2 * dir, 0.03 - y, 0)
-			node.add_child(beam)
-			node.position = Vector3(x0, y, -1.7 * dir)
+			var node := vehicle(kv, randi() % Vehicles.PAINTS.size())
+			node.position = Vector3(x0, -0.045, -1.7 * dir)
 			set_node.add_child(node)
-			facing(node, Vector3(dir, 0, 0), kv * 2, VEHICLE_CELL)
-			var cruise := randf_range(5.0, 8.0) * (0.6 if kv == 3 else 1.0)
+			steer(node, Vector3(dir, 0, 0))
+			var cruise := randf_range(5.0, 8.0) * (0.6 if kv == Vehicles.SCOOTER else 1.0)
 			set_cars.append({"node": node, "x": x0, "v": cruise, "dir": dir, "cruise": cruise, "kv": kv, "turn": -1.0, "back": false})
 	var gone := []
 	for o in set_cars:
@@ -4016,15 +4045,13 @@ func street_traffic(delta: float) -> void:
 				o.back = true
 				o.v = 3.0
 				t = Vector3(o.dir, 0, 0)
-			facing(o.node, t, o.kv * 2, VEHICLE_CELL)
-			var beam: Node3D = o.node.get_child(1)
-			beam.position = Vector3(t.x * 3.2, beam.position.y, t.z * 3.2)
-			shine(o.node)
+			steer(o.node, t)
+			o.node.set_instance_shader_parameter("lift", lamp_lift(o.node.global_position))
 			continue
 		var room_ := INF
 		for q in set_cars:
 			if q != o and q.dir == o.dir and (q.x - o.x) * o.dir > 0.0:
-				room_ = minf(room_, (q.x - o.x) * o.dir - 5.5)
+				room_ = minf(room_, (q.x - o.x) * o.dir - (Vehicles.SIZE[o.kv].x + Vehicles.SIZE[q.kv].x) / 2 - 1.4)
 		var line: float = (Sim.CROSS_X - 4.0 * o.dir - o.x) * o.dir  # the car's centre to its stop line
 		if held and line > -0.2:
 			room_ = minf(room_, line)
@@ -4035,7 +4062,7 @@ func street_traffic(delta: float) -> void:
 		var was: float = o.x
 		o.x += o.dir * o.v * delta
 		o.node.position.x = o.x
-		shine(o.node)
+		o.node.set_instance_shader_parameter("lift", lamp_lift(o.node.global_position))
 		if not street_open(o.dir) and (o.x - turn_at) * o.dir >= 0.0:
 			o.x = turn_at
 			o.turn = 0.0
@@ -5222,22 +5249,14 @@ func build_set() -> void:
 	health = health_check()
 	heat = ice_stand()
 	car_park_kit()
-	# a car nosed into the right-hand bay, front wheels at the stop: its art's footprint centre (midway across, a quarter
-	# of its drawn width above its lowest point) held on the bay's centre line, slid along the view to clear the ground
+	# a car nosed into the right-hand bay, its front tyres against the wheel stop (12 cm high, its face at z -15.2)
 	var kv: int = b.lot % 3
-	var car := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
+	var car := vehicle(kv, b.lot % Vehicles.PAINTS.size(), false)
 	set_node.add_child(car)
-	facing(car, Vector3(0, 0, -1), kv * 2, VEHICLE_CELL)
-	var u: Rect2i = tex["vehicles"].get_image().get_region(Rect2i(car.region_rect)).get_used_rect()
-	var fx: float = u.get_center().x if not car.flip_h else VEHICLE_CELL.x - u.get_center().x
-	var fy: float = u.end.y - u.size.x / 4.0
-	car.offset = Vector2(VEHICLE_CELL.x / 2.0 - fx, fy - VEHICLE_CELL.y / 2.0)
-	var long_: float = (u.end.x - u.position.x) * VEHICLE_PX * 0.5 / 0.7071  # roughly its length along the bay
-	var foot := Vector2(1.46, -15.5 + long_ / 2.0)
-	var tilt := deg_to_rad(PITCH)
-	car.position = Vector3(foot.x, 0, foot.y) + Vector3(sin(PI / 4) * cos(tilt), sin(tilt), cos(PI / 4) * cos(tilt)) * ((u.size.x / 4.0 * VEHICLE_PX - 0.05) / sin(tilt))
-	blob(set_node, foot, 1.3)
-	lit_sprites.append(car)
+	steer(car, Vector3(0, 0, -1))
+	var wh: Vector2 = Vehicles.WHEEL[kv]
+	car.position = Vector3(1.4, -0.042, -15.2 + wh.x + sqrt(wh.y * wh.y - pow(wh.y - 0.12, 2.0)))
+	parked.append(car)
 	pole_sign(set_node)
 	# where a city street runs in under the yard and leaves it unbuilt: the block's garbage station at the sidewalk, a
 	# couple of bicycles along the car park's kerb and a tree at the back, all on the side the rival doesn't hide
@@ -5526,12 +5545,11 @@ func build_set() -> void:
 			if f in ["vending", "gacha"]:
 				pool(set_node, at + Vector3(0, 0, 0.6), Vector2(3.5, 3.5))
 	if st.facilities.has("delivery"):  # the courier waits on the car park's apron, nose to the street
-		var dv := sprite("vehicles", Rect2(6 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), 0.016)
-		dv.position = Vector3(-2.0, VEHICLE_CELL.y / 2.0 * 0.016 - 0.05, -8.2)
+		var dv := vehicle(Vehicles.SCOOTER)
+		dv.position = Vector3(-2.0, -0.042, -8.2)
 		set_node.add_child(dv)
-		facing(dv, Vector3(0, 0, 1), 6, VEHICLE_CELL)
-		lit_sprites.append(dv)
-		blob(set_node, Vector2(-2.0, -8.2), 0.6)
+		steer(dv, Vector3(0, 0, 1))
+		parked.append(dv)
 	# the city gives way to everything built behind the street: your shop, the rival and the rows of neighbours
 	var o2 := Vector2(site.position.x, site.position.z)
 	set_feet = [Rect2(o2 + Vector2(-16.5, -20.2), Vector2(span.y + 16.5, 13.0))]
