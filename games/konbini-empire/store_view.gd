@@ -2679,10 +2679,10 @@ static func sub_line(e: Dictionary, pts: PackedVector3Array, a: float, b: float)
 ## column and cap beam under it at each pier.
 func build_rail(pillars: Array) -> void:
 	var CT := Sim.City
-	var ballast := tiled(speckle([Color("8a8174"), Color("938a7d"), Color("80786c"), Color("9b9285")]), Vector2(1, CT.RAIL_W / 3.2))
+	var ballast := tiled(speckle([Color("847e76"), Color("958e84"), Color("736c64"), Color("a19a90"), Color("665f58")]), Vector2(4, CT.RAIL_W / 0.8))
 	var bed := mat(Color.WHITE, sleepers())
-	var steel := mat(Color("aeaca6"))
-	var web := mat(Color("4a4440"))
+	var steel := mat(Color("e4e6e6"))  # the heads worn bright by the wheels
+	var web := mat(Color("6b4a38"))  # their sides rusted
 	var fascia := mat(Color("c3bfb6"))
 	var cast := mat(Color.WHITE, parapet_tex())
 	var slab := mat(Color("d6d2c6"))
@@ -2710,7 +2710,7 @@ func build_rail(pillars: Array) -> void:
 		var l := part.size() - 2
 		ribbon(top, part, half, -half, 0.3, 1.0 / 3.2, f, l)
 		for t in [CT.TRACK, -CT.TRACK]:
-			ribbon(beds, part, t + 1.3, t - 1.3, 0.31, 1.0 / 0.6, f, l)
+			ribbon(beds, part, t + 1.3, t - 1.3, 0.31, 1.0 / 2.4, f, l)
 			for g in [0.6, -0.6]:
 				ribbon(rails, part, t + g + 0.06, t + g - 0.06, 0.37, 0.0, f, l)
 				for e in [0.05, -0.05]:
@@ -2913,16 +2913,44 @@ func shuto_tex() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-## One sleeper on its ballast bed, u along the track (a sleeper every texture width), v across it: a concrete tie
-## between the bed's shoulders, a shadow on its far side.
+## Four sleepers on their ballast bed, u along the track (2.4 m a texture width), v across it, 20 px a metre: granite
+## ballast speckled grey and brown, rust-stained under each rail, each concrete tie a shade off with its lit near edge
+## and a shadow on its far side, a steel tie plate and two clips where each rail sits on it.
 func sleepers() -> ImageTexture:
-	var img := Image.create(6, 13, false, Image.FORMAT_RGB8)
-	img.fill(Color("6a6259"))
-	img.fill_rect(Rect2i(1, 1, 2, 11), Color("b3ada2"))
-	img.fill_rect(Rect2i(3, 1, 1, 11), Color("58514a"))
-	for y in [0, 12]:
-		for x in 6:
-			img.set_pixel(x, y, Color("7b7368") if x % 2 else Color("8a8174"))
+	var r := RandomNumberGenerator.new()
+	r.seed = 23
+	var stones := [Color("8d877e"), Color("9c958b"), Color("7a736a"), Color("a8a196"), Color("6c665e")]
+	var img := Image.create(48, 52, false, Image.FORMAT_RGB8)
+	for x in 48:
+		for y in 52:
+			var c: Color = stones[0] if r.randf() < 0.4 else stones[r.randi() % stones.size()]
+			if absi(y - 14) < 3 or absi(y - 37) < 3:
+				c = c.lerp(Color("7a5a44"), 0.35)
+			if y < 2 or y > 49:
+				c = c.darkened(0.12)  # the shoulders fall away
+			img.set_pixel(x, y, c)
+	for k in 4:
+		var x0 := k * 12 + 3
+		var tone := r.randf_range(0.94, 1.05)
+		for y in range(2, 50):
+			for dx in 5:
+				var c := Color("bcb6aa") * tone
+				if dx == 0:
+					c = c.lightened(0.12)
+				elif dx == 4:
+					c = c.darkened(0.14)
+				if r.randf() < 0.12:
+					c = c.darkened(0.06)
+				img.set_pixel(x0 + dx, y, c)
+			for dx in 2:
+				var under := img.get_pixel(x0 + 5 + dx, y)
+				img.set_pixel(x0 + 5 + dx, y, under.darkened(0.4 - dx * 0.18))
+		for ry in [14, 37]:
+			for y in range(ry - 3, ry + 4):
+				for dx in range(1, 4):
+					img.set_pixel(x0 + dx, y, Color("4f4a46") if absi(y - ry) < 3 else Color("3a3633"))
+			for y in [ry - 3, ry + 3]:
+				img.set_pixel(x0 + 2, y, Color("8f8a80"))  # the clips
 	return ImageTexture.create_from_image(img)
 
 
