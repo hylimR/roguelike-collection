@@ -45,10 +45,7 @@ const PROPS := {"till": [0, 0.0075, Vector2(0.34, 0.44)], "coffee": [1, 0.0075, 
 	"vending": [3, 0.014, Vector2(1.0, 0.75)], "gacha": [4, 0.014, Vector2(1.5, 0.5)], "bench": [5, 0.014, Vector2(1.5, 0.4)],
 	"cat": [6, 0.009, Vector2.ZERO], "karaage": [7, 0.0075, Vector2(0.47, 0.52)], "oden": [8, 0.0075, Vector2(0.4, 0.55)]}
 const COUNTER_H := 0.75  # the counter top, at the staff's elbows
-const LANDMARK := 256
 const Models := preload("res://landmark_models.gd")  # landmarks traced from their drawings into boxes
-const LANDMARK_H := {"landmarks": 256, "tokyo": 384}  # the Tokyo sheet has tall cells for the towers
-const LANDMARK_SPAN := 29.5  # screen width of a landmark: most of the 22 m square the city reserves for it
 const WALK_NEAR := 1.2  # customers' sidewalk line in front of the shop
 const MAX_WALKERS := 70
 const MAX_CARS := 70
@@ -763,7 +760,6 @@ void fragment() {
 const LAYOUT := {"floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]}
 
 var tex := {}
-var sheet_imgs := {}  # sheet images read back for their cells' used rects
 var sim
 var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
 var floor_tex := {}  # shop floor texture by left wall
@@ -802,7 +798,6 @@ var next_set_car := 0.0
 var mode := "store"  # store | city
 var city_sig := ""
 var lm_ground := {}  # "water" / "grass" -> [material, uv per metre]: the city's ground, for landmarks' own pools and lawns
-var lm_sprites: Array = []  # [Sprite3D, half width]: landmarks, cleared when they cover the street
 var lot_nodes: Array = []  # [Node3D, footprint centre]: the shops built on other branches' lots, hidden under the set
 var rails: Array = []  # [pts, offset, segment]: the city's bridge and quay railings, one piece per segment
 var rail_node: MeshInstance3D  # those railings, rebuilt without the pieces that would stand on the set's street
@@ -1811,8 +1806,6 @@ func set_mode(m: String) -> void:
 	zoom = 1.0
 	yaw = PI / 4  # the shop cutaway is drawn for this angle
 	yaw_drag = 0.0
-	for e in lm_sprites:
-		anchor(e)
 	pick = "" if m == "store" else pick
 	hover = {}
 	refresh_city()
@@ -1902,37 +1895,6 @@ func tiled(tex_: Texture2D, reps: Vector2) -> StandardMaterial3D:
 	m.uv1_scale = Vector3(reps.x, reps.y, 1)
 	m.texture_repeat = true
 	return m
-
-
-## A city sprite drawn in 2:1 (a landmark, a storefront), its footprint centred on `center` and its drawing `span`
-## wide on screen: the cell's empty top trimmed off and the billboard's foreshortening undone (the art already is the
-## tilted view). The footprint centre is midway across the drawing, a quarter of its width above its lowest point.
-func city_sprite(parent: Node3D, sheet: String, cell: Rect2, span: float, center: Vector3, list: Array) -> Sprite3D:
-	if not sheet_imgs.has(sheet):
-		sheet_imgs[sheet] = tex[sheet].get_image()
-	var u: Rect2i = sheet_imgs[sheet].get_region(Rect2i(cell)).get_used_rect()
-	var r := Rect2(cell.position.x, cell.position.y + u.position.y, cell.size.x, u.size.y)
-	var px := span / u.size.x
-	var s := sprite(sheet, r, px)
-	s.scale.y = 1.0 / cos(deg_to_rad(PITCH))
-	var ox := r.size.x / 2.0 - u.get_center().x
-	s.offset = Vector2(ox, u.size.y / 2.0 - u.size.x / 4.0)
-	parent.add_child(s)
-	var e := [s, span / 2.0, center, u.size.y * px, u.size.x / 4.0 * px, ox]  # sprite, half width, footprint, height, drop, offset x
-	list.append(e)
-	anchor(e)
-	lit_sprites.append(s)
-	return s
-
-
-## Mirrors a city sprite on the odd quarter turns and slides it along the view line, so its near half stands clear of
-## the ground (the ortho view keeps it in place on screen).
-func anchor(e: Array) -> void:
-	var s: Sprite3D = e[0]
-	s.flip_h = posmod(roundi((yaw - PI / 4) / (PI / 2)), 2) == 1
-	s.offset.x = -e[5] if s.flip_h else e[5]
-	var p := deg_to_rad(PITCH)
-	s.position = e[2] + Vector3(sin(yaw) * cos(p), sin(p), cos(yaw) * cos(p)) * ((e[4] * s.scale.y - 0.1) / sin(p))
 
 
 func surface(m: Material) -> SurfaceTool:
@@ -2052,7 +2014,6 @@ func build_static() -> void:
 	C = Sim.City.get_city()
 	for c in city.get_children():
 		c.free()
-	lm_sprites.clear()
 	elevated.clear()
 	var b: Rect2 = C.bounds
 	var mid := b.get_center()
@@ -2169,11 +2130,6 @@ func build_static() -> void:
 	build_buildings()
 	build_trees()
 	build_shadows()
-	for L in C.landmarks:
-		var lm: Array = C.districts[L.d].lm
-		if Models.MODELS.has("%s:%d" % lm):
-			continue
-		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_SPAN * L.size / 22.0, Vector3(L.pos.x, 0, L.pos.y), lm_sprites)
 	build_paths()
 
 
@@ -3504,13 +3460,6 @@ func update_fade() -> void:
 		build_rails([front] + set_feet if on else [])
 	for e in lot_nodes:
 		e[0].visible = not taken.call(Rect2(e[1] - Vector2(0.5, 0.5), Vector2.ONE))
-	for e in lm_sprites:
-		var s: Sprite3D = e[0]
-		var at_ := Vector2(e[2].x, e[2].z)
-		var base := iso(e[2])
-		var r := Rect2(base + Vector2(-e[1], e[4] - e[3]), Vector2(e[1] * 2, e[3]))
-		# cleared like the trees when in front of the street, rather than left as a see-through ghost over it
-		s.visible = not taken.call(Rect2(at_ - Vector2(0.5, 0.5), Vector2.ONE)) and not (on and r.intersects(scr) and at_.x + at_.y > depth)
 	var away := Transform3D(Basis.from_scale(Vector3.ONE * 0.001), Vector3(0, -50, 0))
 	# city buildings in front of the street are cut down to their ground floor (cut back to the far edge of the
 	# near sidewalk when they reach over it), so the street shows over a block that still reads as city
@@ -7803,13 +7752,11 @@ func _gui_input(e: InputEvent) -> void:
 		accept_event()
 		return
 	if mode == "city" and e is InputEventMouseMotion and e.button_mask & MOUSE_BUTTON_MASK_RIGHT:
-		# turns in quarter steps: the landmarks are drawn for the diagonal views only
+		# turns in quarter steps, keeping the diagonal 2:1 view the city is built for
 		yaw_drag -= e.relative.x * 0.006
 		var snapped_ := PI / 4 + roundf(yaw_drag / (PI / 2)) * PI / 2
 		if not is_equal_approx(snapped_, yaw):
 			yaw = snapped_
-			for s in lm_sprites:
-				anchor(s)
 			update_camera()
 		accept_event()
 		return
