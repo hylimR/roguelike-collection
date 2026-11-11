@@ -2736,6 +2736,30 @@ func box_into(st: SurfaceTool, p0: Vector3, p1: Vector3, col: Color, world_uv :=
 		add_quad(st, q, uv)
 
 
+## An upright drum standing on `at`, radius r and height h, into a vertex-coloured surface: its side shaded round
+## from the walls' lit 0.9 toward the sun to their 0.75 away, with a sheen where it turns most to the sun, its top full.
+func drum_into(st: SurfaceTool, at: Vector3, r: float, h: float, col: Color, segs := 16) -> void:
+	var sun := Vector3(-1, 0, 1).normalized()
+	var tone := func(a: float) -> Color:
+		var d := Vector3(cos(a), 0, sin(a)).dot(sun)
+		var t := 0.825 + 0.1 * d + 0.07 * pow(maxf(d, 0.0), 6.0)
+		return Color(col.r * t, col.g * t, col.b * t)
+	for i in segs:
+		var a0 := TAU * i / segs
+		var a1 := TAU * (i + 1) / segs
+		var p0 := at + Vector3(cos(a0) * r, 0, sin(a0) * r)
+		var p1 := at + Vector3(cos(a1) * r, 0, sin(a1) * r)
+		var up := Vector3(0, h, 0)
+		for v in [[p0 + up, a0], [p1 + up, a1], [p1, a1], [p0 + up, a0], [p1, a1], [p0, a0]]:
+			st.set_color(tone.call(v[1]))
+			st.set_uv(Vector2.ZERO)
+			st.add_vertex(v[0])
+		st.set_color(col)
+		for v in [at + up, p1 + up, p0 + up]:
+			st.set_uv(Vector2.ZERO)
+			st.add_vertex(v)
+
+
 ## A unit box under xf into a vertex-coloured surface, each face in the house's tones by where it ends up facing.
 func turned_box_into(st: SurfaceTool, xf: Transform3D, col: Color) -> void:
 	for n: Vector3 in [Vector3.UP, Vector3.DOWN, Vector3.BACK, Vector3.FORWARD, Vector3.LEFT, Vector3.RIGHT]:
@@ -5406,30 +5430,44 @@ func build_set() -> void:
 		var drift := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
 		rect_quad(drift, Rect2(xl + 0.2, -15.95, vw - 0.4, 8.4), 3.665, 0.0, false, 0.125)
 		commit([drift], snow_cover)
+		var kit := surface(km)
+		var faces := surface(condenser())
+		# the tank: a frame of angle legs braced across under a deck, the FRP drum on it ringed by two hoops, a lid with its
+		# manhole hatch, a vent cap, a sight gauge down its sunny side and the supply pipe dropping down a leg to the roof
 		var tank := Vector3(xl + 1.0, 3.6, -14.9)
+		var steel := Color("6e737d")
 		for lg in [Vector2(-0.45, -0.45), Vector2(0.45, -0.45), Vector2(-0.45, 0.45), Vector2(0.45, 0.45)]:
-			block(set_node, Vector3(0.08, 0.5, 0.08), tank + Vector3(lg.x, 0.25, lg.y), Color("6e737d"))
-		block(set_node, Vector3(1.05, 0.08, 1.05), tank + Vector3(0, 0.52, 0), Color("6e737d"))
-		for part in [[0.5, 0.85, 0.98, Color("8fb3c2")], [0.53, 0.06, 1.0, Color("6f95a6")], [0.53, 0.06, 0.62, Color("6f95a6")], [0.18, 0.12, 1.47, Color("b9cdd5")]]:
-			var cyl := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = part[0]
-			cm.bottom_radius = part[0]
-			cm.height = part[1]
-			cm.radial_segments = 16
-			cyl.mesh = cm
-			cyl.material_override = mat(part[3])
-			cyl.position = tank + Vector3(0, part[2], 0)
-			set_node.add_child(cyl)
+			box_into(kit, tank + Vector3(lg.x - 0.04, 0, lg.y - 0.04), tank + Vector3(lg.x + 0.04, 0.5, lg.y + 0.04), steel)
+			box_into(kit, tank + Vector3(lg.x - 0.07, 0, lg.y - 0.07), tank + Vector3(lg.x + 0.07, 0.03, lg.y + 0.07), Color("8e8d88"))
+		for dz in [-0.45, 0.45]:
+			box_into(kit, tank + Vector3(-0.45, 0.2, dz - 0.02), tank + Vector3(0.45, 0.24, dz + 0.02), steel.darkened(0.1))
+		for dx in [-0.45, 0.45]:
+			box_into(kit, tank + Vector3(dx - 0.02, 0.2, -0.45), tank + Vector3(dx + 0.02, 0.24, 0.45), steel.darkened(0.1))
+		box_into(kit, tank + Vector3(-0.525, 0.48, -0.525), tank + Vector3(0.525, 0.56, 0.525), steel)
+		var frp := Color("9fc0cc")
+		drum_into(kit, tank + Vector3(0, 0.56, 0), 0.5, 0.85, frp)
+		for hy in [0.72, 1.14]:
+			drum_into(kit, tank + Vector3(0, hy, 0), 0.515, 0.05, frp.darkened(0.14))
+		drum_into(kit, tank + Vector3(0, 1.41, 0), 0.47, 0.04, frp.lightened(0.1))
+		drum_into(kit, tank + Vector3(0, 1.45, 0), 0.19, 0.1, Color("b9cdd5"))
+		drum_into(kit, tank + Vector3(0, 1.55, 0), 0.21, 0.025, Color("7d9ba8"))
+		box_into(kit, tank + Vector3(0.24, 1.45, -0.26), tank + Vector3(0.28, 1.62, -0.22), Color("d8dcd8"))
+		box_into(kit, tank + Vector3(0.2, 1.62, -0.3), tank + Vector3(0.32, 1.66, -0.18), Color("d8dcd8"))
+		box_into(kit, tank + Vector3(-0.36, 0.64, 0.33), tank + Vector3(-0.32, 1.33, 0.37), Color("e9eef0"))
+		box_into(kit, tank + Vector3(-0.355, 0.8, 0.355), tank + Vector3(-0.325, 1.0, 0.375), Color("3f6f8c"))
+		box_into(kit, tank + Vector3(0.4, 0.0, 0.4), tank + Vector3(0.46, 0.56, 0.46), Color("bdb8ad"))
+		box_into(kit, tank + Vector3(0.4, 0.03, 0.46), tank + Vector3(0.46, 0.09, 1.2), Color("bdb8ad"))
 		for k in 2:
 			var ac := Vector3(xl + 0.9 + k * 1.4, 3.6, -11.6)
-			block(set_node, Vector3(1.1, 0.1, 0.8), ac + Vector3(0, 0.05, 0), Color("8e8d88"))
-			block(set_node, Vector3(0.95, 0.55, 0.65), ac + Vector3(0, 0.37, 0), Color("d2cfc4"))
-			block(set_node, Vector3(0.7, 0.36, 0.03), ac + Vector3(0, 0.37, 0.33), Color("7a8088"))
-		block(set_node, Vector3(0.1, 0.1, 3.1), Vector3(xl + 2.3, 3.68, -13.3), Color("bdb8ad"))  # their pipe to the back
+			box_into(kit, ac + Vector3(-0.55, 0, -0.4), ac + Vector3(0.55, 0.1, 0.4), Color("8e8d88"))
+			condenser_into(kit, faces, ac + Vector3(0, 0.1, 0), Vector3(0.95, 0.55, 0.65))
+		box_into(kit, Vector3(xl + 2.25, 3.63, -14.85), Vector3(xl + 2.35, 3.73, -11.75), Color("bdb8ad"))  # their pipe to the back
 		var vent := Vector3(vx + vw / 2 - 0.7, 3.6, -9.2)
-		block(set_node, Vector3(0.18, 0.7, 0.18), vent + Vector3(0, 0.35, 0), Color("9aa0a6"))
-		block(set_node, Vector3(0.34, 0.08, 0.34), vent + Vector3(0, 0.74, 0), Color("6e737d"))
+		drum_into(kit, vent, 0.13, 0.08, Color("8e8d88"), 12)  # the stack on its flashing, under a rain cowl
+		drum_into(kit, vent, 0.08, 0.66, Color("9aa0a6"), 12)
+		drum_into(kit, vent + Vector3(0, 0.66, 0), 0.17, 0.06, steel, 12)
+		drum_into(kit, vent + Vector3(0, 0.72, 0), 0.1, 0.04, steel.lightened(0.15), 12)
+		commit([kit, faces], set_node)
 		block(set_node, Vector3(vw - 0.3, 0.55, 0.12), Vector3(vx, 3.1, -7.16), Color("cfc7b6"))
 		block(set_node, Vector3(vw - 1.1, 0.4, 0.06), Vector3(vx, 3.1, -7.08), Color("e9e4d8"))  # where the old sign hung
 		# its ghost: paint unfaded where the board sat, grime caught round its edge and rust bled from its screw holes
