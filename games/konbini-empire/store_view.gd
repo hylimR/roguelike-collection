@@ -390,14 +390,14 @@ void fragment() {
 				}
 				int side = int(fract(r * 7.13) * 4.0);
 				float run = room[side / 2 == 0 ? 1 : 0] * (0.45 + 0.25 * fract(r * 3.71));
-				float deep = k == 0 ? 0.4 : 0.55;
+				float deep = k == 0 ? 0.85 : 0.55;
 				vec2 ha = side / 2 == 0 ? vec2(deep, run) * 0.5 : vec2(run, deep) * 0.5;
 				vec2 ca = mid + (side / 2 == 0 ? vec2((room.x * 0.5 - ha.x) * (side == 0 ? -1.0 : 1.0), 0.0) : vec2(0.0, (room.y * 0.5 - ha.y) * (side == 2 ? -1.0 : 1.0)));
 				vec2 hb = min(room * (k == 0 ? vec2(0.24, 0.22) : vec2(0.15, 0.12)) + 0.05, vec2(0.75));
-				vec2 cb = mid + (vec2(fract(r * 5.3), fract(r * 9.7)) - 0.5) * 0.25 * room - (ca - mid) * 0.15;
+				vec2 cb = mid + (vec2(fract(r * 5.3), fract(r * 9.7)) - 0.5) * 0.25 * room + (ca - mid) * (k == 0 ? 0.25 : -0.15);  // a rug runs under the sofa's front
 				vec3 ACol[4] = vec3[4](mix(ACCENT[(pick + 4) % 8], vec3(0.4), 0.35), vec3(0.93, 0.9, 0.84), vec3(0.6, 0.65, 0.7), vec3(0.9, 0.9, 0.87));
 				vec3 BCol[4] = vec3[4](mix(ACCENT[(pick + int(r * 5.0) + 1) % 8], fl, 0.35), vec3(0.42, 0.27, 0.17), vec3(0.77, 0.6, 0.4), vec3(0.74, 0.56, 0.36));
-				float ta = k == 1 ? 0.12 : 0.35;  // how far each casts its shadow: a futon barely, racking far
+				float ta = k == 1 ? 0.12 : (k == 0 ? 0.45 : 0.35);  // how far each casts its shadow: a futon barely, a sofa's back far
 				float tb = k == 0 ? 0.0 : 0.25;  // a rug casts none
 				vec2 da = abs(lpos.xz - ca) - ha;
 				vec2 db = abs(lpos.xz - cb) - hb;
@@ -405,7 +405,15 @@ void fragment() {
 				vec2 sb = abs(lpos.xz + sunl * tb - cb) - hb;
 				float ina = max(da.x, da.y);
 				float inb = fract(r * 17.0) < 0.8 ? max(db.x, db.y) : 1.0;
-				if (min(max(sa.x, sa.y), tb > 0.0 && inb < 1.0 ? max(sb.x, sb.y) : 1.0) < 0.0 && min(ina, inb) > 0.0) {
+				// a living room's TV board against the wall facing the sofa
+				vec2 tw = side / 2 == 0 ? vec2(side == 0 ? -1.0 : 1.0, 0.0) : vec2(0.0, side == 2 ? -1.0 : 1.0);
+				vec2 tp = abs(tw.yx);
+				vec2 ht = tw * tw * 0.19 + tp * min(run * 0.42, 0.8);
+				vec2 ct = mid - tw * (dot(abs(tw), room) * 0.5 - 0.19);
+				vec2 dtv = abs(lpos.xz - ct) - ht;
+				vec2 stv = abs(lpos.xz + sunl * 0.3 - ct) - ht;
+				float intv = k == 0 && fract(r * 19.0) < 0.7 ? max(dtv.x, dtv.y) : 1.0;
+				if (min(min(max(sa.x, sa.y), tb > 0.0 && inb < 1.0 ? max(sb.x, sb.y) : 1.0), intv < 1.0 ? max(stv.x, stv.y) : 1.0) < 0.0 && min(min(ina, inb), intv) > 0.0) {
 					fl *= 0.78;
 				}
 				if (k == 1 && fract(r * 17.0) < 0.8) {  // a zabuton on the floor at each long side of the low table
@@ -506,21 +514,61 @@ void fragment() {
 						fl = bl < 0.12 ? (bl > 0.095 ? vec3(0.95, 0.94, 0.9) * (dot(tc, sunl) > 0.0 ? 1.0 : 0.8) : (length(fr) < 0.045 ? vec3(0.95, 0.55, 0.15) : (length(tc + vec2(0.04, -0.03)) < 0.04 ? vec3(0.8, 0.2, 0.18) : vec3(0.98, 0.85, 0.3)))) : fl;
 					}
 				}
+				if (intv < 0.0) {  // low and white-lacquered, its top lit along the front, the set's slim black panel standing at the back on its foot
+					vec2 tl = lpos.xz - ct;
+					float tac = 0.19 + dot(tl, tw);
+					float tal = dot(tl, tp) + ht.x * tp.x + ht.y * tp.y;
+					float tlen = 2.0 * dot(ht, tp);
+					fl = vec3(0.9, 0.88, 0.84) * (intv > -0.03 ? (dot(tw, sunl) > 0.0 ? 1.08 : 0.7) : 0.95 + 0.1 * fract(tal * 7.0 + 0.3 * sin(tac * 9.0)));
+					float tvh = tlen * 0.42;
+					float tvc = abs(tal - tlen * 0.5);
+					fl *= tvc < tvh && abs(tac - 0.12) < 0.07 && tac > 0.12 ? 0.75 : 1.0;
+					fl = tvc < tvh && abs(tac - 0.08) < 0.035 ? vec3(0.08, 0.09, 0.1) * (abs(tac - 0.11) < 0.008 ? 2.6 : 1.0) : fl;
+					fl = tvc < 0.14 && abs(tac - 0.15) < 0.05 ? vec3(0.14, 0.15, 0.16) * (tac > 0.18 ? 1.5 : 1.0) : fl;
+					fl = abs(tal - tlen * 0.86) < 0.05 && abs(tac - 0.24) < 0.06 ? vec3(0.3, 0.55, 0.3) * (length(vec2(tal - tlen * 0.86, tac - 0.24) + sunl * 0.02) < 0.035 ? 1.3 : 0.85) : fl;
+				}
 				if (ina < 0.0) {
 					fl = ACol[k] * (ina > -0.05 ? 0.8 : 1.0);
-					if (k == 0) {  // a sofa: its back to the wall and an arm at each end, the seat in cushions
+					if (k == 0) {  // a sofa: a cushioned back to the wall and a rolled arm each end round a seat of plump cushions
 						vec2 lc = lpos.xz - ca;
 						float across = (side % 2 == 0 ? 1.0 : -1.0) * (side / 2 == 0 ? lc.x : lc.y) + (side / 2 == 0 ? ha.x : ha.y);
 						float along = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
-						float n = run > 1.5 ? 3.0 : 2.0;
-						float cu = (along - 0.12) / (run - 0.24) * n;
-						bool frame = across < 0.13 || along < 0.12 || along > run - 0.12;
-						// the back and arms lit on top, the seat shadowed where it tucks under them and rounding off to the front
-						float tuck = min(across - 0.13, min(along - 0.12, run - 0.12 - along));
-						float front = 2.0 * ha[side / 2 == 0 ? 0 : 1] - across;
-						fl = ina > -0.05 ? fl : ACol[k] * (frame ? 1.2 : (min(fract(cu), 1.0 - fract(cu)) < 0.06 ? 0.78 : (tuck < 0.04 ? 0.74 : (front < 0.06 ? 0.86 : 0.98))));
-						vec2 pil = vec2(across - 0.24, along - 0.26);  // a throw cushion at one end, propped against the back
-						fl = !frame && abs(pil.x) < 0.09 && abs(pil.y) < 0.11 ? vec3(0.9, 0.85, 0.74) * (pil.x < -0.05 ? 0.82 : 1.0) : fl;
+						vec2 outw = -tw;
+						float sa2 = dot(sunl, tp);  // the sun along the sofa
+						float n = run > 1.7 ? 3.0 : 2.0;
+						vec3 c0 = ACol[k];
+						float am = 0.17;
+						float bk = 0.24;
+						float sl = run - 2.0 * am;
+						float ci = clamp(floor((along - am) / sl * n), 0.0, n - 1.0);
+						float cl = along - am - ci * sl / n;
+						float ce = min(min(cl, sl / n - cl), min(across - bk, deep - across));  // how far inside its seat cushion
+						float be = min(min(along - am, run - am - along), bk - across);  // inside the back
+						if (ina > -0.035) {  // the frame's edge: its front face toward the sun or away
+							fl = c0 * (deep - across < 0.04 ? (dot(outw, sunl) > 0.0 ? 0.9 : 0.6) : 0.62);
+						} else if (along < am || along > run - am) {  // the arms, rounded over the top and shaded on the inside face
+							float ai = along < am ? am - along : along - run + am;
+							float ab = 1.0 - abs(ai / am - 0.5) * 2.0;
+							fl = c0 * (ai < 0.035 ? (sign(along - run * 0.5) * sa2 < 0.0 ? 0.8 : 1.12) : 1.0 + 0.24 * ab);
+						} else if (across < bk) {  // the back cushions, lit along their top roll
+							float bc = abs(fract((along - am) / sl * n) - 0.5) * sl / n;
+							fl = c0 * (be < 0.03 ? 0.62 : (bc > sl / n * 0.5 - 0.02 ? 0.85 : 1.02 + 0.3 * (1.0 - abs(across / bk - 0.45) * 2.0)));
+						} else {  // the seat cushions, puffed up toward their middles and shaded where they tuck under the back
+							float puff = smoothstep(0.0, 0.12, ce);
+							fl = c0 * (ce < 0.018 ? 0.62 : 0.74 + 0.22 * puff + 0.05 * clamp(dot(vec2(cl - sl / n * 0.5, across - (bk + deep) * 0.5), vec2(sa2, dot(sunl, outw))) * 4.0, -1.0, 1.0));
+							fl *= across - bk < 0.08 ? 0.72 : 1.0;
+						}
+						// a throw cushion propped in each corner, set on its point, laying a shadow on the seat
+						for (int ti = 0; ti < 2; ti++) {
+							float tc = ti == 0 ? am + 0.22 : run - am - 0.22;
+							vec2 tq = vec2(along - tc, across - bk - 0.1);
+							float tdm = abs(tq.x) + abs(tq.y);
+							float tds = abs(tq.x + sa2 * 0.06) + abs(tq.y + dot(sunl, outw) * 0.06);
+							vec3 tcol = ti == 0 ? vec3(0.92, 0.87, 0.76) : mix(ACCENT[(pick + 6) % 8], vec3(0.9), 0.25);
+							if (ina < -0.035 && fract(r * (ti == 0 ? 53.0 : 59.0)) < 0.75) {
+								fl = tdm < 0.2 ? tcol * (tdm > 0.175 ? 0.78 : 0.95 + 0.15 * clamp(dot(tq, vec2(sa2, dot(sunl, outw))) * 6.0, -1.0, 1.0)) : (tds < 0.2 && across > bk ? fl * 0.74 : fl);
+							}
+						}
 					} else if (k == 1) {  // a futon: a patterned quilt turned down below the pillow, the mattress showing round them
 						vec2 lc = lpos.xz - ca;
 						float al = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
@@ -777,6 +825,7 @@ var hover := {}  # the action a click would take
 var drag := 0.0
 var bold: Font  # the HUD's heavy weight, for the clock and street tags
 var styles := {}  # rounded boxes for tags and bars, by color and radius
+var faces := {}  # the rival chains' mascot roundels for the plate over their roofs, by chain
 var roof_texs := {}  # the rival's roof by the width of its shop, and the vacant unit's by minus its width
 var glass_sheen: StandardMaterial3D  # the knee-height glass front's sheen, tiled per run
 var skylight_pair: Array = []  # weakrefs to the rival's skylight glass, its night glow and its unlit glass, shared by both skylights
@@ -6978,7 +7027,7 @@ func build_room() -> void:
 			# the magazine racks' art is the fixture with its stock, three of them stood on the floor
 			var ic: Array = Sim.PRODUCTS[pid].icon
 			var region := Rect2(ic[1] * DECOR, 0, DECOR, DECOR)
-			var u: Rect2i = tex[ic[0]].get_image().get_region(Rect2i(region)).get_used_rect()
+			var u: Rect2i = Sheets.image(ic[0]).get_region(Rect2i(region)).get_used_rect()
 			var px := RACK_H / u.size.y
 			var icons := []
 			for k in 3:
@@ -7346,7 +7395,7 @@ func goods(pid: String, kind: String, p: Vector2) -> void:
 	var sheet: Texture2D = tex[ic[0]]
 	var cell: int = {"products": ITEM, "perks": 80, "decor": DECOR}[ic[0]]
 	var region := Rect2i(ic[1] * cell, 0, cell, cell)
-	var u: Rect2i = sheet.get_image().get_region(region).get_used_rect()
+	var u: Rect2i = Sheets.image(ic[0]).get_region(region).get_used_rect()
 	var px: float = minf(f.pack.x / u.size.x, f.pack.y / u.size.y)
 	var q := QuadMesh.new()
 	q.size = Vector2(cell, cell) * px
@@ -7990,6 +8039,29 @@ func pill(at: Vector2, s: String, px: int, bg: Color, fg := Color.WHITE) -> void
 	overlay.draw_string(font, Vector2(at.x - w / 2, at.y), s, HORIZONTAL_ALIGNMENT_LEFT, -1, px, fg)
 
 
+## A rival chain's mascot head in a cream roundel ringed in the chain's colour, as on its lightbox sign.
+func rival_face(id: String) -> ImageTexture:
+	if not faces.has(id):
+		var c := Color(Sim.RIVALS[id].color)
+		var cream := Color(1.0, 0.98, 0.92)
+		var face: Image = Sheets.image("walk").get_region(Rect2i(4, (WALK_ROW.mascot + Sim.RIVALS.keys().find(id)) * PERSON.y, 64, 54))
+		face.convert(Image.FORMAT_RGBA8)
+		face.resize(58, 49, Image.INTERPOLATE_LANCZOS)
+		var disc := Image.create(80, 80, false, Image.FORMAT_RGBA8)
+		for y in 80:
+			for x in 80:
+				var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(40, 40))
+				var px := Color(cream, clampf(40.0 - d, 0.0, 1.0)).lerp(c, clampf(37.0 - d, 0.0, 1.0)).lerp(cream.lightened(0.4), clampf(32.0 - d, 0.0, 1.0))
+				px = px.lerp(cream.darkened(0.08), clampf(32.0 - d, 0.0, 1.0) * clampf((y - 40.0) / 32.0, 0.0, 1.0))
+				if d < 32.0 and x >= 11 and x < 69 and y >= 18 and y < 67:
+					var f := face.get_pixel(x - 11, y - 18)
+					px = px.lerp(Color(f.r, f.g, f.b), f.a)
+				disc.set_pixel(x, y, px)
+		disc.generate_mipmaps()
+		faces[id] = ImageTexture.create_from_image(disc)
+	return faces[id]
+
+
 ## A rounded meter in a cream rim.
 func bar(r: Rect2, frac: float, c: Color, bg := Color("dccca4")) -> void:
 	overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.95), r.size.y / 2 + 2), r.grow(2))
@@ -8052,13 +8124,28 @@ func draw_street() -> void:
 	overlay.draw_circle(roof_at, 3.6, Color("8a8780") if rv.defeated else Color(def.color))
 	if not rv.defeated:
 		# name and takings on one cream plate, so the bar never sits on the chain's own fascia color
+		# its mascot in a roundel that breaks the plate's left edge, the name over a gauge of the same width
 		var font: Font = bold if bold else get_theme_default_font()
-		var w := maxf(font.get_string_size(def.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 14, 100) + 12
-		var plate := Rect2(sign_at + Vector2(-w / 2, -font.get_ascent(13) - 8), Vector2(w, font.get_ascent(13) + 32))
-		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 11), Rect2(plate.position + Vector2(0, 3), plate.size))
-		overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.96), 11), plate)
-		pill(sign_at, def.name, 13, Color(def.color).darkened(0.1))
-		bar(Rect2(Vector2(plate.position.x + 8, plate.end.y - 13), Vector2(w - 16, 7)), rv.hp / rv.max_hp, Color(def.color), Color(0.42, 0.3, 0.15, 0.22))
+		var asc := font.get_ascent(13)
+		var nw := font.get_string_size(def.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 14
+		var bw := maxf(nw, 96.0)
+		var ph := asc + font.get_descent(13) + 28
+		var plate := Rect2(sign_at + Vector2(-(bw + 50) / 2 + 6, 18 - ph), Vector2(bw + 44, ph))
+		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 12), Rect2(plate.position + Vector2(0, 3), plate.size))
+		overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.96), 12), plate)
+		var disc := Vector2(plate.position.x, plate.get_center().y)
+		overlay.draw_circle(disc + Vector2(0, 2.5), 20.0, Color(0.42, 0.3, 0.15, 0.3))
+		overlay.draw_texture_rect(rival_face(rv.id), Rect2(disc - Vector2(20, 20), Vector2(40, 40)), false)
+		var tx := plate.position.x + 30
+		pill(Vector2(tx + nw / 2, plate.position.y + 8 + asc), def.name, 13, Color(def.color).darkened(0.1))
+		var gauge := Rect2(Vector2(tx, plate.end.y - 13), Vector2(bw, 7))
+		var f := clampf(rv.hp / rv.max_hp, 0.0, 1.0)
+		bar(gauge, f, Color(def.color), Color(0.42, 0.3, 0.15, 0.3))
+		if f > 0.0:  # a gloss along the fill's top, and a notch at each quarter so a full gauge still reads as one
+			var fw := maxf(gauge.size.y, gauge.size.x * f)
+			overlay.draw_style_box(round_box(Color(1, 1, 1, 0.35), 1.5), Rect2(gauge.position + Vector2(3, 1), Vector2(fw - 6, 2)))
+		for q in [0.25, 0.5, 0.75]:
+			overlay.draw_rect(Rect2(gauge.position + Vector2(roundf(gauge.size.x * q) - 0.5, 1), Vector2(1, gauge.size.y - 2)), Color(0.3, 0.2, 0.1, 0.35))
 	else:
 		pill(sign_at, def.name + "  (closed)", 13, Color("a99f8c"))
 	if not rv.defeated:
