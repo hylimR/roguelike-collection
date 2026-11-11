@@ -3518,25 +3518,41 @@ func update_fade() -> void:
 	for rec in brecs:
 		var f: Rect2 = rec.foot
 		var state := STANDING
+		var back := INF
 		if lot_feet.any(func(q): return f.intersects(q)):
 			state = GONE
 		elif on:
 			if set_feet.any(func(q): return f.intersects(q)) or (f.intersects(front) and f.get_center().y < front.position.y + 7.2):
 				state = GONE
+				# one that only reaches into the set from behind is cut back to clear it, full height, so the block
+				# behind your shop stays built up rather than a bare lot
+				var kept := Rect2(f.position, Vector2(f.size.x, set_feet[0].position.y - f.position.y)) if set_feet else Rect2()
+				if kept.size.y >= 4.0 and not rec.has("lm") and box_base[rec.box[0]].basis.x.z == 0.0 and not kept.intersects(front) and not set_feet.any(func(q): return kept.intersects(q)):
+					state = STANDING
+					back = kept.end.y
 			elif f.intersects(front) or (f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr)):
 				state = maxf(f.position.y, edge)
 				if rec.has("lm") or f.end.y - state < 2.0 or (state > f.position.y and box_base[rec.box[0]].basis.x.z != 0.0):  # too thin, or turned
 					state = GONE
-		if state == rec.hidden:
+		if state == rec.hidden and back == rec.get("back", INF):
 			continue
 		rec.hidden = state
+		rec.back = back
 		dirty[box_mm] = true
 		for i in rec.box.size():
 			var k: int = rec.box[i]
 			var t: Transform3D = box_base[k]
 			var sz := t.basis.get_scale()
 			var cd := box_mm.get_instance_custom_data(k)
-			if state == STANDING:
+			if back < INF:
+				var z0 := t.origin.z - sz.z / 2
+				var z1 := minf(back, t.origin.z + sz.z / 2)
+				if i > 0 and z1 < t.origin.z + sz.z / 2:  # roof kit that would be sliced through
+					box_mm.set_instance_transform(k, away)
+				else:
+					box_mm.set_instance_transform(k, Transform3D(Basis.from_scale(Vector3(sz.x, sz.y, z1 - z0)), Vector3(t.origin.x, t.origin.y, (z0 + z1) / 2)))
+					box_mm.set_instance_custom_data(k, Color(cd.r, sz.y, z1 - z0, cd.a))
+			elif state == STANDING:
 				box_mm.set_instance_transform(k, t)
 				box_mm.set_instance_custom_data(k, Color(cd.r, sz.y, sz.z, cd.a))
 			elif state == GONE or i > 0:
@@ -3547,7 +3563,14 @@ func update_fade() -> void:
 				box_mm.set_instance_transform(k, Transform3D(t.basis.orthonormalized() * Basis.from_scale(Vector3(sz.x, LOW, z1 - z0)), Vector3(t.origin.x, LOW / 2, (z0 + z1) / 2)))
 				box_mm.set_instance_custom_data(k, Color(cd.r, LOW, z1 - z0, cd.a))
 		for k in rec.roof:
-			roof_mm.set_instance_transform(k, roof_base[k] if state == STANDING else away)
+			var rt: Transform3D = roof_base[k] if state == STANDING else away
+			if back < INF:  # squeezed back along z, keeping its pitch when the ridge runs across the cut
+				var rz0 := rt.origin.z - (absf(rt.basis.x.z) + absf(rt.basis.z.z)) / 2
+				var s := (back - rz0) / (rt.origin.z - rz0) / 2
+				var sy := s if absf(rt.basis.x.z) > 0.5 else 1.0
+				var y0 := rt.origin.y - rt.basis.y.y / 2
+				rt = Transform3D(Basis.from_scale(Vector3(1, sy, s)), Vector3(0, y0 * (1 - sy), rz0 * (1 - s))) * rt
+			roof_mm.set_instance_transform(k, rt)
 			dirty[roof_mm] = true
 		for n in rec.get("shapes", []):
 			n.visible = state == STANDING
