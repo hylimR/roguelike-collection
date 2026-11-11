@@ -1,9 +1,9 @@
 extends Control
 ## The city stage: Tokyo (city.gd) as a city builder sees it, through an orthographic isometric camera. Streets,
 ## avenues, the elevated expressway and the Yamanote are generated meshes; buildings are boxes in one MultiMesh
-## with a pixel facade shader, as are most landmarks (traced from their drawings); each branch's shop and its rival
-## are boxes too; trees and street furniture are models built in code (art/trees.gd); the other landmarks, cars and
-## people are Codex sprites. In store mode the focused branch's
+## with a pixel facade shader, as are the landmarks (landmark_models.gd); each branch's shop and its rival are boxes
+## too; trees, street furniture (art/trees.gd) and cars (art/vehicles.gd) are models built in code; people, fittings
+## and goods stand on billboards cut from sheets painted in code (art/sheets.gd). In store mode the focused branch's
 ## street set is carved into the city on its lot: your shop as a cutaway, the rival next door, the street with its
 ## crossing, and the sim's pedestrians, threats and staff live. Clicks on threats, tills and
 ## shelves go out as actions; in city mode you pick lots. Labels draw on a 2D overlay. Street-frame nodes live
@@ -1231,11 +1231,16 @@ func light_at(p: Vector3) -> Color:
 		return light
 	if shop_area.has_point(Vector2(p.x, p.z)):
 		return room_dim
+	return light.lerp(LAMP, lamp_lift(p) * night) if night > 0.0 else light
+
+
+## How far toward the lamps' light p stands on the set after dark (0-0.8): light_at lifts a sprite there by it, and a
+## vehicle takes it as its `lift`.
+func lamp_lift(p: Vector3) -> float:
 	var k := 0.0
-	if night > 0.0:
-		for q in pools:
-			k = maxf(k, 1.0 - Vector2(p.x - q.x, p.z - q.y).length() / q.z)
-	return light.lerp(LAMP, k * night * 0.8)
+	for q in pools:
+		k = maxf(k, 1.0 - Vector2(p.x - q.x, p.z - q.y).length() / q.z)
+	return k * 0.8
 
 
 func shine(s: Sprite3D) -> void:
@@ -3787,15 +3792,6 @@ func steer(node: Node3D, dir: Vector3) -> void:
 	node.basis = Basis(dir, right.cross(dir), right)
 	var off := node.basis.transposed() * (Vector3(-SUN.x, 0, -SUN.z) / SUN.y * 0.4)
 	(node.get_child(0) as Node3D).position = Vector3(off.x, 0.03, off.z)
-
-
-## How far toward the lamps' light p stands on the set after dark (0-0.8), as light_at lifts a sprite there: a vehicle's
-## `lift`.
-func lamp_lift(p: Vector3) -> float:
-	var k := 0.0
-	for q in pools:
-		k = maxf(k, 1.0 - Vector2(p.x - q.x, p.z - q.y).length() / q.z)
-	return k * 0.8
 
 
 func view_rect() -> Rect2:
