@@ -2128,6 +2128,104 @@ func park_face() -> ImageTexture:
 	return plate_tex
 
 
+## The bills on the vacant unit's shutter at 64 px a metre, paper sun-faded and taped at the corners: 0 the agent's to-let
+## notice (a red band reading テナント募集 over its terms, a phone number and the agent's mark), 1 a yellow matsuri flyer
+## peeling at a corner, 2 a lessons notice with tear-off tabs along its foot, two of them taken.
+func shutter_bill(kind: int) -> ImageTexture:
+	var sz: Vector2i = [Vector2i(60, 42), Vector2i(28, 38), Vector2i(24, 33)][kind]
+	var img := Image.create(sz.x, sz.y, false, Image.FORMAT_RGBA8)
+	var paper: Color = [Color("f6f3ea"), Color("efd98a"), Color("f2c4cb")][kind]
+	var ink := Color("3d3a36")
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 11 + kind
+	img.fill(paper)
+	for x in sz.x:
+		for y in sz.y:
+			var f := 1.0 - 0.025 * rr.randf() - (0.06 if x == 0 or y == 0 or x == sz.x - 1 or y == sz.y - 1 else 0.0)
+			img.set_pixel(x, y, Color(paper.r * f, paper.g * f, paper.b * f))
+	var scrawl := func(x0: int, y0: int, w: int, h: int, c: Color) -> void:  # a line of print as words of ink
+		var x := x0
+		while x < x0 + w - 1:
+			var wl := rr.randi_range(2, 6)
+			img.fill_rect(Rect2i(x, y0, mini(wl, x0 + w - x), h), c)
+			x += wl + 1
+	var glyphs := func(rows: Array, x0: int, y0: int, c: Color) -> void:
+		for y in rows.size():
+			for x in rows[y].length():
+				if rows[y][x] == "#":
+					img.set_pixel(x0 + x, y0 + y, c)
+	if kind == 0:
+		var red := Color("d23f33")
+		for e in [Rect2i(1, 1, sz.x - 2, 1), Rect2i(1, sz.y - 2, sz.x - 2, 1), Rect2i(1, 1, 1, sz.y - 2), Rect2i(sz.x - 2, 1, 1, sz.y - 2)]:
+			img.fill_rect(e, red)
+		img.fill_rect(Rect2i(2, 2, sz.x - 4, 10), red)
+		var kana := [["#####", ".....", "#####", "..#..", "..#..", ".#..."], ["..#..", "#####", "..#..", "..#..", ".#...", "#...."],
+			["#....", ".#..#", "....#", "...#.", "..#..", "##..."], [".#...", ".#...", ".###.", ".#...", ".#...", ".#..."],
+			["#####", ".#.#.", "#####", "#.#.#", "#####", "#..#."], [".#.#.", "#####", ".###.", "#####", "..#..", "#.#.#"]]
+		for i in kana.size():
+			glyphs.call(kana[i], 13 + i * 6, 4, Color("fbfaf5"))
+		scrawl.call(5, 15, 36, 2, ink)
+		scrawl.call(5, 19, 30, 2, ink.lerp(paper, 0.3))
+		img.fill_rect(Rect2i(44, 14, 12, 9), Color("9a948a"))  # the floor plan
+		img.fill_rect(Rect2i(45, 15, 10, 7), paper)
+		img.fill_rect(Rect2i(50, 15, 1, 4), Color("9a948a"))
+		var digits := {"0": ["###", "#.#", "#.#", "#.#", "###"], "3": ["###", "..#", "###", "..#", "###"], "5": ["###", "#..", "###", "..#", "###"],
+			"8": ["###", "#.#", "###", "#.#", "###"], "2": ["###", "..#", "###", "#..", "###"], "1": [".#.", "##.", ".#.", ".#.", "###"],
+			"4": ["#.#", "#.#", "###", "..#", "..#"], "6": ["###", "#..", "###", "#.#", "###"], "7": ["###", "..#", ".#.", ".#.", ".#."],
+			"-": ["...", "...", "###", "...", "..."]}
+		var x := 6
+		for ch in "03-5821-4467":
+			glyphs.call(digits[ch], x, 26, red.darkened(0.2))
+			x += 4
+		img.fill_rect(Rect2i(2, 34, sz.x - 4, 1), Color("c9c3b6"))
+		img.fill_rect(Rect2i(5, 36, 4, 4), Color("2f8f5b"))  # the agent's mark and name
+		scrawl.call(11, 37, 22, 2, Color("2f8f5b"))
+	elif kind == 1:
+		var head := Color("b8352a")
+		scrawl.call(3, 3, 22, 3, head)
+		scrawl.call(5, 7, 18, 3, head)
+		img.fill_rect(Rect2i(3, 12, 22, 12), Color("2c4a7a"))  # a night sky over the festival
+		for i in 5:
+			img.fill_rect(Rect2i(4 + i * 4, 15 + (i % 2), 3, 3), Color("f08a3c"))
+			img.set_pixel(5 + i * 4, 14 + (i % 2), ink)
+		img.fill_rect(Rect2i(3, 21, 22, 3), Color("1d2f4f"))
+		for k in 2:
+			scrawl.call(3, 27 + k * 4, 22 - k * 6, 2, ink)
+		for k in 7:  # the top corner come unstuck and curled forward: the paper gone, its back showing on the flap
+			for j in 7 - k:
+				img.set_pixel(sz.x - 1 - j, k, Color(0, 0, 0, 0))
+		for k in 6:
+			for j in 6 - k:
+				img.set_pixel(sz.x - 7 + j, k + 1 + j, paper.lightened(0.35) if j + k < 5 else paper.darkened(0.25))
+	else:
+		img.fill_rect(Rect2i(3, 3, 8, 8), Color("8fa3ae"))  # the teacher's photo
+		img.fill_rect(Rect2i(5, 5, 4, 3), Color("e9c9a5"))
+		img.fill_rect(Rect2i(4, 8, 6, 3), Color("4d5f7a"))
+		scrawl.call(13, 4, 8, 2, Color("2a5d8f"))
+		scrawl.call(13, 8, 8, 2, ink)
+		for k in 2:
+			scrawl.call(3, 13 + k * 4, 18 - k * 5, 2, ink)
+		img.fill_rect(Rect2i(1, 22, sz.x - 2, 1), Color("b78a92"))  # the tabs cut up to a dashed line
+		for t in 5:
+			var tx := 1 + t * 4 + (t + 1) / 2
+			for y in range(23, sz.y):
+				img.set_pixel(tx + 3, y, Color(0, 0, 0, 0))
+				if t in [1, 3]:
+					img.fill_rect(Rect2i(tx, y, 3, 1), Color(0, 0, 0, 0))
+			if not t in [1, 3]:
+				img.fill_rect(Rect2i(tx + 1, 24, 1, 7), ink.lerp(paper, 0.35))
+		img.fill_rect(Rect2i(sz.x - 1, 23, 1, sz.y - 23), Color(0, 0, 0, 0))
+	var tape := Color("e6dcc0")  # strips of tape over the corners
+	var corners := [Vector2i(0, 0), Vector2i(sz.x - 5, 0)] if kind == 1 else [Vector2i(0, 0), Vector2i(sz.x - 5, 0), Vector2i(0, sz.y - 3), Vector2i(sz.x - 5, sz.y - 3)]
+	if kind == 2:
+		corners = [Vector2i(0, 0), Vector2i(sz.x - 5, 0), Vector2i(sz.x / 2 - 2, 20)]
+	for c: Vector2i in corners:
+		img.fill_rect(Rect2i(c.x, c.y, 5, 3), tape)
+		img.fill_rect(Rect2i(c.x, c.y + 2, 5, 1), tape.darkened(0.08))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
 func tiled(tex_: Texture2D, reps: Vector2) -> StandardMaterial3D:
 	var m := mat(Color.WHITE, tex_)
 	m.uv1_scale = Vector3(reps.x, reps.y, 1)
@@ -5963,16 +6061,21 @@ func build_set() -> void:
 		for side in [-1, 1]:
 			block(set_node, Vector3(0.12, 2.5, 0.14), Vector3(vx + side * (sw / 2 + 0.02), 1.25, -7.13), Color("7d8389"))  # guide rails
 			block(set_node, Vector3(0.07, 0.1, 0.05), Vector3(vx + side * (sw / 2 - 0.45), 0.13, -7.06), Color("c9a24a"))  # padlocked to the kerb
-		# old flyers taped up and peeling, and the post nobody collects heaped at the foot
-		for f in [[Vector2(0.45 - sw / 2, 1.3), Vector2(0.42, 0.58), Color("efe2a4")], [Vector2(0.9 - sw / 2, 1.05), Vector2(0.36, 0.5), Color("cfe0ec")]]:
-			block(set_node, Vector3(f[1].x, f[1].y, 0.02), Vector3(vx + f[0].x, f[0].y, -7.15), f[2])
-			block(set_node, Vector3(f[1].x * 0.6, 0.05, 0.025), Vector3(vx + f[0].x, f[0].y + f[1].y * 0.22, -7.145), Color("6b6359"))
+		# the agent's to-let bill and old flyers taped up and peeling, and the post nobody collects heaped at the foot
+		for bl in [[shutter_bill(0), Vector2(1.1, 0.77), Vector3(0.4, 1.52, -7.14)], [shutter_bill(1), Vector2(0.44, 0.6), Vector3(0.45 - sw / 2, 1.3, -7.15)],
+				[shutter_bill(2), Vector2(0.38, 0.52), Vector3(0.92 - sw / 2, 1.0, -7.152)]]:
+			var bill := MeshInstance3D.new()
+			var sheet := QuadMesh.new()
+			sheet.size = bl[1]
+			bill.mesh = sheet
+			var bill_m := mat(Color(0.92, 0.92, 0.92), bl[0])
+			bill_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+			bill_m.texture_repeat = false
+			bill.material_override = bill_m
+			bill.position = Vector3(vx, 0, 0) + bl[2]
+			set_node.add_child(bill)
 		for m in [[Vector3(0.42, 0.04, 0.24), Vector3(-0.3, 0.02, -6.98), Color("f2efe6")], [Vector3(0.3, 0.03, 0.2), Vector3(-0.05, 0.045, -6.95), Color("e7c9a0")], [Vector3(0.26, 0.03, 0.18), Vector3(-0.45, 0.05, -6.92), Color("d9e4ee")]]:
 			block(set_node, m[0], Vector3(vx, 0, 0) + m[1], m[2])
-		block(set_node, Vector3(1.04, 0.76, 0.03), Vector3(vx + 0.4, 1.55, -7.15), Color("d8493a"))  # to-let notice
-		block(set_node, Vector3(0.9, 0.5, 0.04), Vector3(vx + 0.4, 1.5, -7.14), Color("fbfaf5"))
-		block(set_node, Vector3(0.6, 0.06, 0.05), Vector3(vx + 0.4, 1.56, -7.13), Color("3d3a36"))
-		block(set_node, Vector3(0.42, 0.06, 0.05), Vector3(vx + 0.4, 1.42, -7.13), Color("3d3a36"))
 	build_rival(set_node, b.rival, span)
 	build_room()
 	# a soft dark seam where each building meets the sidewalk
