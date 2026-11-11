@@ -4,7 +4,7 @@
 ## [0, x0, z0, x1, z1, y0, y1, colour, facade style or -1, accent, turn] a box (turned about y by `turn` radians:
 ## a side of a windowed round wall);
 ## [1 or 2, x0, z0, x1, z1, y0, rise, colour] a gable roof with its ridge along x (1) or z (2);
-## [3, x, z, scale, kind, base height] a tree, kind an art/outdoor.png frame (1 broadleaf, 3 pine, 4 bush);
+## [3, x, z, scale, kind, base height] a tree, kind one of art/trees.gd (1 broadleaf, 3 pine, 4 bush);
 ## [4, colour, normal x, y, z, then x, y, z per corner] a flat face of a curved or slanted part, wound round its normal
 ## (a colour with alpha is floodlit after dark).
 
