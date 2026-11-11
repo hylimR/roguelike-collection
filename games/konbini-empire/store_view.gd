@@ -3043,6 +3043,32 @@ func drum_into(st: SurfaceTool, at: Vector3, r: float, h: float, col: Color, seg
 			st.add_vertex(v)
 
 
+## A capped tube of radius r from a to b into a vertex-coloured surface, shaded round by where each strip faces as
+## box_into shades its faces, with a sheen along its sunlit top.
+func pipe_into(st: SurfaceTool, a: Vector3, b: Vector3, r: float, col: Color, segs := 10) -> void:
+	var ax := (b - a).normalized()
+	var u := ax.cross(Vector3.UP if absf(ax.y) < 0.9 else Vector3.RIGHT).normalized()
+	var v := u.cross(ax)
+	var tone := func(n: Vector3) -> Color:
+		var side := 0.9 if n.z - n.x > 0.0 else 0.75
+		var t := lerpf(side, 1.0, n.y) if n.y > 0.0 else lerpf(side, 0.6, -n.y)
+		t += 0.12 * pow(maxf(n.dot(Vector3(-0.3, 1.0, 0.3).normalized()), 0.0), 8.0)
+		return Color(col.r * t, col.g * t, col.b * t)
+	for i in segs:
+		var n0 := (u * cos(TAU * i / segs) + v * sin(TAU * i / segs))
+		var n1 := (u * cos(TAU * (i + 1) / segs) + v * sin(TAU * (i + 1) / segs))
+		for e in [[a, n0], [b, n0], [b, n1], [a, n0], [b, n1], [a, n1]]:
+			st.set_color(tone.call(e[1]))
+			st.set_uv(Vector2.ZERO)
+			st.add_vertex(e[0] + e[1] * r)
+		for end in [[a, -ax], [b, ax]]:
+			var c: Vector3 = end[0]
+			st.set_color(tone.call(end[1]))
+			for p in [c, c + n0 * r, c + n1 * r]:
+				st.set_uv(Vector2.ZERO)
+				st.add_vertex(p)
+
+
 ## A unit box under xf into a vertex-coloured surface, each face in the house's tones by where it ends up facing.
 func turned_box_into(st: SurfaceTool, xf: Transform3D, col: Color) -> void:
 	for n: Vector3 in [Vector3.UP, Vector3.DOWN, Vector3.BACK, Vector3.FORWARD, Vector3.LEFT, Vector3.RIGHT]:
@@ -5732,8 +5758,18 @@ func build_set() -> void:
 		if k % 2 == 1:  # a telecom closure slung under the cable near the pole
 			var cx := lerpf(x0, px, 0.86)
 			var cy := 4.6 - 0.045 * (px - x0) * 4.0 * 0.86 * 0.14
-			box_into(closures, Vector3(cx - 0.4, cy - 0.2, 6.56), Vector3(cx + 0.4, cy - 0.03, 6.74), Color("2c2d31"))
-			box_into(closures, Vector3(cx - 0.44, cy - 0.17, 6.58), Vector3(cx + 0.44, cy - 0.06, 6.72), Color("3a3b40"))
+			var axis := Vector3(cx, cy - 0.2, 6.65)
+			for hx in [-0.22, 0.22]:  # hangers up to the cable
+				box_into(closures, axis + Vector3(hx - 0.012, 0.08, -0.012), Vector3(cx + hx + 0.012, cy + 0.01, 6.662), Color("2a2b2f"))
+			pipe_into(closures, axis + Vector3(-0.32, 0, 0), axis + Vector3(0.32, 0, 0), 0.1, Color("80838a"))
+			for rx in [-0.16, 0.0, 0.16]:
+				pipe_into(closures, axis + Vector3(rx - 0.015, 0, 0), axis + Vector3(rx + 0.015, 0, 0), 0.108, Color("676a71"))
+			for ex in [-1.0, 1.0]:  # end caps on clamp rings, the cable spliced in through each
+				pipe_into(closures, axis + Vector3(0.3 * ex, 0, 0), axis + Vector3(0.36 * ex, 0, 0), 0.115, Color("4c4e54"))
+				pipe_into(closures, axis + Vector3(0.36 * ex, 0, 0), axis + Vector3(0.4 * ex, 0, 0), 0.075, Color("3a3c41"))
+				pipe_into(closures, axis + Vector3(0.4 * ex, 0, 0), Vector3(cx + 0.62 * ex, cy - 0.02, 6.65), 0.028, Color("34343a"))
+			box_into(closures, axis + Vector3(-0.06, -0.2, 0.04), axis + Vector3(0.06, -0.1, 0.05), Color("eeeae0"))  # its route tag
+			box_into(closures, axis + Vector3(-0.004, -0.1, 0.044), axis + Vector3(0.004, -0.08, 0.046), Color("34343a"))
 	commit([wires, closures] if poles.size() > 2 else [wires], set_node)
 	# neighbours: the district's own mix of buildings either side of your shop and the rival, a row behind them
 	var mix: Array = Sim.City.MIX[type]
