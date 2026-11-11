@@ -1110,6 +1110,13 @@ func _ready() -> void:
 			var d := Vector2(maxf(absf(x - 31.5) - 22.0, 0.0) / 10.0, maxf(absf(y - 7.5) - 2.0, 0.0) / 6.0).length()
 			halo.set_pixel(x, y, Color(1, 1, 1, pow(clampf(1.0 - d, 0.0, 1.0), 2.0)))
 	fascia_glow_tex = ImageTexture.create_from_image(halo)
+	var ring := Image.create(32, 32, false, Image.FORMAT_RGBA8)  # the pole sign's: even all round its cabinet
+	for y in 32:
+		for x in 32:
+			var d := Vector2(maxf(absf(x - 15.5) - 9.0, 0.0), maxf(absf(y - 15.5) - 9.0, 0.0)).length() / 6.5
+			ring.set_pixel(x, y, Color(1, 1, 1, pow(clampf(1.0 - d, 0.0, 1.0), 2.0)))
+	sign_glow_mat.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
+	sign_glow_mat.albedo_texture = ImageTexture.create_from_image(ring)
 	beam_mat = halo_mat.duplicate()
 	beam_mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	var cone := Image.create(32, 64, false, Image.FORMAT_RGBA8)
@@ -2078,14 +2085,14 @@ func stripes(a: Color, b: Color, w: int, h: int, on: int) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-## Your chain's pole-sign face in pixels: a roundel in the stripes' colors and "24" for open all hours, in strokes
-## whose edges are blended by coverage, so the face stays clean when the camera zooms in.
+## Your chain's pole-sign face in pixels at 64 a metre: a roundel in the stripes' colors and "24" for open all hours, in
+## strokes whose edges are blended by coverage, so the face stays clean when the camera zooms in, over the stripes, the
+## whole sheet lit unevenly by the three tubes behind it and shading off toward the bezel.
 func sign_face() -> ImageTexture:
 	if sign_tex:
 		return sign_tex
 	var paper := Color("fbfaf5")
-	var img := Image.create(96, 48, false, Image.FORMAT_RGB8)
-	img.fill(paper)
+	var img := Image.create(104, 88, false, Image.FORMAT_RGB8)
 	var segs: Array = []  # the digits as strokes: a 2 of an arc, a diagonal and a foot, a 4 of a diagonal, bar and stem
 	var prev := Vector2.ZERO
 	for i in 9:
@@ -2096,19 +2103,23 @@ func sign_face() -> ImageTexture:
 		prev = q
 	segs.append_array([[prev, Vector2(52.5, 37.0)], [Vector2(52.5, 37.0), Vector2(69.5, 37.0)],
 		[Vector2(86.5, 10.5), Vector2(76.0, 30.0)], [Vector2(76.0, 30.0), Vector2(92.5, 30.0)], [Vector2(86.5, 10.5), Vector2(86.5, 38.0)]])
-	for y in 48:
-		for x in 96:
-			var p := Vector2(x + 0.5, y + 0.5)
-			var c := paper
+	for y in 88:
+		for x in 104:
+			var p := Vector2(x - 3.5, y - 3.5)
+			var c: Color = LAYOUT.stripe[0] if y >= 56 and y < 68 else LAYOUT.stripe[1] if y >= 68 and y < 80 else paper
 			var d := p.distance_to(Vector2(24, 24))
 			c = c.lerp(LAYOUT.stripe[0], clampf(21.5 - d, 0.0, 1.0) * clampf(d - 12.5, 0.0, 1.0))
 			c = c.lerp(LAYOUT.stripe[1], clampf(8.5 - d, 0.0, 1.0))
-			if x > 45:
+			if p.x > 45 and p.y < 46:
 				var near := 99.0
 				for sg in segs:
 					near = minf(near, p.distance_to(Geometry2D.get_closest_point_to_segment(p, sg[0], sg[1])))
 				c = c.lerp(LAYOUT.stripe[1], clampf(3.3 - near, 0.0, 1.0))
-			img.set_pixel(x, y, c)
+			var u := (x + 0.5) / 104.0
+			var v := (y + 0.5) / 88.0
+			var edge := minf(minf(u, 1.0 - u) * 1.64, minf(v, 1.0 - v) * 1.38)
+			var k := 0.95 + 0.04 * sin(v * PI) + 0.035 * pow(maxf(0.0, cos((u - 0.5) * 3.0 * TAU)), 6.0) - 0.08 * (1.0 - smoothstep(0.0, 0.08, edge))
+			img.set_pixel(x, y, Color(c.r * k, c.g * k, c.b * k))
 	img.generate_mipmaps()
 	sign_tex = ImageTexture.create_from_image(img)
 	return sign_tex
@@ -7477,8 +7488,9 @@ func roof_mat(t: ImageTexture) -> StandardMaterial3D:
 	return m
 
 
-## Your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark (street frame),
-## with a glow round its lightbox and a pair of floodlights under it washing the bays in shop light.
+## Your pole sign in the back corner of the car park, clear of the shop, lit like the shop after dark (street frame): a
+## lightbox in an aluminium cabinet under a top cap, its sheet set back in a bezel, with a glow spilling round it and a
+## pair of floodlights under it washing the bays in shop light.
 func pole_sign(parent: Node3D) -> void:
 	var ps := Vector3(3.0, 0, -16.5)
 	var km := mat(Color.WHITE)
@@ -7495,25 +7507,29 @@ func pole_sign(parent: Node3D) -> void:
 	box_into(kit, ps + Vector3(-0.15, 3.24, -0.15), ps + Vector3(0.15, 3.32, 0.15), frame)
 	box_into(kit, ps + Vector3(-0.1, 3.32, -0.1), ps + Vector3(0.1, 5.65, 0.1), steel)
 	box_into(kit, ps + Vector3(-0.35, 3.48, -0.13), ps + Vector3(0.35, 4.18, 0.13), Color("1f4f99"))  # the parking plate's case
-	box_into(kit, ps + Vector3(-0.92, 7.15, -0.21), ps + Vector3(0.92, 7.23, 0.21), frame)  # the lightbox's cap, rails and pan
-	box_into(kit, ps + Vector3(-0.9, 5.58, -0.2), ps + Vector3(0.9, 5.65, 0.2), frame)
-	for sx in [-1.0, 1.0]:
-		box_into(kit, ps + Vector3(0.85 * sx - 0.04, 5.58, -0.2), ps + Vector3(0.85 * sx + 0.04, 7.15, 0.2), frame)
+	var alu := Color("c9cdd1")
+	box_into(kit, ps + Vector3(-0.9, 5.6, -0.14), ps + Vector3(0.9, 7.16, 0.14), Color("9da2a8"))  # the lightbox's cabinet
+	box_into(kit, ps + Vector3(-0.94, 7.16, -0.19), ps + Vector3(0.94, 7.22, 0.19), alu.lightened(0.15))  # its top cap
+	box_into(kit, ps + Vector3(-0.92, 5.56, -0.18), ps + Vector3(0.92, 5.6, 0.18), alu.darkened(0.25))  # the pan
+	for sz: float in [1.0, -1.0]:  # a bezel round each face, standing proud of the sheet
+		var z0 := 0.14 * sz
+		var z1 := 0.19 * sz
+		box_into(kit, ps + Vector3(-0.9, 7.08, minf(z0, z1)), ps + Vector3(0.9, 7.16, maxf(z0, z1)), alu)
+		box_into(kit, ps + Vector3(-0.9, 5.6, minf(z0, z1)), ps + Vector3(0.9, 5.7, maxf(z0, z1)), alu.darkened(0.12))
+		for sx in [-1.0, 1.0]:
+			box_into(kit, ps + Vector3(0.86 * sx - 0.04, 5.7, minf(z0, z1)), ps + Vector3(0.86 * sx + 0.04, 7.08, maxf(z0, z1)), alu.darkened(0.06))
 	commit([kit], parent)
-	block(parent, Vector3(1.7, 1.5, 0.34), ps + Vector3(0, 6.4, 0), Color("fbfaf5"), true)
-	block(parent, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 6.15, 0), LAYOUT.stripe[0], true)
-	block(parent, Vector3(1.72, 0.2, 0.36), ps + Vector3(0, 5.92, 0), LAYOUT.stripe[1], true)
 	var face := PlaneMesh.new()
 	face.orientation = PlaneMesh.FACE_Z
-	face.size = Vector2(1.5, 0.75)
-	for side in [1.0, -1.0]:  # the logo on both faces of the lightbox
+	face.size = Vector2(1.64, 1.38)
+	for side in [1.0, -1.0]:  # the sheet on both faces of the lightbox, set back in its bezel
 		var lf := MeshInstance3D.new()
 		lf.mesh = face
 		lf.material_override = mat(Color.WHITE, sign_face(), true)
 		lf.material_override.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 		if parent == set_node:
 			set_sign_mats.append(lf.material_override)
-		lf.position = ps + Vector3(0, 6.7, 0.175 * side)
+		lf.position = ps + Vector3(0, 6.39, 0.17 * side)
 		lf.rotation.y = 0.0 if side > 0 else PI
 		parent.add_child(lf)
 		var pf := MeshInstance3D.new()  # a lit blue P plate on the pole for the car park
@@ -7526,12 +7542,12 @@ func pole_sign(parent: Node3D) -> void:
 		pf.position = ps + Vector3(0, 3.83, 0.135 * side)
 		pf.rotation.y = 0.0 if side > 0 else PI
 		parent.add_child(pf)
-	var glow := MeshInstance3D.new()
+	var glow := MeshInstance3D.new()  # behind the bezel, so the light spills round the cabinet rather than over its face
 	var q := QuadMesh.new()
-	q.size = Vector2(4.2, 3.2)
+	q.size = Vector2(3.3, 2.9)
 	glow.mesh = q
 	glow.material_override = sign_glow_mat
-	glow.position = ps + Vector3(0, 6.45, 0.4)
+	glow.position = ps + Vector3(0, 6.39, 0.155)
 	parent.add_child(glow)
 	var fk := surface(km)
 	box_into(fk, ps + Vector3(-0.13, 4.98, -0.13), ps + Vector3(0.13, 5.22, 0.13), frame)  # the floodlights' collar
