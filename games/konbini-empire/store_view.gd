@@ -8374,7 +8374,9 @@ func draw_city_marks(font: Font) -> void:
 		var p2: Vector2 = Sim.lot_pos(sim.lots[b.lot])
 		var ground := screen_world(Vector3(p2.x + 2.0, 0.0, p2.y + 3.0))
 		pins.append([ground, b])
-		taken.append(Rect2(ground + Vector2(-40, -42), Vector2(80, 46)))
+		taken.append(Rect2(ground + Vector2(-40, -52), Vector2(80, 56)))
+		if not b.rival.defeated:
+			taken.append(Rect2(screen_world(frame_origin(b.lot) + Vector3(rival_span(b.rival).x + 4.0, 0.0, -7.2)) + Vector2(-13, -29), Vector2(26, 34)))
 	var order := []
 	for rank in 3:
 		order += sim.districts.filter(func(d): return (0 if d.type == "hub" else (1 if d.lm[1] >= 0 else 2)) == rank)
@@ -8427,22 +8429,49 @@ func draw_city_marks(font: Font) -> void:
 			var at := screen_world(Vector3(p2.x, 3.0, p2.y))
 			overlay.draw_circle(at, 10.0, Color("3fae49"))
 			overlay.draw_string(font, at + Vector2(-10, 5), str(offered[li] + 1), HORIZONTAL_ALIGNMENT_CENTER, 20, 13, Color.WHITE)
-	# each branch as a map pin: its name raised on a stem over a dot on the lot, the rival's dot beside it on the ground
+	# each branch as a map pin: its number and name on a pill whose tail drops a stem to a disc on the lot, and the
+	# rival's mascot in a roundel beside it, its ring a gauge of the rival's takings
+	var font_b: Font = bold if bold else font
+	var shade := Color(0.42, 0.3, 0.15, 0.3)
+	var cream := Color(1.0, 0.98, 0.92)
 	for e in pins:
 		var ground: Vector2 = e[0]
 		var b: Dictionary = e[1]
 		if not Rect2(Vector2.ZERO, size).grow(40).has_point(ground):
 			continue
 		var c := Color("e98a1d") if is_same(b, branch) else Color("c46a14")
-		var at := ground + Vector2(0, -26)
 		if not b.rival.defeated:
+			var rc := Color(Sim.RIVALS[b.rival.id].color)
 			var rat := screen_world(frame_origin(b.lot) + Vector3(rival_span(b.rival).x + 4.0, 0.0, -7.2))
-			overlay.draw_circle(rat + Vector2(0, 1.5), 5.5, Color(0, 0, 0, 0.3))
-			overlay.draw_circle(rat, 5.0, Color.WHITE)
-			overlay.draw_circle(rat, 3.6, Color(Sim.RIVALS[b.rival.id].color))
-		overlay.draw_line(ground + Vector2(1, 0), at + Vector2(1, 0), Color(0, 0, 0, 0.3), 3.0)
-		overlay.draw_line(ground, at, Color.WHITE, 2.0)
-		overlay.draw_circle(ground + Vector2(0, 1.5), 5.5, Color(0, 0, 0, 0.3))
-		overlay.draw_circle(ground, 5.0, Color.WHITE)
-		overlay.draw_circle(ground, 3.6, c)
-		pill(at, b.name, 11, c)
+			var top := rat + Vector2(0, -15)
+			ground_disc(rat, 4.0, rc, shade)
+			overlay.draw_line(rat, top, Color.WHITE, 1.5)
+			overlay.draw_circle(top + Vector2(0, 2), 12.0, shade)
+			overlay.draw_texture_rect(rival_face(b.rival.id), Rect2(top - Vector2(12, 12), Vector2(24, 24)), false)
+			var f := clampf(b.rival.hp / b.rival.max_hp, 0.0, 1.0)
+			if f < 1.0:  # the roundel's ring is the gauge: what's gone of its takings shows cream, from the top round
+				overlay.draw_arc(top, 10.35, -PI / 2 + TAU * f, 1.5 * PI, maxi(4, roundi(32 * (1.0 - f))), cream.darkened(0.12), 2.0, true)
+		var asc := font_b.get_ascent(11)
+		var h := asc + font_b.get_descent(11) + 6
+		var w := font_b.get_string_size(b.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + h + 10
+		var r := Rect2(ground.x - w / 2, ground.y - 30 - h, w, h)
+		var tip := Vector2(ground.x, r.end.y + 5)
+		overlay.draw_line(ground + Vector2(1, 0), tip + Vector2(1, 0), shade, 3.0)
+		overlay.draw_line(ground, tip, Color.WHITE, 2.0)
+		ground_disc(ground, 5.0, c, shade)
+		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), h / 2), Rect2(r.position + Vector2(0, 2), r.size))
+		overlay.draw_colored_polygon(PackedVector2Array([tip + Vector2(-5, -6), tip + Vector2(5, -6), tip]), c)
+		overlay.draw_style_box(round_box(c, h / 2), r)
+		var bc := r.position + Vector2(h / 2, h / 2)
+		overlay.draw_circle(bc, h / 2 - 2.5, cream)
+		overlay.draw_string(font_b, Vector2(bc.x - h / 2, bc.y + (font_b.get_ascent(10) - font_b.get_descent(10)) / 2), str(sim.branches.find(b) + 1), HORIZONTAL_ALIGNMENT_CENTER, h, 10, c.darkened(0.25))
+		overlay.draw_string(font_b, Vector2(r.position.x + h + 3, r.position.y + 3 + asc), b.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+
+
+## A map pin's foot: a disc in c, ringed white, laid flat on the ground at p over its soft shadow.
+func ground_disc(p: Vector2, r: float, c: Color, shade: Color) -> void:
+	overlay.draw_set_transform(p, 0.0, Vector2(1.0, 0.55))
+	overlay.draw_circle(Vector2(0.5, 3.0), r + 3.0, shade)
+	overlay.draw_circle(Vector2.ZERO, r + 1.5, Color.WHITE)
+	overlay.draw_circle(Vector2.ZERO, r, c)
+	overlay.draw_set_transform(Vector2.ZERO)
