@@ -931,6 +931,7 @@ var lantern_glow_mat: StandardMaterial3D
 var stall_glow_mat: StandardMaterial3D  # the yatai's lamplight on the bay after dark
 var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
+var car_lamp_tex: ImageTexture  # the vehicles sheet's lamps lit, frame for frame, over a clear ground
 var tv: Node3D  # the set's TV crew, shown on a TV Feature day
 var health: Node3D  # the health centre's wagon and a sanitiser stand, shown on a Health Inspection day
 var heat: Node3D  # a shaved-ice stand and a splashed sidewalk, shown on a Heatwave day
@@ -4186,6 +4187,7 @@ func street_traffic(delta: float) -> void:
 			beam.material_override = pool_mat
 			beam.position = Vector3(3.2 * dir, 0.03 - y, 0)
 			node.add_child(beam)
+			node.add_child(car_lamps())
 			node.position = Vector3(x0, y, -1.7 * dir)
 			set_node.add_child(node)
 			facing(node, Vector3(dir, 0, 0), kv * 2, VEHICLE_CELL)
@@ -4207,6 +4209,7 @@ func street_traffic(delta: float) -> void:
 			var beam: Node3D = o.node.get_child(1)
 			beam.position = Vector3(t.x * 3.2, beam.position.y, t.z * 3.2)
 			shine(o.node)
+			lamps_on(o.node)
 			continue
 		var room_ := INF
 		for q in set_cars:
@@ -4223,6 +4226,7 @@ func street_traffic(delta: float) -> void:
 		o.x += o.dir * o.v * delta
 		o.node.position.x = o.x
 		shine(o.node)
+		lamps_on(o.node)
 		if not street_open(o.dir) and (o.x - turn_at) * o.dir >= 0.0:
 			o.x = turn_at
 			o.turn = 0.0
@@ -4233,6 +4237,64 @@ func street_traffic(delta: float) -> void:
 	for o in gone:
 		o.node.queue_free()
 	set_cars = set_cars.filter(func(o): return not gone.has(o))
+
+
+## Spots in a vehicles.png cell where a lamp is drawn, by frame: [x, y, radius in px, kind] with h a headlight, t a
+## tail lamp and s a taxi's roof sign.
+const CAR_LAMPS := [
+	[[116, 57, 4, "h"], [81, 68, 4, "h"]], [[82, 65, 4, "t"], [119, 52, 3, "t"]],
+	[[90, 75, 4, "h"], [118, 64, 3, "h"], [64, 23, 5, "s"]], [[82, 75, 4, "t"], [119, 63, 3, "t"], [64, 21, 5, "s"]],
+	[[88, 69, 4, "h"], [119, 58, 3, "h"]], [[84, 78, 3, "t"], [113, 66, 3, "t"]],
+	[[87, 44, 4, "h"]], [[91, 66, 3, "t"]],
+]
+const CAR_LAMP_TINT := {"h": Color(1.0, 0.9, 0.62), "t": Color(1.0, 0.16, 0.1), "s": Color(1.0, 0.78, 0.32)}
+
+
+## A moving vehicle's lamps after dark: a quad over its sprite adding each lamp's face lit and a soft glow round it,
+## slid toward the camera so it draws over the car without moving on screen.
+func car_lamps() -> MeshInstance3D:
+	if not car_lamp_tex:
+		var img := Image.create(VEHICLE_CELL.x * CAR_LAMPS.size(), VEHICLE_CELL.y, false, Image.FORMAT_RGBA8)
+		for f in CAR_LAMPS.size():
+			for l in CAR_LAMPS[f]:
+				var tint: Color = CAR_LAMP_TINT[l[3]]
+				var r: float = l[2]
+				var k: float = {"h": 1.5, "t": 1.0, "s": 0.8}[l[3]]  # headlights throw a wider glare than the roof sign
+				for y in range(maxi(l[1] - r * k * 6, 0), mini(l[1] + r * k * 6 + 1, VEHICLE_CELL.y)):
+					for x in range(maxi(l[0] - r * k * 6, 0), mini(l[0] + r * k * 6 + 1, VEHICLE_CELL.x)):
+						var d := Vector2(x - l[0], y - l[1]).length() / r
+						var g := d / k
+						var a := maxf(smoothstep(1.4, 0.8, d), 0.8 * exp(-0.25 * g * g) + 0.15 * smoothstep(6.0, 1.5, g))
+						var c := tint.lerp(Color.WHITE, (0.6 if l[3] == "h" else 0.3) * smoothstep(1.0, 0.0, d))  # a hotter core
+						var px := f * VEHICLE_CELL.x + x
+						if a > img.get_pixel(px, y).a:
+							img.set_pixel(px, y, Color(c, a))
+		car_lamp_tex = ImageTexture.create_from_image(img)
+	var q := MeshInstance3D.new()
+	var qm := QuadMesh.new()
+	qm.size = Vector2(VEHICLE_CELL) * VEHICLE_PX
+	q.mesh = qm
+	var m := pool_mat.duplicate() as StandardMaterial3D
+	m.albedo_texture = car_lamp_tex
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	q.material_override = m
+	q.position = to_eye() * 0.4
+	q.visible = false
+	return q
+
+
+## Keeps a vehicle's lamps on its frame and lit as the night deepens.
+func lamps_on(node: Sprite3D) -> void:
+	var q: MeshInstance3D = node.get_child(2)
+	q.visible = night > 0.02
+	if q.visible:
+		var m: StandardMaterial3D = q.material_override
+		var n := float(CAR_LAMPS.size())
+		var f := node.region_rect.position.x / VEHICLE_CELL.x
+		m.uv1_scale = Vector3(-1.0 / n if node.flip_h else 1.0 / n, 1, 1)
+		m.uv1_offset = Vector3((f + (1.0 if node.flip_h else 0.0)) / n, 0, 0)
+		m.albedo_color = Color(1, 1, 1, minf(night * 2.0, 1.0))
 
 
 ## Settled snow for an 8 m repeat at 32 px a metre: drifts on seamless noise, each mounded up from a thin rim to a
