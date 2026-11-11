@@ -788,6 +788,7 @@ var hover := {}  # the action a click would take
 var drag := 0.0
 var bold: Font  # the HUD's heavy weight, for the clock and street tags
 var styles := {}  # rounded boxes for tags and bars, by color and radius
+var faces := {}  # the rival chains' mascot roundels for the plate over their roofs, by chain
 var roof_texs := {}  # the rival's roof by the width of its shop, and the vacant unit's by minus its width
 var glass_sheen: StandardMaterial3D  # the knee-height glass front's sheen, tiled per run
 var skylight_pair: Array = []  # weakrefs to the rival's skylight glass, its night glow and its unlit glass, shared by both skylights
@@ -8000,6 +8001,29 @@ func pill(at: Vector2, s: String, px: int, bg: Color, fg := Color.WHITE) -> void
 	overlay.draw_string(font, Vector2(at.x - w / 2, at.y), s, HORIZONTAL_ALIGNMENT_LEFT, -1, px, fg)
 
 
+## A rival chain's mascot head in a cream roundel ringed in the chain's colour, as on its lightbox sign.
+func rival_face(id: String) -> ImageTexture:
+	if not faces.has(id):
+		var c := Color(Sim.RIVALS[id].color)
+		var cream := Color(1.0, 0.98, 0.92)
+		var face: Image = tex["walk"].get_image().get_region(Rect2i(4, (WALK_ROW.mascot + Sim.RIVALS.keys().find(id)) * PERSON.y, 64, 54))
+		face.convert(Image.FORMAT_RGBA8)
+		face.resize(58, 49, Image.INTERPOLATE_LANCZOS)
+		var disc := Image.create(80, 80, false, Image.FORMAT_RGBA8)
+		for y in 80:
+			for x in 80:
+				var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(40, 40))
+				var px := Color(cream, clampf(40.0 - d, 0.0, 1.0)).lerp(c, clampf(37.0 - d, 0.0, 1.0)).lerp(cream.lightened(0.4), clampf(32.0 - d, 0.0, 1.0))
+				px = px.lerp(cream.darkened(0.08), clampf(32.0 - d, 0.0, 1.0) * clampf((y - 40.0) / 32.0, 0.0, 1.0))
+				if d < 32.0 and x >= 11 and x < 69 and y >= 18 and y < 67:
+					var f := face.get_pixel(x - 11, y - 18)
+					px = px.lerp(Color(f.r, f.g, f.b), f.a)
+				disc.set_pixel(x, y, px)
+		disc.generate_mipmaps()
+		faces[id] = ImageTexture.create_from_image(disc)
+	return faces[id]
+
+
 ## A rounded meter in a cream rim.
 func bar(r: Rect2, frac: float, c: Color, bg := Color("dccca4")) -> void:
 	overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.95), r.size.y / 2 + 2), r.grow(2))
@@ -8062,13 +8086,28 @@ func draw_street() -> void:
 	overlay.draw_circle(roof_at, 3.6, Color("8a8780") if rv.defeated else Color(def.color))
 	if not rv.defeated:
 		# name and takings on one cream plate, so the bar never sits on the chain's own fascia color
+		# its mascot in a roundel that breaks the plate's left edge, the name over a gauge of the same width
 		var font: Font = bold if bold else get_theme_default_font()
-		var w := maxf(font.get_string_size(def.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 14, 100) + 12
-		var plate := Rect2(sign_at + Vector2(-w / 2, -font.get_ascent(13) - 8), Vector2(w, font.get_ascent(13) + 32))
-		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 11), Rect2(plate.position + Vector2(0, 3), plate.size))
-		overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.96), 11), plate)
-		pill(sign_at, def.name, 13, Color(def.color).darkened(0.1))
-		bar(Rect2(Vector2(plate.position.x + 8, plate.end.y - 13), Vector2(w - 16, 7)), rv.hp / rv.max_hp, Color(def.color), Color(0.42, 0.3, 0.15, 0.22))
+		var asc := font.get_ascent(13)
+		var nw := font.get_string_size(def.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 14
+		var bw := maxf(nw, 96.0)
+		var ph := asc + font.get_descent(13) + 28
+		var plate := Rect2(sign_at + Vector2(-(bw + 50) / 2 + 6, 18 - ph), Vector2(bw + 44, ph))
+		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 12), Rect2(plate.position + Vector2(0, 3), plate.size))
+		overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.96), 12), plate)
+		var disc := Vector2(plate.position.x, plate.get_center().y)
+		overlay.draw_circle(disc + Vector2(0, 2.5), 20.0, Color(0.42, 0.3, 0.15, 0.3))
+		overlay.draw_texture_rect(rival_face(rv.id), Rect2(disc - Vector2(20, 20), Vector2(40, 40)), false)
+		var tx := plate.position.x + 30
+		pill(Vector2(tx + nw / 2, plate.position.y + 8 + asc), def.name, 13, Color(def.color).darkened(0.1))
+		var gauge := Rect2(Vector2(tx, plate.end.y - 13), Vector2(bw, 7))
+		var f := clampf(rv.hp / rv.max_hp, 0.0, 1.0)
+		bar(gauge, f, Color(def.color), Color(0.42, 0.3, 0.15, 0.3))
+		if f > 0.0:  # a gloss along the fill's top, and a notch at each quarter so a full gauge still reads as one
+			var fw := maxf(gauge.size.y, gauge.size.x * f)
+			overlay.draw_style_box(round_box(Color(1, 1, 1, 0.35), 1.5), Rect2(gauge.position + Vector2(3, 1), Vector2(fw - 6, 2)))
+		for q in [0.25, 0.5, 0.75]:
+			overlay.draw_rect(Rect2(gauge.position + Vector2(roundf(gauge.size.x * q) - 0.5, 1), Vector2(1, gauge.size.y - 2)), Color(0.3, 0.2, 0.1, 0.35))
 	else:
 		pill(sign_at, def.name + "  (closed)", 13, Color("a99f8c"))
 	if not rv.defeated:
