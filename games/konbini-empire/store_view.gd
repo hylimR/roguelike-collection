@@ -6582,24 +6582,37 @@ static func made_ground(town: Dictionary, o: Vector2, reach_: Vector2, span: Vec
 	return water_runs(town, o, -9.2, 9.2, reach_.x, reach_.y) + water_runs(town, o, -20.2, -7.2, -16.5, span.y)
 
 
-## Water in the band z0..z1 between x0 and x1 (street frame), as runs 1 m deep on a 1 m grid.
+## Water in the band z0..z1 between x0 and x1 (street frame), as runs 1 m deep on a 1 m grid. A cell counts as water
+## if its middle or any corner is, so a shore running slant across a cell isn't left as a wedge of sea in the paving.
 static func water_runs(town: Dictionary, o: Vector2, z0: float, z1: float, x0: float = SET.position.x, x1: float = SET.end.x) -> Array:
 	var out := []
+	var corners := func(zc: float) -> Array:
+		var row := []
+		var xc := x0
+		while xc < x1 + 1.0:
+			row.append(Sim.City.is_water(town, o + Vector2(minf(xc, x1), zc)))
+			xc += 1.0
+		return row
+	var top: Array = corners.call(z0)
 	var z := z0
 	while z < z1:
 		var h := minf(1.0, z1 - z)
+		var bottom: Array = corners.call(z + h)
 		var start := INF
 		var x := x0
+		var i := 0
 		while x < x1:
-			var wet := Sim.City.is_water(town, o + Vector2(x + 0.5, z + h / 2))
+			var wet: bool = top[i] or top[i + 1] or bottom[i] or bottom[i + 1] or Sim.City.is_water(town, o + Vector2(x + 0.5, z + h / 2))
 			if wet and start == INF:
 				start = x
 			elif not wet and start < INF:
 				out.append(Rect2(start, z, x - start, h))
 				start = INF
 			x += 1.0
+			i += 1
 		if start < INF:
 			out.append(Rect2(start, z, x1 - start, h))
+		top = bottom
 		z += h
 	return out
 
