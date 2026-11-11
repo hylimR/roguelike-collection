@@ -5371,7 +5371,7 @@ func build_set() -> void:
 	var low := boxes.size()
 	set_row(5.35, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 0.9, roads + overhead)  # one floor, so it hides neither your till nor the car park
 	var low_roofs := boxes.slice(low).filter(func(e): return not roofs.any(func(rf): return is_equal_approx(rf[1].x, e[1].x)))
-	set_row(SET.position.x, SET.end.x, -20.5, 11.0, mix, r, boxes, roofs, 1.0, roads + overhead)
+	back_row(SET.position.x, SET.end.x, -20.5, [11.0, 8.0, 5.0], mix, r, boxes, roofs, roads + overhead)
 	shop_roofs(low_roofs)
 	var bm := multimesh(BoxMesh.new(), boxes.size(), true, true)
 	for k in boxes.size():
@@ -5780,6 +5780,25 @@ func street_lamp(at: Vector3) -> void:
 func set_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: RandomNumberGenerator, boxes: Array, roofs: Array, tall: float, roads: Array) -> void:
 	for run in free_runs(x0, x1, zf - max_depth, zf, roads):
 		fill_row(run.x, run.y, zf, max_depth, mix, r, boxes, roofs, tall)
+
+
+## The row behind the street, from x0 to x1, fronting z = zf: where a road or the water behind only cuts into the back
+## of it, shallower buildings fill in again (down to the last of `depths`), so the block behind your shop stays built
+## up rather than opening onto a bare lot.
+func back_row(x0: float, x1: float, zf: float, depths: Array, mix: Array, r: RandomNumberGenerator, boxes: Array, roofs: Array, roads: Array) -> void:
+	var gaps := [Vector2(x0, x1)]
+	for dep in depths:
+		var left := []
+		for g in gaps:
+			var x: float = g.x
+			for run in free_runs(g.x, g.y, zf - dep, zf, roads):
+				fill_row(run.x, run.y, zf, dep, mix, r, boxes, roofs, 1.0)
+				if run.x > x:
+					left.append(Vector2(x, run.x))
+				x = run.y
+			if g.y > x:
+				left.append(Vector2(x, g.y))
+		gaps = left
 
 
 func fill_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: RandomNumberGenerator, boxes: Array, roofs: Array, tall: float) -> void:
