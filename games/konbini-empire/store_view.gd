@@ -4133,8 +4133,9 @@ func street_traffic(delta: float) -> void:
 	set_cars = set_cars.filter(func(o): return not gone.has(o))
 
 
-## Settled snow for an 8 m repeat at 32 px a metre: drifts on seamless noise, a shaded lip where a drift's edge faces
-## the street, powder dithered out round its rim, a crust of fine grain and the odd glint.
+## Settled snow for an 8 m repeat at 32 px a metre: drifts on seamless noise, each mounded up from a thin rim to a
+## rounded body, lit on the slopes that face the sun and cool blue on those turned away, thinning to a translucent rim
+## with the ground showing through, round it a margin of wet, darkened ground flecked with powder, and the odd glint.
 func snow_patches() -> ImageTexture:
 	const N := 256
 	var fn := FastNoiseLite.new()
@@ -4147,7 +4148,12 @@ func snow_patches() -> ImageTexture:
 	fn.frequency = 0.25
 	fn.fractal_octaves = 1
 	var grain := fn.get_seamless_image(N, N).get_data()
-	var bayer := [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
+	var height := PackedFloat32Array()
+	height.resize(N * N)
+	for i in N * N:
+		var v := drifts[i] / 255.0
+		height[i] = sqrt(clampf((v - 0.5) / 0.14, 0.0, 1.0)) + 0.8 * v
+	var sun := Vector2(SUN.x, SUN.z).normalized()
 	var img := Image.create(N, N, false, Image.FORMAT_RGBA8)
 	for y in N:
 		for x in N:
@@ -4155,19 +4161,21 @@ func snow_patches() -> ImageTexture:
 			var g := grain[y * N + x] / 255.0 - 0.5
 			var c := Color(1, 1, 1, 0)
 			if v > 0.5:
-				var lip := 0
-				for k in [1, 2, 3]:
-					if lip == 0 and drifts[(y + k) % N * N + x] / 255.0 <= 0.5:
-						lip = k
-				c = Color(0.95, 0.97, 1.0, 0.94).darkened(0.05 * g)
-				if lip > 0:
-					c = Color(0.76, 0.82, 0.94, 0.94) if lip == 1 else Color(0.85, 0.89, 0.97, 0.94)
-				elif drifts[(y + N - 1) % N * N + x] / 255.0 <= 0.5:
-					c = Color(1, 1, 1, 0.96)  # the drift's crest, caught by the light
-				elif g > 0.46:
-					c = Color(1, 1, 1, 1)
-			elif v > 0.42 and (v - 0.42) / 0.08 * 16.0 > bayer[y % 4 * 4 + x % 4] + g * 6.0:
-				c = Color(0.88, 0.92, 0.99, 0.8)
+				var dx := height[y * N + (x + 2) % N] - height[y * N + (x + N - 2) % N]
+				var dz := height[(y + 2) % N * N + x] - height[(y + N - 2) % N * N + x]
+				var lit := clampf(-(dx * sun.x + dz * sun.y) * 6.0, -1.0, 1.0)
+				c = Color(0.93, 0.95, 0.99).lerp(Color(1.0, 1.0, 0.98), lit) if lit > 0.0 else Color(0.93, 0.95, 0.99).lerp(Color(0.72, 0.79, 0.92), -lit)
+				c = c.darkened(0.03 * g)
+				var rim := clampf((v - 0.5) / 0.035, 0.0, 1.0)  # thin at the edge: the ground shows through, slushy and grey
+				c = Color(0.8, 0.84, 0.92).lerp(c, rim)
+				c.a = lerpf(0.62, 0.97, rim)
+				if g > 0.44 and lit > 0.2:
+					c = Color(1, 1, 1, 1)  # a glint in the crust
+			elif v > 0.43:
+				var wet := (v - 0.43) / 0.07  # meltwater darkening the ground round the drift
+				c = Color(0.16, 0.2, 0.3, 0.36 * wet)
+				if g > 0.4 and v > 0.465:
+					c = Color(0.9, 0.93, 0.99, 0.85)  # powder blown off the drift
 			img.set_pixel(x, y, c)
 	return ImageTexture.create_from_image(img)
 
