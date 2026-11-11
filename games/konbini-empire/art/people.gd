@@ -1,5 +1,5 @@
 extends RefCounted
-## The people on the street, painted in art/walk.png's layout: a row of store_view's PERSON cells per character in
+## The people on the street, painted as the walk sheet: a row of store_view's PERSON cells per character in
 ## WALK_ROW's order (the seven customers, each staff role and threat, then a flyer girl and a costume mascot per rival
 ## chain in Sim.RIVALS' order), each a standing frame then four of a walk cycle, all facing right (the game flips
 ## them). A figure is put together from parts (a head with its hair, hat and face, a torso in its outfit, limbs posed
