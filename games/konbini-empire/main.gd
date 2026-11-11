@@ -614,6 +614,7 @@ func _process(delta: float) -> void:
 	if running:
 		sim.tick(minf(0.05, delta) * speed)
 	drain()
+	view.hud_card = Rect2(store_card.global_position - view.global_position, store_card.size) if store_card.visible else Rect2()
 	for t in toasts:
 		t[2] -= delta
 	toasts = toasts.filter(func(t): return t[2] > 0.0)

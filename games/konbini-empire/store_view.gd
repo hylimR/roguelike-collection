@@ -1051,6 +1051,7 @@ var street: Node3D
 var set_node: Node3D
 var actors: Node3D
 var overlay: Control
+var hud_card := Rect2()  # the HUD's store card over the view: the rival's pin keeps clear of it
 
 
 func _ready() -> void:
@@ -8631,19 +8632,29 @@ func draw_street() -> void:
 	# the rival's name rides a pin over its roof, like a branch on the city map, so the plate never covers its fascia
 	var roof_at := screen(Vector3((span.x + span.y) / 2, 4.42, -9.4))
 	var sign_at := roof_at + Vector2(0, -58)
-	overlay.draw_line(roof_at + Vector2(1, 0), sign_at + Vector2(1, 0), Color(0, 0, 0, 0.3), 3.0)
-	overlay.draw_line(roof_at, sign_at, Color.WHITE, 2.0)
+	var font: Font = bold if bold else get_theme_default_font()
+	var asc := font.get_ascent(13)
+	var nw := font.get_string_size(def.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 14
+	var bw := maxf(nw, 96.0)
+	var ph := asc + font.get_descent(13) + 28
+	var stem_to := sign_at
+	# a tall store card (an event, more products) would cover the plate: it drops below the card, or failing that
+	# slides out to its left, and the stem leans over to it
+	var reach := Rect2(sign_at + Vector2(-(bw + 50) / 2 - 20, 12 - ph), Vector2(bw + 76, ph + 12))  # plate, roundel, shadow
+	if reach.intersects(hud_card):
+		sign_at.y = minf(maxf(sign_at.y, hud_card.end.y + ph - 12), roof_at.y - 22)
+		reach.position.y = sign_at.y + 12 - ph
+		if reach.intersects(hud_card):
+			sign_at.x -= reach.end.x - hud_card.position.x
+		stem_to = Vector2(clampf(roof_at.x, sign_at.x - (bw + 50) / 2 + 14, sign_at.x + (bw + 38) / 2), sign_at.y)
+	overlay.draw_line(roof_at + Vector2(1, 0), stem_to + Vector2(1, 0), Color(0, 0, 0, 0.3), 3.0)
+	overlay.draw_line(roof_at, stem_to, Color.WHITE, 2.0)
 	overlay.draw_circle(roof_at + Vector2(0, 1.5), 5.5, Color(0, 0, 0, 0.3))
 	overlay.draw_circle(roof_at, 5.0, Color.WHITE)
 	overlay.draw_circle(roof_at, 3.6, Color("8a8780") if rv.defeated else Color(def.color))
 	if not rv.defeated:
 		# name and takings on one cream plate, so the bar never sits on the chain's own fascia color
 		# its mascot in a roundel that breaks the plate's left edge, the name over a gauge of the same width
-		var font: Font = bold if bold else get_theme_default_font()
-		var asc := font.get_ascent(13)
-		var nw := font.get_string_size(def.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 14
-		var bw := maxf(nw, 96.0)
-		var ph := asc + font.get_descent(13) + 28
 		var plate := Rect2(sign_at + Vector2(-(bw + 50) / 2 + 6, 18 - ph), Vector2(bw + 44, ph))
 		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 12), Rect2(plate.position + Vector2(0, 3), plate.size))
 		overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.96), 12), plate)
