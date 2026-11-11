@@ -596,7 +596,7 @@ static func head(c: Dictionary, k: Dictionary) -> Image:
 			cloth(back, pv([hx - r - 1.0, hy - 2, hx + 0.5, hy - 2, hx + 1.0, hy + r + 4, hx - 2.0, hy + r + 9, hx - r, hy + r + 8, hx - r - 1.8, hy + r + 3]), hc)
 		"bob":
 			cloth(back, pv([hx - r - 1.4, hy - 2, hx + 1.8, hy - 2, hx + 2.2, hy + r + 1.5, hx - 1.0, hy + r + 2.5, hx - r, hy + r + 2.0, hx - r - 1.8, hy + r]), hc)
-	var shell := Vector4(hx - 0.6, hy - 0.4, r + 1.2, r + 0.2)
+	var shell := Vector4(hx - 0.5, hy - 0.4, r + 0.9, r + 0.2)
 	if style in ["bob", "long"]:
 		shell = Vector4(hx - 0.6, hy - 0.4, r + 1.5, r + 0.2)
 	elif style == "spiky":
@@ -613,7 +613,7 @@ static func head(c: Dictionary, k: Dictionary) -> Image:
 		for x in range(floori(hx - r - 3), ceili(hx + r + 3)):
 			var u := x + 0.5 - hx
 			var v := y + 0.5 - hy
-			var face := u * u + v * v <= r * r or pow((u - 3.0) / 5.2, 2) + pow((v - 4.6) / 4.3, 2) <= 1.0
+			var face := pow(u / (r + 0.1), 2) + pow(v / (r - 0.1), 2) <= 1.0 or pow((u - 2.4) / 4.9, 2) + pow((v - 4.6) / 4.0, 2) <= 1.0
 			var sh := pow((x + 0.5 - shell.x) / shell.z, 2) + pow((y + 0.5 - shell.y) / shell.w, 2) <= 1.0
 			if (sh or face) and not bare(style, u, v):
 				kind[Vector2i(x, y)] = 2
@@ -629,7 +629,7 @@ static func head(c: Dictionary, k: Dictionary) -> Image:
 			var lit := Vector3(n.x, n.y, sqrt(maxf(0.0, 1.0 - n.length_squared()))).dot(lit3)
 			var band := 0 if lit > 0.92 else (1 if lit > 0.25 else (2 if lit > -0.15 else 3))
 			var d := Vector2(q.x + 0.5, q.y + 0.5) - crown
-			if d.length() > 2.5 and fposmod(d.angle() * 7.0 / PI, 1.0) < 0.24:
+			if d.length() > 2.5 and fposmod(d.angle() * 7.0 / PI, 1.0) < (0.24 if hc.v < 0.6 else 0.12):
 				band += 1
 			p.px(q.x, q.y, hair_tones[band])
 		else:
@@ -645,50 +645,28 @@ static func head(c: Dictionary, k: Dictionary) -> Image:
 		p.rect(ix - 3, iy + 1, 2, 3, skin)
 		p.px(ix - 2, iy + 2, tone(skin, -0.28))
 		p.px(ix - 3, iy + 3, skin_lo)
-	var fx := int(r * 0.52)
-	var dark := col("2a1d22")
-	p.px(ix + fx, iy + 1, dark)
-	p.px(ix + fx, iy + 2, dark)
-	p.px(ix + fx + 1, iy + 1, dark)
-	p.px(ix + fx + 1, iy + 2, col("fbfbf8"))
-	p.px(ix + fx, iy + 3, col("6b4434"))
-	var brow := tone(hc, -0.3)
-	p.px(ix + fx, iy - 1, brow)
-	p.px(ix + fx + 1, iy - 1, brow)
-	var nose := front(kind, iy + 2) + 1
-	p.px(nose, iy + 2, skin)
-	p.px(nose, iy + 3, skin_lo)
-	var mouth := front(kind, iy + 5) - 1
-	p.px(mouth, iy + 5, tone(skin, -0.38))
+	var ex := ix + int(r * 0.42)
+	var ey := iy + 1
+	var nose := front(kind, ey + 2) + 1
+	p.px(nose, ey + 2, skin)
+	p.px(nose, ey + 3, skin_lo)
 	var extras: Array = c.get("face", [])
-	var pink := skin.lerp(Color("f08a8a"), 0.45)
-	if "blush" in extras:
-		p.px(ix + fx - 1, iy + 4, pink)
-		p.px(ix + fx, iy + 4, pink)
-	if "smile" in extras:
-		p.px(ix + fx, iy + 1, skin)
-		p.px(ix + fx + 1, iy + 1, skin)
-		p.px(ix + fx + 1, iy + 2, dark)
-		p.px(ix + fx, iy + 3, skin)
-		p.px(ix + fx - 1, iy + 4, tone(skin, -0.25))
-		p.px(mouth - 1, iy + 5, tone(skin, -0.38))
-	if "frown" in extras:
-		p.px(ix + fx - 1, iy - 2, brow)
-		p.px(ix + fx + 1, iy, brow)
-		p.px(mouth - 1, iy + 6, tone(skin, -0.38))
+	face(p, extras, skin, hc, Vector2i(ex, ey), front(kind, ey + 1) - 1, front(kind, ey + 6) - 1)
 	hat_on(p, back, hat, hx, hy, r)
 	if "shades" in extras:
-		var s := col("121216")
-		p.rect(ix + fx - 2, iy, 5, 3, s)
-		p.span(iy + 3, ix + fx - 1, ix + fx + 1, s)
-		p.px(ix + fx - 1, iy, col("6a7280"))
-		p.px(ix + fx, iy + 1, col("4a5260"))
-		p.span(iy, ix - 1, ix + fx - 3, s)
+		var g := col("121216")
+		var fe := front(kind, ey + 1)
+		p.rect(ex - 2, ey, 4, 3, g)
+		p.rect(fe - 2, ey, 3, 3, g)
+		p.span(ey, ex + 1, fe, g)
+		p.span(ey, ix - 2, ex - 2, g)
+		p.px(ex - 1, ey, col("7a8494"))
+		p.px(fe - 1, ey, col("5a6474"))
 	if "mask" in extras:
 		var m := col("f4f4f2")
-		flat(p, pv([hx + 1.5, hy + 3, hx + r + 1.0, hy + 2.5, hx + r + 0.5, hy + 6.5, hx + 3.0, hy + 8.2, hx + 1.0, hy + 6.5]), m)
-		p.span(iy + 6, ix + 2, ix + int(r), tone(m, -0.2))
-		p.px(ix + 1, iy + 3, tone(m, -0.3))
+		flat(p, pv([hx + 0.5, hy + 4.0, hx + r + 1.0, hy + 3.5, hx + r + 0.3, hy + 7.0, hx + 3.0, hy + 8.6, hx, hy + 7.0]), m)
+		p.span(iy + 7, ix + 1, ix + int(r) - 1, tone(m, -0.2))
+		p.line(Vector2(ix + 0.5, iy + 4.5), Vector2(ix - 2.0, iy + 2.5), tone(m, -0.3))
 	var out := rimmed(back.img)
 	out.blend_rect(rimmed(p.img), FULL, Vector2i.ZERO)
 	return out
@@ -720,6 +698,54 @@ static func tuft_pts(style: String, shell: Vector4) -> Array:
 				o + e * Vector2(cos(ra - 0.12), sin(ra - 0.12)) + Vector2(cos(ra - 0.6), sin(ra - 0.6)) * reach,
 				o + e * Vector2(cos(ra + 0.2), sin(ra + 0.2)) * 0.9]))
 	return out
+
+
+## A three-quarter face turned toward the camera: the near eye big under its lash with a glint (at e), the far eye
+## just showing inside the cheek's edge (column `far`), a brow over each, a small mouth (column `mouth`); girls blush,
+## grandma squints in a smile, the reviewer scowls; behind sunglasses only the mouth shows.
+static func face(p: Paint, extras: Array, skin: Color, hc: Color, e: Vector2i, far: int, mouth: int) -> void:
+	if "shades" in extras:
+		p.px(mouth, e.y + 6, tone(skin, -0.4))
+		return
+	var dark := col("2a1d22")
+	var iris := col("70483a")
+	var lip := tone(skin, -0.4)
+	var brow := tone(hc, -0.3) if hc.v > 0.35 else tone(hc, 0.1)
+	if "smile" in extras:
+		for q: Vector2i in [Vector2i(-1, 2), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 2)]:
+			p.px(e.x + q.x, e.y + q.y, dark)
+		p.px(far, e.y + 1, dark)
+		p.px(far - 1, e.y + 2, dark)
+		p.px(e.x - 1, e.y + 3, tone(skin, -0.22))
+	else:
+		p.span(e.y, e.x - 1, e.x + 1, dark)
+		p.rect(e.x, e.y + 1, 2, 2, dark)
+		p.px(e.x + 1, e.y + 1, col("fbfbf8"))
+		p.px(e.x, e.y + 3, iris)
+		p.px(e.x + 1, e.y + 3, tone(iris, 0.25))
+		p.px(far, e.y, dark)
+		p.px(far, e.y + 1, dark)
+		p.px(far, e.y + 2, iris)
+	if "frown" in extras:
+		p.px(e.x - 1, e.y - 3, brow)
+		p.px(e.x, e.y - 2, brow)
+		p.px(e.x + 1, e.y - 2, brow)
+		p.px(far - 1, e.y - 2, brow)
+		p.px(far, e.y - 3, brow)
+		p.px(mouth - 1, e.y + 6, lip)
+		p.px(mouth, e.y + 6, lip)
+	else:
+		p.px(e.x, e.y - 2, brow)
+		p.px(e.x + 1, e.y - 2, brow)
+		p.px(far, e.y - 2, brow)
+		p.px(mouth, e.y + 6, lip)
+		if "smile" in extras:
+			p.px(mouth - 1, e.y + 5, lip)
+	if "blush" in extras:
+		var pink := skin.lerp(Color("f07c84"), 0.5)
+		p.px(e.x - 1, e.y + 4, pink)
+		p.px(e.x, e.y + 4, pink)
+		p.px(far - 1, e.y + 4, pink)
 
 
 ## The face's front-most pixel on row y.
@@ -762,7 +788,7 @@ static func hat_on(p: Paint, back: Paint, hat: Array, hx: float, hy: float, r: f
 			p.px(ix + ir + 3, iy - 2, tone(hc, -0.22))
 			if hat[0] == "hardhat":
 				p.span(iy - 5, ix - ir - 1, ix + ir + 1, acc)
-				p.line(Vector2(ix - 0.5, iy - 1.5), Vector2(ix + 3.5, iy + 8.5), col("5a463c"))
+				p.line(Vector2(ix - 1.5, iy - 1.5), Vector2(ix + 0.5, iy + 8.5), col("5a463c"))
 		"peaked":
 			cloth(p, pv([hx - r - 0.8, hy - 3, hx - r - 1.5, hy - 6.5, hx - 3, hy - 8.8, hx + 6, hy - 8.8, hx + r + 2.5, hy - 6.8,
 					hx + r + 1.5, hy - 4.5, hx + r, hy - 3]), hc)
@@ -817,9 +843,11 @@ static func hat_on(p: Paint, back: Paint, hat: Array, hx: float, hy: float, r: f
 			p.span(iy - 3, ix + 2, ix + ir, acc)
 			flat(p, pv([hx + 3.0, hy - 3.6, hx + r + 4.0, hy - 3.0, hx + r + 3.5, hy - 2.0, hx + 3.0, hy - 2.2]), acc)
 
-## A costume mascot's big head, done once per chain and laid over each frame, rimmed: the tanuki's eye mask and
-## muzzle, the kappa's dish, leafy fringe and beak, the rabbit's long ears, the fox's pointed ears and open grin, the
-## ogre's horns through its afro over a toothy grin, the robot's visor, ear disc and antenna.
+## A costume mascot's big head, done once per chain and laid over each frame, rimmed: turned three-quarters to the
+## camera, centred where the rival's sign crops its roundel, with a big near eye and the far eye by the cheek: the
+## tanuki's dark mask band over a pale muzzle, the kappa's dish, leafy fringe and beak, the rabbit's tall pink-lined
+## ears, the fox's pointed ears and white cheeks round an open grin, the ogre's horns through its afro over a toothy
+## grin, the robot's visor with two glowing eyes under its antenna.
 static func mascot_head(id: String) -> Image:
 	var p := Paint.new(W, H)
 	var m: Dictionary = MASCOT[id]
@@ -828,106 +856,121 @@ static func mascot_head(id: String) -> Image:
 	var dark := Color(m.dark)
 	var trim := Color(m.trim)
 	var ink := col("23161c")
-	var white := col("fbfbf8")
 	match id:
 		"tanuki":
-			for e: Vector2 in [Vector2(10.5, 8.5), Vector2(24.0, 7.5)]:
-				orb(p, e.x, e.y, 3.2, 3.1, fur)
-				orb(p, e.x + 0.2, e.y + 0.5, 1.6, 1.5, dark)
-			orb(p, 18.0, 15.0, 11.0, 9.5, fur)
-			orb(p, 14.0, 9.5, 4.5, 2.2, tone(fur, 0.14))
-			orb(p, 24.5, 19.0, 5.0, 3.4, pale)
-			flat(p, pv([13.5, 13.5, 19.0, 10.5, 27.0, 10.5, 29.0, 13.5, 28.0, 17.0, 24.0, 17.5, 19.0, 16.0, 15.0, 17.0]), dark)
-			orb(p, 24.0, 13.5, 2.6, 2.6, col("f8efd6"))
-			p.rect(24, 12, 2, 3, ink)
-			p.px(24, 12, white)
-			orb(p, 29.4, 16.6, 1.8, 1.4, ink)
-			for q: Vector2i in [Vector2i(24, 21), Vector2i(25, 21), Vector2i(26, 21), Vector2i(27, 20)]:
+			for e: Vector2 in [Vector2(10.5, 8.0), Vector2(23.0, 7.0)]:
+				orb(p, e.x, e.y, 3.1, 3.0, fur)
+				orb(p, e.x + 0.2, e.y + 0.5, 1.5, 1.5, dark)
+			orb(p, 17.5, 15.0, 10.5, 9.2, fur)
+			orb(p, 15.0, 9.8, 4.5, 2.2, tone(fur, 0.14))
+			orb(p, 23.5, 19.4, 5.4, 3.5, pale)
+			flat(p, pv([8.5, 15.0, 12.0, 11.8, 18.5, 11.0, 25.5, 11.0, 28.5, 13.2, 28.2, 15.8, 24.0, 16.8, 20.5, 16.4, 15.5, 17.6, 10.5, 18.0]), dark)
+			eye(p, Vector2(20.5, 14.0), 2.3, 2.4, col("f8efd6"), ink)
+			eye(p, Vector2(26.0, 14.0), 1.4, 2.0, col("f8efd6"), ink)
+			orb(p, 27.8, 18.2, 1.7, 1.3, ink)
+			for q: Vector2i in [Vector2i(22, 20), Vector2i(23, 21), Vector2i(24, 21), Vector2i(25, 21), Vector2i(26, 20)]:
 				p.px(q.x, q.y, tone(pale, -0.45))
 		"kappa":
-			orb(p, 18.0, 15.0, 10.5, 9.5, fur)
-			var leaf := tone(fur, -0.3)
+			orb(p, 17.5, 15.0, 10.0, 9.2, fur)
+			var leaf := tone(fur, -0.32)
 			for y in range(5, 13):
-				for x in range(7, 30):
-					var on := p.get_px(x, y).a > 0.0 and y < 10 + (1 if x % 3 == 0 else 0) - (1 if x % 3 == 1 else 0)
-					if on:
+				for x in range(7, 29):
+					if p.get_px(x, y).a > 0.0 and y < 10 + (1 if x % 3 == 0 else 0) - (1 if x % 3 == 1 else 0):
 						p.px(x, y, leaf if (x + y) % 4 else tone(leaf, 0.25))
-			orb(p, 18.0, 6.5, 7.2, 2.4, pale.lerp(Color("d6dcc8"), 0.7))
-			p.span(8, 12, 24, col("a9b39a"))
-			flat(p, pv([25.5, 15.5, 31.0, 15.8, 33.0, 17.5, 31.0, 20.0, 25.5, 20.5]), trim)
-			p.span(19, 27, 31, tone(trim, -0.25))
-			p.span(18, 28, 32, tone(trim, -0.45))
-			p.rect(23, 11, 2, 3, ink)
-			p.px(24, 11, white)
-			p.px(21, 16, col("f29a9a"))
-			p.px(22, 16, col("f29a9a"))
+			orb(p, 17.5, 6.6, 6.8, 2.2, pale.lerp(Color("d6dcc8"), 0.7))
+			p.span(8, 12, 23, col("a9b39a"))
+			eye(p, Vector2(20.5, 13.2), 1.9, 2.4, col("fbfbf8"), ink)
+			eye(p, Vector2(25.6, 13.2), 1.2, 2.0, col("fbfbf8"), ink)
+			p.rect(18, 17, 2, 1, col("f29a9a"))
+			flat(p, pv([23.5, 16.2, 29.5, 15.4, 31.4, 17.0, 29.6, 19.8, 24.0, 20.6]), trim)
+			p.span(18, 25, 30, tone(trim, -0.5))
+			p.span(19, 25, 29, tone(trim, -0.22))
+			p.span(16, 25, 28, tone(trim, 0.25))
 		"usagi":
-			for e: Vector2 in [Vector2(14.5, 11.0), Vector2(20.5, 10.5)]:
-				orb(p, e.x, e.y, 2.6, 6.0, fur)
+			for e: Vector2 in [Vector2(14.5, 9.6), Vector2(20.0, 9.2)]:
+				orb(p, e.x, e.y, 2.5, 5.8, fur)
 				orb(p, e.x + 0.3, e.y + 0.8, 1.1, 4.2, pale)
-			orb(p, 18.0, 17.0, 8.5, 7.5, fur)
-			p.rect(22, 16, 1, 2, ink)
-			p.px(23, 16, white)
+			orb(p, 17.5, 17.5, 8.5, 7.2, fur)
+			eye(p, Vector2(20.0, 16.6), 1.5, 2.0, col("fbfbf8"), ink)
+			eye(p, Vector2(24.2, 16.6), 1.0, 1.8, col("fbfbf8"), ink)
+			p.px(25, 18, pale)
 			p.px(26, 18, pale)
-			p.px(25, 20, tone(dark, -0.3))
-			p.px(21, 19, pale.lerp(fur, 0.5))
+			p.px(24, 20, tone(dark, -0.35))
+			p.px(25, 20, tone(dark, -0.35))
+			p.px(19, 19, pale.lerp(fur, 0.45))
+			p.px(18, 19, pale.lerp(fur, 0.45))
 		"kitsune":
-			for e: Array in [[Vector2(8.5, 12.5), Vector2(10.5, 4.0), Vector2(16.5, 8.5)], [Vector2(19.5, 7.5), Vector2(25.5, 4.0), Vector2(28.0, 12.0)]]:
+			for e: Array in [[Vector2(8.5, 12.5), Vector2(10.5, 4.2), Vector2(15.5, 8.5)], [Vector2(19.5, 7.5), Vector2(24.5, 4.2), Vector2(26.5, 11.5)]]:
 				cloth(p, PackedVector2Array(e), fur)
 				var c0: Vector2 = (e[0] + e[1] + e[2]) / 3.0
 				flat(p, PackedVector2Array([c0.lerp(e[0], 0.5), c0.lerp(e[1], 0.6), c0.lerp(e[2], 0.5)]), pale)
-			orb(p, 18.0, 15.5, 10.5, 9.0, fur)
-			orb(p, 24.0, 19.0, 6.5, 4.5, pale)
-			orb(p, 30.5, 16.8, 1.5, 1.2, ink)
-			p.rect(22, 12, 2, 3, ink)
-			p.px(23, 12, white)
-			flat(p, pv([24.5, 20.0, 29.5, 19.5, 28.0, 23.0, 25.5, 23.0]), tone(dark, 0.1))
-			p.rect(26, 21, 2, 2, col("f07a8a"))
+			orb(p, 17.5, 15.5, 10.0, 8.8, fur)
+			orb(p, 22.5, 19.2, 7.0, 4.6, pale)
+			eye(p, Vector2(19.8, 13.8), 1.9, 2.4, col("fbfbf8"), ink)
+			eye(p, Vector2(25.2, 13.8), 1.1, 2.0, col("fbfbf8"), ink)
+			orb(p, 29.0, 17.2, 1.5, 1.2, ink)
+			flat(p, pv([23.0, 19.5, 28.0, 19.0, 27.0, 23.0, 24.0, 23.0]), tone(dark, 0.1))
+			p.rect(24, 21, 2, 2, col("f07a8a"))
 		"oni":
 			var afro := Paint.new(W, H)
-			orb(afro, 16.0, 13.8, 11.0, 8.2, dark)
-			for o: Vector3 in [Vector3(6.0, 15.0, 3.2), Vector3(7.5, 19.5, 3.0), Vector3(12.0, 21.0, 3.0), Vector3(5.5, 10.5, 2.6)]:
+			orb(afro, 16.0, 13.8, 10.5, 8.3, dark)
+			for o: Vector3 in [Vector3(6.5, 15.0, 3.0), Vector3(7.5, 19.5, 3.0), Vector3(12.0, 21.0, 3.0), Vector3(6.5, 10.5, 2.6)]:
 				orb(afro, o.x, o.y, o.z, o.z, dark)
 			for y in H:
 				for x in W:
 					if afro.get_px(x, y).a > 0.0 and (x * 3 + y * 5) % 7 < 2 and (x + y) % 2 == 0:
 						afro.px(x, y, tone(afro.get_px(x, y), 0.2))
 			p.img.blend_rect(afro.img, FULL, Vector2i.ZERO)
-			for h: Array in [[9.5, 9.0, 12.0, 3.6, 15.0, 8.0], [19.5, 7.5, 22.5, 3.6, 24.8, 8.5]]:
+			for h: Array in [[10.0, 8.8, 12.5, 3.8, 15.0, 7.8], [19.5, 7.5, 22.0, 3.8, 24.5, 8.5]]:
 				cloth(p, pv(h), pale)
 				p.span(int(h[1]) - 1, int(h[0]) + 1, int(h[4]) - 1, tone(pale, -0.3))
-			orb(p, 22.5, 17.5, 7.2, 6.8, fur)
-			for o: Vector3 in [Vector3(19.0, 11.0, 3.4), Vector3(23.5, 10.4, 3.0), Vector3(27.0, 11.6, 2.2)]:
+			orb(p, 21.5, 17.5, 7.2, 6.8, fur)
+			for o: Vector3 in [Vector3(17.5, 11.0, 3.2), Vector3(22.0, 10.4, 3.0), Vector3(26.0, 11.4, 2.2)]:
 				orb(p, o.x, o.y, o.z, o.z, dark)
-			p.span(13, 22, 26, ink)
-			p.px(27, 12, ink)
-			p.rect(24, 14, 1, 2, ink)
-			p.px(25, 14, white)
-			p.px(29, 16, fur)
-			p.span(18, 23, 28, ink)
-			p.span(19, 23, 28, white)
-			p.span(20, 23, 28, white)
-			p.span(21, 24, 27, ink)
-			p.px(25, 19, col("c8c4bc"))
-			p.px(27, 20, col("c8c4bc"))
-			p.px(23, 21, white)
+			p.span(13, 18, 21, ink)
+			p.span(13, 24, 26, ink)
+			eye(p, Vector2(20.0, 15.6), 1.4, 1.7, col("fbfbf8"), ink)
+			eye(p, Vector2(25.2, 15.6), 1.0, 1.6, col("fbfbf8"), ink)
+			p.span(18, 19, 28, ink)
+			p.span(19, 20, 27, col("fbfbf8"))
+			p.span(20, 21, 26, col("fbfbf8"))
+			p.px(19, 19, ink)
+			p.px(28, 19, ink)
+			p.px(20, 20, ink)
+			p.px(27, 20, ink)
+			p.span(21, 21, 26, ink)
+			for x: int in [22, 24, 26]:
+				p.px(x, 19, col("d8d2c8"))
 		"mega":
-			p.rect(18, 6, 1, 3, dark)
-			orb(p, 18.5, 5.5, 1.6, 1.6, trim)
-			orb(p, 18.0, 16.0, 10.0, 8.5, pale)
-			flat(p, pv([20.0, 10.5, 27.5, 10.5, 29.0, 13.0, 28.8, 19.0, 27.5, 21.5, 20.5, 21.5, 19.5, 19.0, 19.5, 12.0]), dark)
-			p.span(11, 21, 26, tone(dark, 0.3))
-			for x: int in [23, 26]:
-				p.rect(x, 14, 1, 3, trim)
-				p.px(x, 14, tone(trim, 0.4))
-			orb(p, 12.5, 16.5, 3.4, 3.4, tone(pale, 0.12))
-			orb(p, 12.5, 16.5, 1.6, 1.6, tone(pale, -0.3))
+			p.rect(17, 6, 1, 3, dark)
+			orb(p, 17.6, 5.2, 1.6, 1.5, trim)
+			orb(p, 17.5, 16.0, 10.0, 8.6, pale)
+			orb(p, 9.5, 16.5, 3.0, 3.2, tone(pale, 0.12))
+			orb(p, 9.3, 16.5, 1.5, 1.6, tone(pale, -0.3))
+			flat(p, pv([15.5, 11.0, 25.5, 11.0, 27.6, 13.5, 27.4, 19.5, 25.5, 21.8, 16.0, 21.8, 14.2, 19.5, 14.2, 13.0]), dark)
+			p.span(11, 16, 24, tone(dark, 0.32))
+			p.px(15, 12, tone(dark, 0.32))
+			var glow := Color(trim).lerp(dark, 0.55)
+			for e: Rect2i in [Rect2i(18, 14, 2, 4), Rect2i(23, 14, 2, 4)]:
+				p.rect(e.position.x - 1, e.position.y - 1, e.size.x + 2, e.size.y + 2, glow)
+				p.rect(e.position.x, e.position.y, e.size.x, e.size.y, trim)
+				p.px(e.position.x, e.position.y, tone(trim, 0.45))
 	return rimmed(p.img)
 
 
-## A mascot's frame: its tail or shell behind, the far leg and arm, the stout body in its costume (the tanuki's vest,
-## the rabbit's polo shirt, the fox's bandana, the ogre's tiger-skin loincloth, the robot's chest panel), the head,
-## and the near arm raised in a wave.
+## A cartoon eye: a round white (or fur-coloured) eye at c with a dark pupil toward the front and a glint.
+static func eye(p: Paint, c: Vector2, rx: float, ry: float, white: Color, ink: Color) -> void:
+	orb(p, c.x, c.y, rx, ry, white)
+	var px := floori(c.x + rx * 0.2)
+	var top := floori(c.y - ry * 0.55)
+	var h := maxi(2, roundi(ry * 1.3))
+	p.rect(px - (1 if rx > 1.8 else 0), top, 2 if rx > 1.1 else 1, h, ink)
+	p.px(px - (1 if rx > 1.8 else 0), top, col("fbfbf8"))
+
+
+## A mascot's frame: its tail or shell behind, the far leg and arm, the stout body in its costume, belly to the
+## camera (the tanuki's open red vest, the rabbit's polo shirt, the fox's bandana, the ogre's tiger-skin loincloth,
+## the robot's chest panel), the head, and the near arm raised in a wave at its side, clear of the face.
 static func mascot(id: String, f: int, top: Image) -> Paint:
 	var m: Dictionary = MASCOT[id]
 	var g: Array = GAIT[f]
@@ -936,11 +979,10 @@ static func mascot(id: String, f: int, top: Image) -> Paint:
 	var pale := Color(m.pale)
 	var dark := Color(m.dark)
 	var trim := Color(m.trim)
-	var limbs := fur
-	if id == "tanuki":
-		limbs = tone(fur, -0.25)
+	var limbs := tone(fur, -0.25) if id == "tanuki" else fur
 	var p := Paint.new(W, H)
 	var l := Paint.new(W, H)
+	var iyb := int(b)
 	match id:
 		"tanuki":
 			orb(l, 6.0, 33.0 + b, 5.0, 6.5, fur)
@@ -948,13 +990,13 @@ static func mascot(id: String, f: int, top: Image) -> Paint:
 			for y in range(26, 40):
 				if (y - 26) % 5 >= 3:
 					for x in range(0, 12):
-						if l.get_px(x, y + int(b)).a > 0.0:
-							l.px(x, y + int(b), tone(dark, 0.15 if (y - 26) % 5 == 3 else 0.0))
+						if l.get_px(x, y + iyb).a > 0.0:
+							l.px(x, y + iyb, tone(dark, 0.15 if (y - 26) % 5 == 3 else 0.0))
 		"kitsune":
 			orb(l, 6.5, 34.5 + b, 5.0, 7.0, fur)
 			orb(l, 4.0, 40.0 + b, 3.0, 2.6, pale)
 		"usagi":
-			orb(l, 9.0, 36.0 + b, 2.4, 2.4, fur)
+			orb(l, 9.5, 36.0 + b, 2.4, 2.4, fur)
 	if not l.img.is_invisible():
 		stick(p, l)
 	l = Paint.new(W, H)
@@ -964,26 +1006,33 @@ static func mascot(id: String, f: int, top: Image) -> Paint:
 	if id == "kappa":
 		orb(l, 10.0, 32.0 + b, 5.2, 8.0, dark)
 		for y: int in [28, 32, 36]:
-			l.span(y + int(b), 6, 13, tone(dark, 0.35))
+			l.span(y + iyb, 6, 13, tone(dark, 0.35))
+		for x: int in [8, 11]:
+			for y in range(26, 39):
+				if l.get_px(x, y + iyb).a > 0.0 and (y + x) % 4 != 0:
+					l.px(x, y + iyb, tone(dark, 0.35))
 	stick(p, l)
 	l = Paint.new(W, H)
 	stub(l, g[1], g[2], b, true, limbs)
 	var by := 32.0 + b
-	var iyb := int(b)
 	match id:
 		"tanuki":
-			orb(l, 17.5, by, 7.8, 8.5, trim)
-			orb(l, 20.5, by + 1.0, 4.6, 6.5, pale)
+			orb(l, 17.5, by, 7.8, 8.5, fur)
+			for y in range(25, 38):
+				for x in range(9, 27):
+					if l.get_px(x, y + iyb).a > 0.0 and (x < 14 or x > 24):
+						l.px(x, y + iyb, tone(trim, 0.15 if x < 11 else (-0.2 if x > 25 else 0.0)))
+			orb(l, 19.5, by + 1.0, 5.0, 6.4, pale)
 			for y in range(38, 41):
 				for x in range(9, 27):
 					if l.get_px(x, y + iyb).a > 0.0:
 						l.px(x, y + iyb, tone(fur, -0.1 if y == 38 else -0.2))
 		"kappa":
 			orb(l, 17.5, by, 7.8, 8.5, fur)
-			orb(l, 20.5, by + 0.5, 4.4, 6.5, pale)
+			orb(l, 20.0, by + 0.5, 4.6, 6.5, pale)
 			for y: int in [30, 33, 36]:
 				for x in range(16, 26):
-					if pow((x + 0.5 - 20.5) / 4.0, 2) + pow((y + 0.5 - by - 0.5) / 6.0, 2) < 1.0:
+					if pow((x + 0.5 - 20.0) / 4.2, 2) + pow((y + 0.5 - by - 0.5) / 6.0, 2) < 1.0:
 						l.px(x, y + iyb, tone(pale, -0.22))
 		"usagi":
 			orb(l, 17.5, by, 7.5, 8.5, fur)
@@ -991,43 +1040,47 @@ static func mascot(id: String, f: int, top: Image) -> Paint:
 				for x in range(9, 27):
 					if l.get_px(x, y + iyb).a > 0.0:
 						l.px(x, y + iyb, tone(trim, 0.15 if x < 12 else (-0.2 if x > 23 else 0.0)))
-			l.rect(21, 25 + iyb, 3, 1, col(WHITE))
-			l.px(23, 28 + iyb, col(WHITE))
-			l.px(23, 31 + iyb, col(WHITE))
+			l.rect(19, 25 + iyb, 5, 1, col(WHITE))
+			l.px(21, 26 + iyb, col(WHITE))
+			l.px(22, 28 + iyb, col(WHITE))
+			l.px(22, 31 + iyb, col(WHITE))
 		"kitsune":
 			orb(l, 17.5, by, 7.8, 8.5, fur)
-			orb(l, 20.5, by + 1.5, 4.6, 6.0, pale)
-			flat(l, pv([10.5, 24.0 + b, 26.5, 24.0 + b, 19.5, 34.0 + b]), trim)
+			orb(l, 20.0, by + 1.5, 4.8, 6.0, pale)
+			flat(l, pv([10.5, 24.0 + b, 26.5, 24.0 + b, 19.0, 33.5 + b]), trim)
 			l.span(24 + iyb, 12, 25, tone(trim, 0.25))
+			for q: Vector2i in [Vector2i(15, 27), Vector2i(19, 26), Vector2i(22, 28), Vector2i(18, 30)]:
+				l.px(q.x, q.y + iyb, tone(trim, 0.4))
 		"oni":
 			orb(l, 17.5, by, 7.8, 8.5, fur)
 			var lo := tone(fur, -0.25)
-			l.span(28 + iyb, 19, 23, lo)
-			l.px(21, 31 + iyb, lo)
-			l.px(21, 33 + iyb, lo)
+			l.span(28 + iyb, 18, 23, lo)
+			l.px(20, 31 + iyb, lo)
+			l.px(20, 33 + iyb, lo)
 			for y in range(35, 41):
 				for x in range(8, 28):
 					if l.get_px(x, y + iyb).a > 0.0 or (y == 40 and x % 2 == 0 and x > 9 and x < 26):
 						l.px(x, y + iyb, col("23161c") if (x + y) % 4 == 0 else tone(trim, 0.15 if x < 12 else 0.0))
 		"mega":
 			orb(l, 17.5, by, 7.8, 8.5, fur)
-			l.rect(18, 27 + iyb, 6, 6, tone(fur, 0.3))
-			l.rect(19, 28 + iyb, 2, 2, trim)
+			l.rect(17, 27 + iyb, 6, 6, tone(fur, 0.3))
+			l.rect(18, 28 + iyb, 2, 2, trim)
+			l.px(21, 31 + iyb, col("e05a4e"))
 			l.span(37 + iyb, 10, 25, tone(fur, -0.3))
 	stick(p, l)
 	p.img.blend_rect(top, FULL, Vector2i(0, iyb))
 	l = Paint.new(W, H)
-	var wob: float = [0.0, 0.7, 0.0, -0.7, 0.0][f]
-	var s := Vector2(20.5, 27.0 + b)
-	var e := Vector2(26.0, 30.5 + b)
-	var hnd := Vector2(30.5 + wob, 22.5 + b)
-	limb(l, s, e, 2.2, limbs)
-	limb(l, e, hnd, 1.9, limbs)
+	var wob: float = [0.0, 0.6, 0.0, -0.6, 0.0][f]
+	var s := Vector2(21.5, 27.5 + b)
+	var e := Vector2(26.5, 30.5 + b)
+	var hnd := Vector2(31.0 + wob, 23.2 + b)
+	limb(l, s, e, 2.1, limbs)
+	limb(l, e, hnd, 1.8, limbs)
 	if id == "usagi":
-		limb(l, s, s.lerp(e, 0.6), 2.6, trim)
+		limb(l, s, s.lerp(e, 0.6), 2.5, trim)
 	if id == "mega":
 		orb(l, e.x, e.y, 1.6, 1.6, dark)
-	orb(l, hnd.x, hnd.y, 2.3, 2.2, dark if id == "tanuki" else limbs)
+	orb(l, hnd.x, hnd.y, 2.2, 2.1, dark if id == "tanuki" else limbs)
 	stick(p, l)
 	return p
 
@@ -1035,7 +1088,7 @@ static func mascot(id: String, f: int, top: Image) -> Paint:
 ## A mascot's stubby leg and foot.
 static func stub(p: Paint, reach: float, lift: float, b: float, near: bool, c: Color) -> void:
 	var shade := 0.0 if near else -0.22
-	var hip := Vector2(17.5 + (1.5 if near else -2.0), 37.0 + b)
+	var hip := Vector2(17.5 + (2.5 if near else -2.5), 37.0 + b)
 	var foot := Vector2(hip.x + reach * 0.55, H - 5.5 - lift * 0.8)
 	limb(p, hip, foot, 2.8, tone(c, shade))
 	orb(p, foot.x + 1.0, foot.y + 1.6, 3.4, 1.9, tone(c, shade - 0.08))
