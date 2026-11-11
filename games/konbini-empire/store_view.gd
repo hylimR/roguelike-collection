@@ -2555,13 +2555,13 @@ func srect(s: Dictionary, a0: float, a1: float, c0: float, c1: float) -> Rect2:
 	return Rect2(a0, s.line + c0, a1 - a0, c1 - c0) if s.axis == "h" else Rect2(s.line + c0, a0, c1 - c0, a1 - a0)
 
 
-## The Shuto expressway, its ramps and the Yamanote viaduct, in short pieces; pillars below.
+## The Shuto expressway, its ramps and the Yamanote viaduct, in short pieces; pillars below. The expressway's deck is
+## laid in the streets' tarmac on a steel box girder, between cast parapets under a coping, with a median barrier.
 func build_elevated() -> void:
-	var deck := mat(Color("4f5158"))
-	var fascia := mat(Color("c3bfb6"))
 	var lines := mat(Color("e8e2c8"))
-	var dm := mat(Color.WHITE, stripes(Color("4f5158"), Color("e8e2c8"), 8, 1, 3))
+	var dm := mat(Color.WHITE, stripes(ASPHALT, Color("e8e2c8"), 8, 1, 3))
 	dm.texture_repeat = true
+	var cast := mat(Color.WHITE, shuto_tex())  # its girder stops 0.3 m over the trains on the viaduct below
 	var pillars: Array = []  # transforms
 	var routes: Array = Sim.City.elevated(C)
 	for ri in routes.size():
@@ -2575,27 +2575,35 @@ func build_elevated() -> void:
 			var j := mini(i + 8, e.pts.size() - 1)
 			var lo := maxi(0, i - 1)
 			var part := pts.slice(lo, mini(j + 2, pts.size()))
-			var top := surface(deck)
-			var side := surface(fascia)
-			ribbon(top, part, half, -half, 0.0, 0.0, i - lo, j - lo)
+			var top := surface(side_tarmac())
+			var side := surface(cast)
+			ribbon(top, part, half, -half, 0.0, 0.0, i - lo, j - lo, 1.0 / 16.0)
 			for sd in [half, -half]:
-				wall(side, part, sd, -0.9, 0.0, i - lo, j - lo)
+				band(side, part, sd, sd, 0.0, -1.1, 16, 42, e.cum[i] / 10.0, i - lo, j - lo, 56)
 			elevated.append(commit([top, side], city))
 			i = j
 		# parapets, edge lines, the median barrier and lane lines, left out where another carriageway runs into this one
-		var walls := surface(fascia)
+		var walls := surface(cast)
 		var mark := surface(lines)
 		var extra := surface(dm)
-		var specs := [[half, walls, 0.6], [-half, walls, 0.6], [half - 0.5, mark, 0.0], [0.5 - half, mark, 0.0]]
+		var specs := [[half, walls], [-half, walls], [half - 0.5, mark], [0.5 - half, mark]]
 		if not e.ramp:
-			specs += [[0.0, walls, 0.5], [half / 2, extra, 0.0], [-half / 2, extra, 0.0]]
+			specs += [[0.0, walls], [half / 2, extra], [-half / 2, extra]]
 		for sp in specs:
 			for run in Sim.City.line_runs(C, ri, sp[0]):
 				var sub := sub_line(e, pts, run[0], run[1])
-				if sp[2] > 0.0:
-					wall(sp[1], sub[0], sp[0], 0.0, sp[2], sub[1], sub[2])
-				else:
+				var u0: float = run[0] / 10.0
+				if sp[1] != walls:
 					ribbon(sp[1], sub[0], sp[0] + 0.07, sp[0] - 0.07, 0.02, 0.5 if sp[1] == extra else 0.0, sub[1], sub[2])
+				elif sp[0] == 0.0:
+					for m in [0.15, -0.15]:
+						band(walls, sub[0], m, m, 0.8, 0.0, 42, 52, u0, sub[1], sub[2], 56)
+					band(walls, sub[0], 0.15, -0.15, 0.8, 0.8, 52, 56, u0, sub[1], sub[2], 56)
+				else:
+					var n: float = -signf(sp[0]) * 0.22
+					band(walls, sub[0], sp[0], sp[0], 1.0, 0.0, 0, 16, u0, sub[1], sub[2], 56)
+					band(walls, sub[0], sp[0] + n, sp[0] + n, 1.0, 0.0, 42, 52, u0, sub[1], sub[2], 56)
+					band(walls, sub[0], sp[0], sp[0] + n, 1.0, 1.0, 52, 56, u0, sub[1], sub[2], 56)
 		elevated.append(commit([walls, mark, extra], city))
 	for dp in Sim.City.deck_pillars(C):  # where the city put the pillars: off the Yamanote's viaduct and the shop sets
 		var p: Vector3 = dp[2]
@@ -2724,10 +2732,10 @@ func build_rail(pillars: Array) -> void:
 
 
 ## A strip along pts from lateral offset a at height y0 to b at y1 (a wall when a == b, a deck when y0 == y1), its
-## texture rows r0..r1 of parapet_tex across it and 10 m of it along, starting u0 in.
-func band(st: SurfaceTool, pts: PackedVector3Array, a: float, b: float, y0: float, y1: float, r0: int, r1: int, u0: float, first: int, last: int) -> void:
-	var v0 := (r0 + 0.25) / 42.0
-	var v1 := (r1 - 0.25) / 42.0
+## texture rows r0..r1 of a parapet texture `rows` high across it and 10 m of it along, starting u0 in.
+func band(st: SurfaceTool, pts: PackedVector3Array, a: float, b: float, y0: float, y1: float, r0: int, r1: int, u0: float, first: int, last: int, rows := 42) -> void:
+	var v0 := (r0 + 0.25) / rows
+	var v1 := (r1 - 0.25) / rows
 	var u := u0
 	for i in range(first, last):
 		var l0 := left_of(pts, i)
@@ -2803,6 +2811,78 @@ func parapet_tex() -> ImageTexture:
 				c = c.darkened(0.3)
 			c.a = 1.0
 			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
+
+
+## The expressway's side, 10 m along at 16 px a metre: its outer face (rows 0-41, 1 m above the deck to 1.1 below: the
+## coping's lit lip over its shadow, precast parapet panels every 2.5 m each a shade off with rain streaks and tie
+## holes, a drip groove at the deck, the slab's edge, then the box girder's web painted Shuto's pale grey-green with a
+## stiffener every 1.25 m, rust weeping down from a few bolts and the shade deepening to its bottom flange), the
+## parapet's inner face (42-51, sooted toward the tarmac) and the coping's top (52-55).
+func shuto_tex() -> ImageTexture:
+	var r := RandomNumberGenerator.new()
+	r.seed = 29
+	var img := Image.create(160, 56, false, Image.FORMAT_RGB8)
+	var base := Color("c3bfb6")
+	var paint := Color("a7b5ad")
+	var tint: Array = []
+	for k in 4:
+		tint.append(1.0 + r.randf_range(-0.06, 0.05))
+	var streak: Array = []
+	var rust: Array = []
+	for x in 160:
+		streak.append(r.randi_range(2, 9) if r.randf() < 0.3 else 0)
+		rust.append(r.randi_range(4, 14) if x % 20 == 10 and r.randf() < 0.35 else 0)
+	var grain := func() -> float: return r.randf_range(-0.025, 0.025)
+	var put := func(x: int, y: int, c: Color) -> void:
+		c.a = 1.0
+		img.set_pixel(x, y, c)
+	for x in 160:
+		var t: float = tint[floori(x / 40.0)]
+		var joint := x % 40 == 0
+		put.call(x, 0, Color("e6e2d8"))
+		put.call(x, 1, Color("d6d2c8").darkened(0.12 if joint else 0.0))
+		put.call(x, 2, Color("8d887e"))
+		for y in range(3, 15):
+			var c: Color = base * (t + grain.call())
+			if y - 3 < streak[x]:
+				c = c.darkened(0.1 * (1.0 - float(y - 3) / streak[x]))
+			if (y == 5 or y == 12) and x % 10 == 5:
+				c = c.darkened(0.25)
+			if joint:
+				c = c.darkened(0.3)
+			elif x % 40 == 1:
+				c = c.lightened(0.08)
+			put.call(x, y, c)
+		put.call(x, 15, Color("6f6a62"))
+		for y in range(16, 21):
+			put.call(x, y, base * (0.9 + grain.call()))
+		put.call(x, 21, Color("5d5a55"))
+		for y in range(22, 41):
+			var f := float(y - 22) / 18.0
+			var c: Color = paint * (1.0 - 0.22 * f + grain.call())
+			if x % 20 == 0:
+				c = c.lightened(0.14)
+			elif x % 20 == 1:
+				c = c.darkened(0.18)
+			if y == 23 or y == 39:
+				c = c.darkened(0.1)
+			if rust[x] > 0 and y - 23 < rust[x] and y > 23:
+				c = c.lerp(Color("8a5a3c"), 0.45 * (1.0 - float(y - 23) / rust[x]))
+			put.call(x, y, c)
+		put.call(x, 41, Color("5f6862"))
+		put.call(x, 42, Color("d6d2c8"))
+		put.call(x, 43, Color("9d988e"))
+		for y in range(44, 52):
+			var c: Color = (base * (t * 0.9 + grain.call())).lerp(ASPHALT.darkened(0.2), float(y - 44) / 8.0 * 0.5)
+			if joint:
+				c = c.darkened(0.25)
+			put.call(x, y, c)
+		for y in range(52, 56):
+			var c: Color = Color("dcd8ce") * (1.0 + grain.call() - (0.08 if y == 55 else 0.0))
+			if x % 40 == 0:
+				c = c.darkened(0.25)
+			put.call(x, y, c)
 	return ImageTexture.create_from_image(img)
 
 
