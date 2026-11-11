@@ -4,6 +4,7 @@ extends SceneTree
 ## godot --headless --path games/konbini-empire --script res://tests/balance.gd
 
 const Sim := preload("res://sim.gd")
+const Sheets := preload("res://art/sheets.gd")
 const DAYS := 8
 const SEEDS := [1000, 1077]
 
@@ -55,8 +56,8 @@ func shelves() -> void:
 			s.add_line(st, pid)
 	var SV = load("res://store_view.gd")
 	var v = SV.new()
-	for n in ["products", "perks", "decor", "bg_konbini", "props"]:
-		v.tex[n] = load("res://art/%s.png" % n)
+	for n in ["products", "perks", "decor", "props"]:
+		v.tex[n] = Sheets.texture(n)
 	v.room = Node3D.new()
 	v.branch = s.branches[0]
 	v.build_room()

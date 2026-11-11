@@ -4,6 +4,7 @@ extends Control
 
 const Sim := preload("res://sim.gd")
 const StoreView := preload("res://store_view.gd")
+const Sheets := preload("res://art/sheets.gd")
 const Audio := preload("res://audio.gd")
 
 # island-life palette: cream bubbles, cocoa text, mint tags, a yellow highlight under the pointer
@@ -93,8 +94,8 @@ var dev_js: JavaScriptObject  # keeps the web build's dev hook alive
 
 
 func _ready() -> void:
-	for n in ["products", "perks", "decor", "outdoor", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "bg_konbini", "props"]:
-		tex[n] = load("res://art/%s.png" % n)
+	for n in ["products", "perks", "decor", "outdoor", "vehicles", "walk", "storefronts", "landmarks", "tokyo", "props"]:
+		tex[n] = Sheets.texture(n) if n in ["products", "perks", "decor", "walk", "storefronts", "props"] else load("res://art/%s.png" % n)
 	theme = make_theme()
 	best.load("user://best.cfg")
 	audio = Audio.new()

@@ -12,6 +12,7 @@ signal act_requested(a: Dictionary)
 signal lot_clicked(li: int)
 
 const Sim := preload("res://sim.gd")
+const Sheets := preload("res://art/sheets.gd")
 const PERSON_PX := 0.017
 const STRIDE := 2.2  # walk frames per unit walked (art/walk.png: column 0 stands, 1-4 walk)
 const MAX_FPS := 11.0
@@ -759,7 +760,7 @@ void fragment() {
 }
 """
 # the back wall's art: a crop of the side-view background, tiled along the wall
-const LAYOUT := {"bg": "bg_konbini", "wall": Rect2i(208, 44, 316, 201), "floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]}
+const LAYOUT := {"floor": [Color("ead9b8"), Color("cbb48e")], "stripe": [Color("f05a28"), Color("1f9d55")]}
 
 var tex := {}
 var sheet_imgs := {}  # sheet images read back for their cells' used rects
@@ -6221,7 +6222,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		art_panel(parent, slats, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color.WHITE, 1.0, false)
 		block(parent, Vector3(w - 0.6, 0.3, 0.3), Vector3(cx, 2.72, -7.0), Color("8f8c85"))  # the shutter boxes
 	else:
-		var shelves: Image = load("res://art/bg_super.png").get_image().get_region(Rect2i(80, 126, 560, 119))
+		var shelves: Image = Sheets.image("super_shelves").duplicate()
 		art_panel(parent, shelves, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
 	block(parent, Vector3(w - 0.8, 0.12, 0.12), Vector3(cx, 2.6, -7.06), Color("5e6670"))
 	block(parent, Vector3(w - 0.8, 0.16, 0.14), Vector3(cx, 0.08, -7.06), Color("5e6670"))
@@ -6445,7 +6446,7 @@ func rival_sign(parent: Node3D, rv: Dictionary, cx: float, c: Color) -> void:
 			var k := 0.96 + 0.04 * sin(v * PI) + tubes - 0.07 * (1.0 - smoothstep(0.0, 0.07, edge))
 			sheet.set_pixel(x, y, Color(cream.r * k, cream.g * k, cream.b * k))
 	var plate := art_panel(parent, sheet, Vector2(pw, 0.64), Vector3(cx, 3.63, -6.906), Color.WHITE, 1.0, false)
-	var face: Image = (load("res://art/walk.png") as Texture2D).get_image().get_region(
+	var face: Image = Sheets.image("walk").get_region(
 			Rect2i(4, (WALK_ROW.mascot + Sim.RIVALS.keys().find(rv.id)) * PERSON.y, 64, 54))
 	face.convert(Image.FORMAT_RGBA8)
 	face.resize(96, 80, Image.INTERPOLATE_LANCZOS)
@@ -6921,7 +6922,7 @@ func build_shop(parent: Node3D, zl: float) -> void:
 	var cx := o.x + (zl + 6.6) / 2
 	var front := o.y + 4.65
 	block(parent, Vector3(w, 3.1, 9.3), Vector3(cx, 1.55, o.y), Color("f4f1e8"))
-	var crop: Image = tex[LAYOUT.bg].get_image().get_region(LAYOUT.wall)  # the shop's back wall, seen through the glass
+	var crop: Image = Sheets.image("konbini_wall").duplicate()  # the shop's back wall, seen through the glass
 	art_panel(parent, crop, Vector2(w - 1.0, 2.05), Vector3(cx, 1.12, front + 0.04), Color(0.86, 0.94, 1.0), (w - 1.0) / (2.05 * crop.get_width() / crop.get_height()))
 	var x := cx - (w - 1.0) / 2
 	while x <= cx + (w - 1.0) / 2 + 0.01:
@@ -6954,7 +6955,7 @@ func build_room() -> void:
 		floor_tex[zl] = shop_floor(zl, L.floor[0], L.floor[1])
 	plane(room, Vector2(w, 9.0), Vector3(cx, 0.002, 0.0), mat(Color.WHITE, floor_tex[zl], true))
 	# back wall with the shop art, tiled to the width; the left wall plain with the stripes
-	var crop: Image = tex[L.bg].get_image().get_region(L.wall)
+	var crop: Image = Sheets.image("konbini_wall").duplicate()
 	var wall_h := 3.0
 	block(room, Vector3(w + 0.25, wall_h, 0.25), Vector3(cx, wall_h / 2, -4.62), Color("e6dcc6"))
 	art_panel(room, crop, Vector2(w, wall_h), Vector3(cx, wall_h / 2, -4.49), Color.WHITE, w / (wall_h * crop.get_width() / crop.get_height()))
