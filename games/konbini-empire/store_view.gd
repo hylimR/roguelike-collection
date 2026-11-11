@@ -888,6 +888,7 @@ var lit_mats: Array = []  # [weakref to an outdoor material (or a sign's Label3D
 var lit_sprites: Array = []  # outdoor sprites that stand still, relit when the light changes
 var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the street after dark
 var pool_mat: StandardMaterial3D
+var street_pool_mat: StandardMaterial3D  # a street lamp's pool: a broad, evenly lit core with a soft rim
 var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after dark
 var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
 var beam_mat: StandardMaterial3D  # the cone of light falling from a lit lamp head to its pool
@@ -978,6 +979,13 @@ func _ready() -> void:
 	pool_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	pool_mat.albedo_texture = radial([Color.WHITE, Color(1, 1, 1, 0.4), Color(1, 1, 1, 0)], [0.0, 0.4, 1.0])
 	pool_mat.albedo_color = Color(0, 0, 0, 0)
+	street_pool_mat = pool_mat.duplicate()
+	var spot := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	for y in 64:
+		for x in 64:
+			var d := Vector2(x - 31.5, y - 31.5).length() / 32.0
+			spot.set_pixel(x, y, Color(1, 1, 1, 0.75 * smoothstep(1.0, 0.3, d) + 0.25 * smoothstep(0.5, 0.0, d)))
+	street_pool_mat.albedo_texture = ImageTexture.create_from_image(spot)
 	halo_mat = pool_mat.duplicate()
 	halo_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	spill_mat = pool_mat.duplicate()
@@ -1253,6 +1261,7 @@ func update_light() -> void:
 	for m in road_light_mats:
 		m.set_shader_parameter("glow", night)
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
+	street_pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.6 * night)
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
@@ -1300,8 +1309,8 @@ func shine(s: Sprite3D) -> void:
 
 
 ## A pool of lamp light on the ground, faded in after dusk.
-func pool(parent: Node3D, at: Vector3, size_: Vector2) -> void:
-	plane(parent, size_, Vector3(at.x, -0.03, at.z), pool_mat)
+func pool(parent: Node3D, at: Vector3, size_: Vector2, m: Material = null) -> void:
+	plane(parent, size_, Vector3(at.x, -0.03, at.z), m if m else pool_mat)
 	var w := parent.global_position + at
 	pools.append(Vector3(w.x, w.z, maxf(size_.x, size_.y) * 0.45))
 
@@ -5871,13 +5880,13 @@ func street_lamp(at: Vector3) -> void:
 	commit([kit], set_node)
 	var head := MeshInstance3D.new()
 	head.mesh = shaded_box()
-	head.scale = Vector3(0.28, 0.04, 0.5)
-	head.position = at + Vector3(0, ay - 0.07, 1.02 * out)
+	head.scale = Vector3(0.3, 0.1, 0.52)  # the bowl sags below the housing so its sides show from above
+	head.position = at + Vector3(0, ay - 0.1, 1.02 * out)
 	head.material_override = lamp_mat
 	set_node.add_child(head)
 	var halo := MeshInstance3D.new()
 	var q := QuadMesh.new()
-	q.size = Vector2(1.6, 1.6)
+	q.size = Vector2(2.2, 2.2)
 	halo.mesh = q
 	halo.material_override = halo_mat
 	halo.position = at + Vector3(0, 4.2, 1.02 * out)  # below the head, so its housing doesn't hide the bright core
@@ -5892,7 +5901,7 @@ func street_lamp(at: Vector3) -> void:
 	blob(set_node, Vector2(at.x, at.z), 0.25)
 	cast(set_node, Vector2(at.x, at.z), 0.0, 4.15, 0.15)
 	cast(set_node, Vector2(at.x, at.z + 1.02 * out), 4.45, 4.6, 0.34)
-	pool(set_node, at + Vector3(0, 0, 0.9 * out), Vector2(7.0, 7.0))
+	pool(set_node, at + Vector3(0, 0, 1.3 * out), Vector2(10.0, 6.6), street_pool_mat)  # thrown along the street
 
 
 func set_row(x0: float, x1: float, zf: float, max_depth: float, mix: Array, r: RandomNumberGenerator, boxes: Array, roofs: Array, tall: float, roads: Array) -> void:
