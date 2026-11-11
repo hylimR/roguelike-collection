@@ -400,14 +400,14 @@ void fragment() {
 				}
 				int side = int(fract(r * 7.13) * 4.0);
 				float run = room[side / 2 == 0 ? 1 : 0] * (0.45 + 0.25 * fract(r * 3.71));
-				float deep = k == 0 ? 0.4 : 0.55;
+				float deep = k == 0 ? 0.85 : 0.55;
 				vec2 ha = side / 2 == 0 ? vec2(deep, run) * 0.5 : vec2(run, deep) * 0.5;
 				vec2 ca = mid + (side / 2 == 0 ? vec2((room.x * 0.5 - ha.x) * (side == 0 ? -1.0 : 1.0), 0.0) : vec2(0.0, (room.y * 0.5 - ha.y) * (side == 2 ? -1.0 : 1.0)));
 				vec2 hb = min(room * (k == 0 ? vec2(0.24, 0.22) : vec2(0.15, 0.12)) + 0.05, vec2(0.75));
-				vec2 cb = mid + (vec2(fract(r * 5.3), fract(r * 9.7)) - 0.5) * 0.25 * room - (ca - mid) * 0.15;
+				vec2 cb = mid + (vec2(fract(r * 5.3), fract(r * 9.7)) - 0.5) * 0.25 * room + (ca - mid) * (k == 0 ? 0.25 : -0.15);  // a rug runs under the sofa's front
 				vec3 ACol[4] = vec3[4](mix(ACCENT[(pick + 4) % 8], vec3(0.4), 0.35), vec3(0.93, 0.9, 0.84), vec3(0.6, 0.65, 0.7), vec3(0.9, 0.9, 0.87));
 				vec3 BCol[4] = vec3[4](mix(ACCENT[(pick + int(r * 5.0) + 1) % 8], fl, 0.35), vec3(0.42, 0.27, 0.17), vec3(0.77, 0.6, 0.4), vec3(0.74, 0.56, 0.36));
-				float ta = k == 1 ? 0.12 : 0.35;  // how far each casts its shadow: a futon barely, racking far
+				float ta = k == 1 ? 0.12 : (k == 0 ? 0.45 : 0.35);  // how far each casts its shadow: a futon barely, a sofa's back far
 				float tb = k == 0 ? 0.0 : 0.25;  // a rug casts none
 				vec2 da = abs(lpos.xz - ca) - ha;
 				vec2 db = abs(lpos.xz - cb) - hb;
@@ -415,7 +415,15 @@ void fragment() {
 				vec2 sb = abs(lpos.xz + sunl * tb - cb) - hb;
 				float ina = max(da.x, da.y);
 				float inb = fract(r * 17.0) < 0.8 ? max(db.x, db.y) : 1.0;
-				if (min(max(sa.x, sa.y), tb > 0.0 && inb < 1.0 ? max(sb.x, sb.y) : 1.0) < 0.0 && min(ina, inb) > 0.0) {
+				// a living room's TV board against the wall facing the sofa
+				vec2 tw = side / 2 == 0 ? vec2(side == 0 ? -1.0 : 1.0, 0.0) : vec2(0.0, side == 2 ? -1.0 : 1.0);
+				vec2 tp = abs(tw.yx);
+				vec2 ht = tw * tw * 0.19 + tp * min(run * 0.42, 0.8);
+				vec2 ct = mid - tw * (dot(abs(tw), room) * 0.5 - 0.19);
+				vec2 dtv = abs(lpos.xz - ct) - ht;
+				vec2 stv = abs(lpos.xz + sunl * 0.3 - ct) - ht;
+				float intv = k == 0 && fract(r * 19.0) < 0.7 ? max(dtv.x, dtv.y) : 1.0;
+				if (min(min(max(sa.x, sa.y), tb > 0.0 && inb < 1.0 ? max(sb.x, sb.y) : 1.0), intv < 1.0 ? max(stv.x, stv.y) : 1.0) < 0.0 && min(min(ina, inb), intv) > 0.0) {
 					fl *= 0.78;
 				}
 				if (k == 1 && fract(r * 17.0) < 0.8) {  // a zabuton on the floor at each long side of the low table
@@ -516,21 +524,61 @@ void fragment() {
 						fl = bl < 0.12 ? (bl > 0.095 ? vec3(0.95, 0.94, 0.9) * (dot(tc, sunl) > 0.0 ? 1.0 : 0.8) : (length(fr) < 0.045 ? vec3(0.95, 0.55, 0.15) : (length(tc + vec2(0.04, -0.03)) < 0.04 ? vec3(0.8, 0.2, 0.18) : vec3(0.98, 0.85, 0.3)))) : fl;
 					}
 				}
+				if (intv < 0.0) {  // low and white-lacquered, its top lit along the front, the set's slim black panel standing at the back on its foot
+					vec2 tl = lpos.xz - ct;
+					float tac = 0.19 + dot(tl, tw);
+					float tal = dot(tl, tp) + ht.x * tp.x + ht.y * tp.y;
+					float tlen = 2.0 * dot(ht, tp);
+					fl = vec3(0.9, 0.88, 0.84) * (intv > -0.03 ? (dot(tw, sunl) > 0.0 ? 1.08 : 0.7) : 0.95 + 0.1 * fract(tal * 7.0 + 0.3 * sin(tac * 9.0)));
+					float tvh = tlen * 0.42;
+					float tvc = abs(tal - tlen * 0.5);
+					fl *= tvc < tvh && abs(tac - 0.12) < 0.07 && tac > 0.12 ? 0.75 : 1.0;
+					fl = tvc < tvh && abs(tac - 0.08) < 0.035 ? vec3(0.08, 0.09, 0.1) * (abs(tac - 0.11) < 0.008 ? 2.6 : 1.0) : fl;
+					fl = tvc < 0.14 && abs(tac - 0.15) < 0.05 ? vec3(0.14, 0.15, 0.16) * (tac > 0.18 ? 1.5 : 1.0) : fl;
+					fl = abs(tal - tlen * 0.86) < 0.05 && abs(tac - 0.24) < 0.06 ? vec3(0.3, 0.55, 0.3) * (length(vec2(tal - tlen * 0.86, tac - 0.24) + sunl * 0.02) < 0.035 ? 1.3 : 0.85) : fl;
+				}
 				if (ina < 0.0) {
 					fl = ACol[k] * (ina > -0.05 ? 0.8 : 1.0);
-					if (k == 0) {  // a sofa: its back to the wall and an arm at each end, the seat in cushions
+					if (k == 0) {  // a sofa: a cushioned back to the wall and a rolled arm each end round a seat of plump cushions
 						vec2 lc = lpos.xz - ca;
 						float across = (side % 2 == 0 ? 1.0 : -1.0) * (side / 2 == 0 ? lc.x : lc.y) + (side / 2 == 0 ? ha.x : ha.y);
 						float along = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
-						float n = run > 1.5 ? 3.0 : 2.0;
-						float cu = (along - 0.12) / (run - 0.24) * n;
-						bool frame = across < 0.13 || along < 0.12 || along > run - 0.12;
-						// the back and arms lit on top, the seat shadowed where it tucks under them and rounding off to the front
-						float tuck = min(across - 0.13, min(along - 0.12, run - 0.12 - along));
-						float front = 2.0 * ha[side / 2 == 0 ? 0 : 1] - across;
-						fl = ina > -0.05 ? fl : ACol[k] * (frame ? 1.2 : (min(fract(cu), 1.0 - fract(cu)) < 0.06 ? 0.78 : (tuck < 0.04 ? 0.74 : (front < 0.06 ? 0.86 : 0.98))));
-						vec2 pil = vec2(across - 0.24, along - 0.26);  // a throw cushion at one end, propped against the back
-						fl = !frame && abs(pil.x) < 0.09 && abs(pil.y) < 0.11 ? vec3(0.9, 0.85, 0.74) * (pil.x < -0.05 ? 0.82 : 1.0) : fl;
+						vec2 outw = -tw;
+						float sa2 = dot(sunl, tp);  // the sun along the sofa
+						float n = run > 1.7 ? 3.0 : 2.0;
+						vec3 c0 = ACol[k];
+						float am = 0.17;
+						float bk = 0.24;
+						float sl = run - 2.0 * am;
+						float ci = clamp(floor((along - am) / sl * n), 0.0, n - 1.0);
+						float cl = along - am - ci * sl / n;
+						float ce = min(min(cl, sl / n - cl), min(across - bk, deep - across));  // how far inside its seat cushion
+						float be = min(min(along - am, run - am - along), bk - across);  // inside the back
+						if (ina > -0.035) {  // the frame's edge: its front face toward the sun or away
+							fl = c0 * (deep - across < 0.04 ? (dot(outw, sunl) > 0.0 ? 0.9 : 0.6) : 0.62);
+						} else if (along < am || along > run - am) {  // the arms, rounded over the top and shaded on the inside face
+							float ai = along < am ? am - along : along - run + am;
+							float ab = 1.0 - abs(ai / am - 0.5) * 2.0;
+							fl = c0 * (ai < 0.035 ? (sign(along - run * 0.5) * sa2 < 0.0 ? 0.8 : 1.12) : 1.0 + 0.24 * ab);
+						} else if (across < bk) {  // the back cushions, lit along their top roll
+							float bc = abs(fract((along - am) / sl * n) - 0.5) * sl / n;
+							fl = c0 * (be < 0.03 ? 0.62 : (bc > sl / n * 0.5 - 0.02 ? 0.85 : 1.02 + 0.3 * (1.0 - abs(across / bk - 0.45) * 2.0)));
+						} else {  // the seat cushions, puffed up toward their middles and shaded where they tuck under the back
+							float puff = smoothstep(0.0, 0.12, ce);
+							fl = c0 * (ce < 0.018 ? 0.62 : 0.74 + 0.22 * puff + 0.05 * clamp(dot(vec2(cl - sl / n * 0.5, across - (bk + deep) * 0.5), vec2(sa2, dot(sunl, outw))) * 4.0, -1.0, 1.0));
+							fl *= across - bk < 0.08 ? 0.72 : 1.0;
+						}
+						// a throw cushion propped in each corner, set on its point, laying a shadow on the seat
+						for (int ti = 0; ti < 2; ti++) {
+							float tc = ti == 0 ? am + 0.22 : run - am - 0.22;
+							vec2 tq = vec2(along - tc, across - bk - 0.1);
+							float tdm = abs(tq.x) + abs(tq.y);
+							float tds = abs(tq.x + sa2 * 0.06) + abs(tq.y + dot(sunl, outw) * 0.06);
+							vec3 tcol = ti == 0 ? vec3(0.92, 0.87, 0.76) : mix(ACCENT[(pick + 6) % 8], vec3(0.9), 0.25);
+							if (ina < -0.035 && fract(r * (ti == 0 ? 53.0 : 59.0)) < 0.75) {
+								fl = tdm < 0.2 ? tcol * (tdm > 0.175 ? 0.78 : 0.95 + 0.15 * clamp(dot(tq, vec2(sa2, dot(sunl, outw))) * 6.0, -1.0, 1.0)) : (tds < 0.2 && across > bk ? fl * 0.74 : fl);
+							}
+						}
 					} else if (k == 1) {  // a futon: a patterned quilt turned down below the pillow, the mattress showing round them
 						vec2 lc = lpos.xz - ca;
 						float al = (side / 2 == 0 ? lc.y : lc.x) + run * 0.5;
