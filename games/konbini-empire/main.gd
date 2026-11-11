@@ -509,7 +509,7 @@ func build() -> void:
 	staff_btn = key_button(show_staff, "", frame("perks", 0, 80), 62, 54, 18, Color("ee9234"))
 	grow_btn = key_button(act_open.bind("openExpansion"), "", frame("perks", 2, 80), 62, 54, 18, Color("5aae55"))
 	store_btn = key_button(act_open.bind("openListings"), "", frame("perks", 10, 80), 62, 54, 18, Color("4a9fdc"))
-	city_btn = key_button(toggle_city, "Tokyo map: your branches and their rivals  [M]", frame("outdoor", 2, 128), 62, 54, 18, Color("e57fa4"))
+	city_btn = key_button(toggle_city, "Tokyo map: your branches and their rivals  [M]", frame("perks", 12, 80), 62, 54, 18, Color("e57fa4"))
 	staff_btn.text = "Staff"
 	grow_btn.text = "Expand"
 	store_btn.text = "Store"
