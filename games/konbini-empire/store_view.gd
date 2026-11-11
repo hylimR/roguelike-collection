@@ -842,7 +842,23 @@ void fragment() {
 			vec2 cell = floor(cont) + vec2(lnrm.x * 7.0 + lnrm.z * 3.0, seed * 91.0);
 			float r = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
 			vec3 lamp = r > 0.85 ? vec3(0.78, 0.86, 1.0) : vec3(1.0, 0.8, 0.48);
-			glow = m.g * (1.0 - m.b) * step(0.6, r) * lamp * switched(fract(r * 29.0), night) + m.r * ACCENT[pick] * 0.9 * switched(0.1 * fract(r * 17.0), night);
+			float lit = step(0.6, r);
+			float sw = fract(r * 29.0);
+			if (info.y > 24.0 && row > 0.5) {
+				// a tower's offices light floor by floor, the same floor all the way round: a working floor's bays nearly all
+				// on in office white, a few lit at random on the dark ones, a warmer floor here and there
+				float fl = fract(sin(dot(vec2(floor(cont.y), seed * 53.0), vec2(12.9898, 78.233))) * 43758.5453);
+				float on = fl < 0.42 ? 1.0 : 0.0;
+				lit = mix(step(0.88, fract(r * 7.13)), step(0.1, fract(r * 7.13)), on);
+				lamp = fl < 0.34 ? vec3(0.86, 0.92, 1.0) : vec3(1.0, 0.84, 0.56);
+				sw = mix(sw, fract(fl * 37.0), on);
+				// a cell under two pixels blurs to its floor's share of light, a floor under two to the tower's
+				float fx = smoothstep(0.5, 1.0, fwidth(cont.x));
+				float fy = smoothstep(0.5, 1.0, fwidth(cont.y));
+				lit = mix(mix(lit, mix(0.12, 0.9, on), fx), 0.45, fy);
+				lamp *= 0.88 + 0.12 * fract(r * 3.7);
+			}
+			glow = m.g * (1.0 - m.b) * lit * lamp * switched(sw, night) + m.r * ACCENT[pick] * 0.9 * switched(0.1 * fract(r * 17.0), night);
 			inside = m.b * switched(0.3 * fract(r * 29.0), night);
 			lit_in = mix(t.rgb * vec3(1.06, 0.96, 0.8), vec3(1.0, 0.9, 0.68), m.g);  // goods and shelves on a warm glow
 			if (info.y < 1.0) {  // cut down: the wall's solid section on a dark plinth, not a slice of its windows
