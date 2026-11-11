@@ -48,11 +48,6 @@ static func quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3
 		st.add_vertex(p)
 
 
-## An axis-aligned box between corners a and b; `bottom` adds its underside.
-static func box(st: SurfaceTool, a: Vector3, b: Vector3, col: Color, bottom := false) -> void:
-	turned_box(st, Transform3D(Basis.from_scale((b - a).abs()), (a + b) / 2), col, bottom)
-
-
 ## A unit box (corners at ±0.5) under xf, each face toned by where it ends up facing.
 static func turned_box(st: SurfaceTool, xf: Transform3D, col: Color, bottom := false) -> void:
 	var c := [Vector3(-1, -1, -1), Vector3(1, -1, -1), Vector3(1, -1, 1), Vector3(-1, -1, 1),
@@ -65,31 +60,6 @@ static func turned_box(st: SurfaceTool, xf: Transform3D, col: Color, bottom := f
 	quad(st, c[0], c[3], c[7], c[4], col, false, o)  # -x
 	if bottom:
 		quad(st, c[0], c[1], c[2], c[3], col, false, o)
-
-
-## A drum, cone or frustum about a vertical axis at c: radius r0 at height y0 to r1 at y1, `sides` faces, capped
-## top and bottom where its radius is open. `turn` rotates its faces about the axis.
-static func drum(st: SurfaceTool, c: Vector3, r0: float, r1: float, y0: float, y1: float, sides: int, col: Color, turn := 0.0, soft := true) -> void:
-	var o := c + Vector3(0, (y0 + y1) / 2, 0)
-	for i in sides:
-		var a0 := turn + TAU * i / sides
-		var a1 := turn + TAU * (i + 1) / sides
-		var d0 := Vector3(cos(a0), 0, sin(a0))
-		var d1 := Vector3(cos(a1), 0, sin(a1))
-		var p00 := c + d0 * r0 + Vector3(0, y0, 0)
-		var p10 := c + d1 * r0 + Vector3(0, y0, 0)
-		var p01 := c + d0 * r1 + Vector3(0, y1, 0)
-		var p11 := c + d1 * r1 + Vector3(0, y1, 0)
-		if r1 <= 0.0:
-			tri(st, p00, p10, p01, col, soft, o)
-		elif r0 <= 0.0:
-			tri(st, p00, p11, p01, col, soft, o)
-		else:
-			quad(st, p00, p10, p11, p01, col, soft, o)
-		if r1 > 0.0:
-			tri(st, c + Vector3(0, y1, 0), p01, p11, col, false, o)
-		if r0 > 0.0:
-			tri(st, c + Vector3(0, y0, 0), p10, p00, col, false, o)
 
 
 ## A faceted lump (an icosahedron) at c with radii r, its corners pushed in or out by up to `jitter` of r with seed,

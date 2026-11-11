@@ -163,22 +163,6 @@ func outline(ink := Color(0, 0, 0, 0)) -> void:
 				img.set_pixel(x, y, ink if ink.a > 0.0 else shade(best, -0.72))
 
 
-## Darkens painted pixels that border empty space on their lower right, a one-pixel inner shadow line.
-func inner_shade(k := -0.25) -> void:
-	var src: Image = img.duplicate()
-	for y in h:
-		for x in w:
-			var c := src.get_pixel(x, y)
-			if c.a == 0.0:
-				continue
-			if (x + 1 < w and src.get_pixel(x + 1, y).a == 0.0) or (y + 1 < h and src.get_pixel(x, y + 1).a == 0.0):
-				img.set_pixel(x, y, shade(c, k))
-
-
-func flip() -> void:
-	img.flip_x()
-
-
 ## The canvas at the sheet's resolution: every pixel doubled.
 func doubled() -> Image:
 	var o: Image = img.duplicate()
