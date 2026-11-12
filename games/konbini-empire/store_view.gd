@@ -1915,10 +1915,13 @@ func side_tarmac() -> StandardMaterial3D:
 
 
 ## A leafy block's ground for a 16 m repeat in world uv (x/16, z/16), 16 px a metre, white so the district's colour
-## tints it: fine gravel, each stone a shade off with a dark gap under it, mottled in broad patches, and grass grown
-## over it in drifts, thick in their hearts with lit blade tips and thinning to tufts at their rims.
+## tints it: fine gravel in stones of a few pixels, each a shade off, lit on its upper edge with a dark gap under it,
+## mottled with damp in broad patches; grass grown over it in drifts, clumped light and dark with lit blade tips
+## along their far edge, a shadow cast on the gravel under their near one, and a margin of bare earth round each
+## drift where tufts stray out onto the stones.
 func leafy_ground() -> ImageTexture:
 	const N := 256
+	const TH := 0.52  # turf above this, earth just under it
 	var r := RandomNumberGenerator.new()
 	r.seed = 71
 	var fn := FastNoiseLite.new()
@@ -1928,24 +1931,57 @@ func leafy_ground() -> ImageTexture:
 	fn.fractal_octaves = 3
 	var mottle := fn.get_seamless_image(N, N).get_data()
 	fn.seed = 73
-	fn.frequency = 0.022
-	fn.fractal_octaves = 4
+	fn.frequency = 0.024
+	fn.fractal_octaves = 5
 	var turf := fn.get_seamless_image(N, N).get_data()
+	fn.seed = 79
+	fn.frequency = 0.08
+	fn.fractal_octaves = 2
+	var clump := fn.get_seamless_image(N, N).get_data()
 	var blade := Color(0.7, 0.9, 0.52)
+	var tip := Color(0.86, 0.98, 0.7)
 	var stone := Color(1.0, 0.9, 0.95)  # off the district's green, so the gravel reads as gravel
+	var earth := Color(0.84, 0.74, 0.7)
+	# the stones: 2 x 2 px in rows set a random pixel along, each a shade off, lit at its top left and its gap
+	# under one of its lower corners, so no joint lines up into paving
+	var shade := PackedFloat32Array()
+	shade.resize(N * N)
+	for sy in N / 2:
+		var off := r.randi_range(0, 1)
+		for sx in N / 2:
+			var v := r.randf_range(0.93, 1.02) if r.randf() < 0.8 else r.randf_range(0.84, 0.9)
+			var gap := r.randi_range(1, 4)  # 4: no gap, the stone butts its neighbour
+			for k in 4:
+				var x := posmod(sx * 2 + (k & 1) + off, N)
+				var y := sy * 2 + (k >> 1)
+				shade[y * N + x] = v * (1.05 if k == 0 else (0.8 if k == gap else 1.0))
+	var edge := int(TH * 255.0)
 	var img := Image.create(N, N, false, Image.FORMAT_RGB8)
 	for y in N:
+		var up := posmod(y - 1, N) * N
+		var up2 := posmod(y - 2, N) * N
+		var dn := posmod(y + 1, N) * N
 		for x in N:
 			var i := y * N + x
-			var v := lerpf(0.92, 1.0, mottle[i] / 255.0) * (r.randf_range(0.96, 1.0) if r.randf() < 0.8 else r.randf_range(0.86, 0.9))
-			var c := stone * v
+			var damp := lerpf(0.88, 1.0, mottle[i] / 255.0)
 			var t := turf[i] / 255.0
-			if t > 0.5 + r.randf() * 0.08:  # grass, its rim broken into tufts
+			var c: Color
+			if t > TH:
 				var g := r.randf()
-				var b := r.randf_range(0.9, 1.0) * (0.78 if g < 0.18 else 1.0) * lerpf(0.9, 1.04, smoothstep(0.5, 0.8, t))
-				c = blade * b if g < 0.9 else Color(0.86, 0.98, 0.7)
-				if turf[(i + N) % (N * N)] / 255.0 <= 0.5 or turf[(i + 2 * N) % (N * N)] / 255.0 <= 0.5:
-					c = blade.darkened(0.25)  # the turf's lower edge, a shadow on the gravel
+				var k := lerpf(0.84, 1.06, clump[i] / 255.0) * lerpf(0.94, 1.03, smoothstep(TH, TH + 0.25, t))
+				c = blade * k * (0.8 if g < 0.2 else 1.0)
+				if g > 0.93 or turf[up + x] <= edge:
+					c = tip * k  # a blade tip, and the whole far edge catching the light
+				elif turf[dn + x] <= edge:
+					c = blade.darkened(0.22) * k  # the drift's near edge, its blades' shaded side
+			else:
+				c = stone * damp * shade[i]
+				var near := smoothstep(TH - 0.08, TH, t)
+				c = c.lerp(earth * damp * lerpf(0.9, 1.0, shade[i]), near * 0.75)
+				if near > 0.0 and r.randf() < near * 0.3:
+					c = blade * r.randf_range(0.85, 1.0)  # a stray tuft
+				elif turf[up + x] > edge or turf[up2 + x] > edge:
+					c = c.darkened(0.2)  # the drift's shadow on the stones
 			img.set_pixel(x, y, c)
 	return ImageTexture.create_from_image(img)
 
