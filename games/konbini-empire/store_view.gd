@@ -6991,9 +6991,6 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		parent.add_child(glow)
 	rival_sign(parent, rv, cx, c)
 	plane(parent, Vector2(w - 0.4, 8.6), Vector3(cx, 4.245, -11.7), rival_roof(span))
-	for e in [[Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -7.3)], [Vector3(w, 0.34, 0.2), Vector3(cx, 4.37, -16.1)],
-			[Vector3(0.2, 0.34, 9.0), Vector3(span.x + 0.1, 4.37, -11.7)], [Vector3(0.2, 0.34, 9.0), Vector3(span.y - 0.1, 4.37, -11.7)]]:
-		block(parent, e[0], e[1], Color("e6e2d8"))
 	stair_house(parent, Vector3(span.x + 1.4, 4.2, -14.9), not rv.defeated)
 	skylights(parent, [span.x + 3.2, span.x + 5.8], not rv.defeated)
 	var km := mat(Color.WHITE)
@@ -7001,6 +6998,10 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	km.vertex_color_is_srgb = true
 	var kit := surface(km)
 	var faces := surface(condenser())
+	# the parapet, its walls under a pale coping that overhangs them both ways
+	for pr in [[span.x, -7.4, span.y, -7.2], [span.x, -16.2, span.y, -16.0], [span.x, -16.2, span.x + 0.2, -7.2], [span.y - 0.2, -16.2, span.y, -7.2]]:
+		box_into(kit, Vector3(pr[0], 4.2, pr[1]), Vector3(pr[2], 4.48, pr[3]), Color("e6e2d8"))
+		box_into(kit, Vector3(pr[0] - 0.03, 4.48, pr[1] - 0.03), Vector3(pr[2] + 0.03, 4.55, pr[3] + 0.03), Color("f6f3ec"))
 	for k in 3:
 		var ac := Vector3(span.x + 4.2 + k * 1.6, 4.25, -14.4)
 		box_into(kit, ac + Vector3(-0.625, 0, -0.525), ac + Vector3(0.625, 0.1, 0.525), Color("8e8d88"))
@@ -7408,7 +7409,7 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 	for j in ih:
 		var z := -16.0 + (j + 0.5) / 10.0
 		var u := (j + 0.5) / 12.0
-		var lane: float = lanes[int(u) % lanes.size()] * (0.84 if j % 12 == 0 else (1.04 if j % 12 == 1 else 1.0))
+		var lane: float = lanes[int(u) % lanes.size()] * (0.8 if j % 12 == 0 else (1.09 if j % 12 == 1 else 1.0))  # each lap's lip lit
 		for i in iw:
 			var x := x0 + (i + 0.5) / 10.0
 			var gx := x - x0
@@ -7435,10 +7436,12 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 					f *= 0.72  # the gap between pads, and the shade along its far edge
 				elif walk.end.y - z < 0.1:
 					f *= 1.08
-			if i < 3 or j >= ih - 4:
-				f *= 0.74
-			elif i >= iw - 2 or j < 2:
-				f *= 0.86
+			# the parapet: dimming the membrane toward its foot all round, its shadow a soft band along the sunny sides
+			var rx := iw / 10.0 - gx
+			var rz := 8.6 - gz
+			for d in [gx, rx, gz, rz]:
+				f *= lerpf(0.8, 1.0, smoothstep(0.0, 0.9, d))
+			f *= lerpf(0.62, 1.0, minf(smoothstep(0.1, 0.26, gx), smoothstep(0.18, 0.38, rz)))
 			for c in casts:
 				var at: Rect2 = c[0]
 				var out := Vector2(maxf(maxf(at.position.x - x, x - at.end.x), 0.0), maxf(maxf(at.position.y - z, z - at.end.y), 0.0))
