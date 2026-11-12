@@ -743,14 +743,32 @@ func cycle_sound(m := -1) -> void:
 func fit_info() -> void:
 	var lines := info_lines.slice(maxi(0, info_lines.size() - 3))
 	info.add_theme_font_size_override("font_size", 11)
-	info.text = "\n".join(lines)
+	info.text = info_text(lines, 11)
 	while lines.size() > 1 and info.get_line_count() > 3:
 		lines.pop_front()
-		info.text = "\n".join(lines)
+		info.text = info_text(lines, 11)
 	for px in [10, 9]:
 		if info.get_line_count() <= 3:
 			break
 		info.add_theme_font_size_override("font_size", px)
+		info.text = info_text(lines, px)
+
+
+## The bubble's lines at px, each key hint like "[P]" that would wrap onto a line of its own taking the word before it along.
+func info_text(lines: Array, px: int) -> String:
+	var out := []
+	for line: String in lines:
+		var at := line.rfind("  [")
+		if at > 0:
+			var p := TextParagraph.new()
+			p.add_string(line, info.get_theme_font("font"), px)
+			p.break_flags = TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
+			p.width = info.size.x
+			var cut := line.rfind(" ", at - 1)
+			if p.get_line_count() > 1 and p.get_line_range(p.get_line_count() - 1).x > at and cut > 0:
+				line = line.substr(0, cut) + "\n" + line.substr(cut + 1)
+		out.append(line)
+	return "\n".join(out)
 
 
 func toast(text: String, color := INK) -> void:
