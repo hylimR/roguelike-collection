@@ -8925,11 +8925,18 @@ func draw_street() -> void:
 	# a tall store card (an event, more products) would cover the plate: it drops below the card, or failing that
 	# slides out to its left, and the stem leans over to it
 	var reach := Rect2(sign_at + Vector2(-(bw + 50) / 2 - 20, 12 - ph), Vector2(bw + 76, ph + 12))  # plate, roundel, shadow
+	# a narrow window can put the roof near or past an edge: the plate slides back on screen and the stem leans out to it
+	var inside := Rect2(Vector2.ZERO, overlay.size).grow(-10)
+	var slide := Vector2(maxf(0.0, inside.position.x - reach.position.x) - maxf(0.0, reach.end.x - inside.end.x),
+			maxf(0.0, inside.position.y - reach.position.y))
+	sign_at += slide
+	reach.position += slide
 	if reach.intersects(hud_card):
 		sign_at.y = minf(maxf(sign_at.y, hud_card.end.y + ph - 12), roof_at.y - 22)
 		reach.position.y = sign_at.y + 12 - ph
 		if reach.intersects(hud_card):
 			sign_at.x -= reach.end.x - hud_card.position.x
+	if sign_at != roof_at + Vector2(0, -58):
 		stem_to = Vector2(clampf(roof_at.x, sign_at.x - (bw + 50) / 2 + 14, sign_at.x + (bw + 38) / 2), sign_at.y)
 	overlay.draw_line(roof_at + Vector2(1, 0), stem_to + Vector2(1, 0), Color(0, 0, 0, 0.3), 3.0)
 	overlay.draw_line(roof_at, stem_to, Color.WHITE, 2.0)
