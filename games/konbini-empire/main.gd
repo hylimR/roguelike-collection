@@ -309,25 +309,44 @@ func key_button(cb: Callable, tip: String, ic: Texture2D, w: int, h: int, radius
 	return b
 
 
-## A locked ability key sinks into a well with its art in silhouette; one cooling down keeps its art and counts down
+## A locked ability key sinks into a well with its art pressed in one tone; one cooling down keeps its art and counts down
 ## in orange under the wipe, so the two no longer look the same.
 func ability_look(a: Button, state: String) -> void:
 	if a.get_meta("look", "") == state:
 		return
 	a.set_meta("look", state)
+	if not a.has_meta("art"):
+		a.set_meta("art", a.icon)
+		a.set_meta("shape", silhouette(a.icon))
 	var off: StyleBoxFlat
 	if state == "locked":
-		off = box(Color("ece0c0"), 27, 4)
-		off.set_border_width_all(2)
-		off.border_color = Color("dccb9f")
+		off = box(Color("eee1bd"), 27, 4)
+		off.border_width_top = 4  # the well's lip shades its top inside, so it reads pressed into the HUD
+		off.border_width_left = 1
+		off.border_width_right = 1
+		off.border_color = Color("d3bd8a")
 		off.corner_detail = 16
-		a.add_theme_color_override("icon_disabled_color", Color(INK, 0.32))
-		a.add_theme_color_override("font_disabled_color", Color("b9a47c"))
+		a.icon = a.get_meta("shape")
+		a.add_theme_color_override("icon_disabled_color", Color("dcc797"))
+		a.add_theme_color_override("font_disabled_color", Color("a99062"))
 	else:
 		off = box(PAPER, 27, 4, 1, 1)
+		a.icon = a.get_meta("art")
 		a.add_theme_color_override("icon_disabled_color", Color(1, 1, 1, 0.8))
 		a.add_theme_color_override("font_disabled_color", ORANGE if state == "cooling" else MUTED)
 	a.add_theme_stylebox_override("disabled", off)
+
+
+## The art in one tone, its shading kept as light and dark of white for a modulate to tint, its soft halo cut off.
+func silhouette(t: AtlasTexture) -> ImageTexture:
+	var img := t.atlas.get_image().get_region(Rect2i(t.region))
+	img.convert(Image.FORMAT_RGBA8)
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			var v := lerpf(0.7, 1.0, c.get_luminance())
+			img.set_pixel(x, y, Color(v, v, v, smoothstep(0.35, 0.65, c.a)))
+	return ImageTexture.create_from_image(img)
 
 
 ## Anchors a HUD group to a screen edge or corner; `o` holds the left, top, right and bottom offsets.
