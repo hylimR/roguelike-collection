@@ -931,6 +931,7 @@ var floor_tex := {}  # shop floor texture by left wall
 var set_sig := ""
 var tarmac_m: StandardMaterial3D
 var slabs_m: StandardMaterial3D
+var plot_m: StandardMaterial3D  # a vacant lot on the city map
 var tactile_m: StandardMaterial3D
 var car_park_m: StandardMaterial3D
 var road_paint_m: StandardMaterial3D
@@ -2079,15 +2080,6 @@ func shop_floor(zl: float, a: Color, b: Color) -> ImageTexture:
 			if near < 0.4:
 				c = c.darkened(0.2 * pow(1.0 - near / 0.4, 2.0))
 			img.set_pixel(px, py, c)
-	return ImageTexture.create_from_image(img)
-
-
-func tiles(a: Color, b: Color) -> ImageTexture:
-	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
-	img.fill(a)
-	for i in 16:
-		img.set_pixel(i, 15, b)
-		img.set_pixel(15, i, b)
 	return ImageTexture.create_from_image(img)
 
 
@@ -4016,9 +4008,13 @@ func build_lots() -> void:
 		c.free()
 	lot_nodes.clear()
 	lot_feet.clear()
-	var plot := surface(mat(Color.WHITE, tiles(Color("d8d2c4"), Color("bdb6a6"))))
-	for L in sim.lots:
-		rect_quad(plot, Rect2(L.x0, L.front - Sim.City.LOT_D, Sim.City.LOT_W, Sim.City.LOT_D), -0.08, 0.0, false, 0.5)
+	var plot := surface(vacant_plot())
+	for i in sim.lots.size():
+		var L: Dictionary = sim.lots[i]
+		var r := Rect2(L.x0, L.front - Sim.City.LOT_D, Sim.City.LOT_W, Sim.City.LOT_D)
+		var u := [0.0, 1.0] if i % 2 == 0 else [1.0, 0.0]  # every other lot mirrored, its tracks and weeds the other way
+		add_quad(plot, [Vector3(r.position.x, -0.08, r.position.y), Vector3(r.end.x, -0.08, r.position.y), Vector3(r.end.x, -0.08, r.end.y), Vector3(r.position.x, -0.08, r.end.y)],
+			[Vector2(u[0], 0), Vector2(u[1], 0), Vector2(u[1], 1), Vector2(u[0], 1)])
 	commit([plot], lots_node)
 	for b in sim.branches:
 		if mode == "store" and is_same(b, branch):
@@ -4035,6 +4031,72 @@ func build_lots() -> void:
 		var rs := rival_span(b.rival)
 		lot_feet.append(Rect2(o.x + Sim.ORIGIN.x + zl, o.z + Sim.ORIGIN.y - 4.65, 6.6 - zl, 9.3))
 		lot_feet.append(Rect2(o.x + rs.x, o.z - 16.2, rs.y - rs.x, 9.0))
+
+
+## A vacant lot, 22 x 10 m at 8 px a metre, its front (the street) at the bottom: rolled gravel mottled and flecked,
+## a concrete kerb round it shading the gravel inside on the sides away from the sun, open at a dropped kerb where
+## two tyre tracks worn darker run in, and weeds clumped along the kerbs and in the corners the cars never reach.
+func vacant_plot() -> StandardMaterial3D:
+	if plot_m:
+		return plot_m
+	const W := 176
+	const H := 80
+	var r := RandomNumberGenerator.new()
+	r.seed = 43
+	var fn := FastNoiseLite.new()
+	fn.seed = 43
+	fn.noise_type = FastNoiseLite.TYPE_VALUE_CUBIC
+	fn.frequency = 0.06
+	fn.fractal_octaves = 3
+	var gravel := Color("a69e8d")
+	var kerb := Color("d6d1c4")
+	var weed := [Color("6f8f45"), Color("88a854"), Color("a9c46c")]
+	var gap := Vector2(54, 98)  # the dropped kerb's x span on the front
+	var img := Image.create(W, H, false, Image.FORMAT_RGB8)
+	for y in H:
+		for x in W:
+			var f := lerpf(0.9, 1.06, fn.get_noise_2d(x, y) * 0.5 + 0.5)
+			var g := r.randf()
+			f *= 1.1 if g < 0.12 else (0.86 if g < 0.2 else r.randf_range(0.97, 1.02))
+			for tx in [64.0, 88.0]:  # the tracks bend in from the gap and fade toward the back
+				var cx: float = tx + 6.0 * sin(y / 30.0)
+				var d := absf(x - cx)
+				if d < 4.0:
+					f *= lerpf(0.86, 1.0, d / 4.0) + (1.0 - lerpf(0.86, 1.0, d / 4.0)) * (1.0 - y / float(H)) * 0.7
+			var c := gravel * f
+			var edge := mini(mini(x, W - 1 - x), mini(y, H - 1 - y))
+			var in_gap := y >= H - 2 and x >= gap.x and x <= gap.y
+			if edge == 0 and not in_gap:
+				c = kerb * r.randf_range(0.95, 1.03)
+			elif edge == 1 and not in_gap:
+				c = kerb.darkened(0.12) if (y == H - 2 or x == 1) else kerb.darkened(0.05)
+			elif (x <= 3 or y >= H - 4) and not (y >= H - 4 and x > gap.x - 2 and x < gap.y + 2):
+				c = c.darkened(0.16 if (x == 2 or y == H - 3) else 0.08)  # the kerb's shadow, cast away from the sun
+			img.set_pixel(x, y, Color(minf(c.r, 1.0), minf(c.g, 1.0), minf(c.b, 1.0)))
+	for i in 46:  # weed clumps hugging the kerbs, thickest in the corners
+		var p := Vector2(r.randf_range(2, W - 3), r.randf_range(2, H - 3))
+		match r.randi() % 4:
+			0: p.x = r.randf_range(2, 7)
+			1: p.x = r.randf_range(W - 8, W - 3)
+			2: p.y = r.randf_range(2, 6)
+			3: p.y = r.randf_range(H - 7, H - 3)
+		if p.y > H - 8 and p.x > gap.x - 4 and p.x < gap.y + 4:
+			continue
+		var rad := r.randf_range(1.2, 3.2) * (1.4 if (p.x < 10 or p.x > W - 11) and (p.y < 9 or p.y > H - 10) else 1.0)
+		for y in range(int(p.y - rad), int(p.y + rad) + 1):
+			for x in range(int(p.x - rad * 1.4), int(p.x + rad * 1.4) + 1):
+				if x < 2 or y < 2 or x > W - 3 or y > H - 3:
+					continue
+				var d := Vector2((x - p.x) / 1.4, y - p.y).length() / rad
+				if d < 1.0 and r.randf() < 1.1 - d * 0.6:
+					img.set_pixel(x, y, weed[2] if (y < p.y - rad * 0.3 and r.randf() < 0.5) else weed[r.randi() % 2])
+				elif d < 1.3 and y == int(p.y + rad) + 0:
+					img.set_pixel(x, y, img.get_pixel(x, y).darkened(0.12))  # the clump's shadow on the gravel
+	img.generate_mipmaps()
+	plot_m = mat(Color.WHITE, ImageTexture.create_from_image(img))
+	plot_m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	plot_m.texture_repeat = false
+	return plot_m
 
 
 ## World position of a lot's street frame: your shop centred on the lot, its facade on the lot's front edge.
@@ -9198,7 +9260,7 @@ func draw_city_marks(font: Font) -> void:
 		if offered.has(li):
 			mark = Color("3fae49")
 		elif sim.lots[li].use == "free" and pick == "":
-			mark = Color(1, 1, 1, 0.35)
+			mark = Color(light.lerp(Color.WHITE, 0.25), 0.35)  # takes the hour's light, not a white line over the night
 		if li == hover_lot and (offered.has(li) or sim.branch_on(li) != null):
 			mark = Color.WHITE
 		if mark.a > 0.0:
