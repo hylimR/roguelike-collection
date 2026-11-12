@@ -1204,6 +1204,7 @@ func show_choice() -> void:
 			b.disabled = sim.player.cash < c.options[i].cost
 		elif c.source == "expansion":
 			b.disabled = sim.player.cash < c.cost
+		b.add_theme_color_override("font_disabled_color", MUTED)  # the price you can't meet yet stays readable
 		var gap := Control.new()  # keeps every card's button on one line
 		gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		col.add_child(gap)
@@ -1258,15 +1259,20 @@ func listing_card(v: VBoxContainer, L: Dictionary) -> void:
 	stats.add_child(roll_line("Foot traffic", "x%.2f" % traffic, GREEN if traffic > 1.0 else INK))
 	stats.add_child(roll_line("Rent a night", "about " + yen(Sim.rnd(d.rent * q.get("rent", 1.0))), INK))
 	v.add_child(sunken(stats))
-	if not d.demand.is_empty():
-		var buys := HBoxContainer.new()
-		buys.add_theme_constant_override("separation", 2)
-		buys.add_child(label("Locals buy", MUTED))
-		for k in d.demand:
-			var ic := icon(k, 30)
-			ic.tooltip_text = Sim.PRODUCTS[k].name
-			buys.add_child(ic)
-		v.add_child(buys)
+	var buys := HBoxContainer.new()  # always a row of the icons' height, so every card's rival sits on one line
+	buys.add_theme_constant_override("separation", 2)
+	buys.custom_minimum_size.y = 30
+	buys.add_child(label("Locals buy", MUTED))
+	for k in d.demand:
+		var ic := icon(k, 30)
+		ic.tooltip_text = Sim.PRODUCTS[k].name
+		buys.add_child(ic)
+	if d.demand.is_empty():
+		buys.add_theme_constant_override("separation", 6)
+		buys.add_child(label("a bit of everything", INK))
+	for c in buys.get_children():
+		c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	v.add_child(buys)
 	var rival := chip([label(rv.name, Color.WHITE, 12), label("Tier %d" % L.tier, Color(1, 1, 1, 0.8), 11)], Color(rv.color).darkened(0.1))
 	rival.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	var next := HBoxContainer.new()
