@@ -4812,7 +4812,7 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 	return node
 
 
-## A yakisoba yatai in your free bay, its counter to the street: a wooden frame under a red and white striped canopy, a
+## A yakisoba yatai in your free bay, its counter to the street: a wooden frame under a red and white canvas pitched over a ridge, a
 ## noren of three cream panels, a red and white skirt round the counter, noodles on the griddle, red lanterns at the
 ## front corners and a bare bulb, lit after dark with their warm light thrown on the bay.
 func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
@@ -4833,17 +4833,26 @@ func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 	const ZB := -13.7  # the back
 	const ZF := -11.35  # the counter's front
 	for c in [Vector2(X0, ZB), Vector2(X1, ZB), Vector2(X0, ZF), Vector2(X1, ZF)]:
-		box_into(st, Vector3(c.x, 0, c.y) + Vector3(-0.05, 0, -0.05), Vector3(c.x, 0, c.y) + Vector3(0.05, 2.3, 0.05), wood)
+		box_into(st, Vector3(c.x, 0, c.y) + Vector3(-0.05, 0, -0.05), Vector3(c.x, 0, c.y) + Vector3(0.05, 2.34, 0.05), wood)
 	box_into(st, Vector3(X0, 0.05, ZB), Vector3(X1, 0.85, ZB + 0.06), wood.darkened(0.15))  # the back board
 	# the counter, skirted in red and white stripes on the faces you see
 	box_into(st, Vector3(X0 + 0.05, 0.05, ZF - 0.5), Vector3(X1 - 0.05, 0.9, ZF), Color("b8955a"))
+	# each stripe a pleat, its far half a fold in shade, under the shadow the counter's lip casts down it
 	var n := 8
+	var sw := (X1 - X0 - 0.1) / n
 	for k in n:
 		var x := lerpf(X0 + 0.05, X1 - 0.05, float(k) / n)
-		box_into(st, Vector3(x, 0.08, ZF), Vector3(x + (X1 - X0 - 0.1) / n, 0.86, ZF + 0.02), red if k % 2 == 0 else cream)
+		var c := red if k % 2 == 0 else cream
+		box_into(st, Vector3(x, 0.08, ZF), Vector3(x + sw * 0.55, 0.76, ZF + 0.03), c)
+		box_into(st, Vector3(x + sw * 0.55, 0.08, ZF), Vector3(x + sw, 0.76, ZF + 0.02), c.darkened(0.12))
+		box_into(st, Vector3(x, 0.76, ZF), Vector3(x + sw, 0.88, ZF + 0.02), c.darkened(0.38))
+	var dz := (ZF - ZB - 0.06) / 6
 	for k in 6:
 		var z := lerpf(ZB + 0.06, ZF, float(k) / 6)
-		box_into(st, Vector3(X1, 0.08, z), Vector3(X1 + 0.02, 0.86, z + (ZF - ZB - 0.06) / 6), cream if k % 2 == 0 else red)
+		var c := cream if k % 2 == 0 else red
+		box_into(st, Vector3(X1, 0.08, z), Vector3(X1 + 0.03, 0.76, z + dz * 0.55), c)
+		box_into(st, Vector3(X1, 0.08, z + dz * 0.55), Vector3(X1 + 0.02, 0.76, z + dz), c.darkened(0.12))
+		box_into(st, Vector3(X1, 0.76, z), Vector3(X1 + 0.02, 0.88, z + dz), c.darkened(0.38))
 	box_into(lt, Vector3(X0 - 0.02, 0.9, ZF - 0.58), Vector3(X1 + 0.04, 0.96, ZF + 0.1), Color("c9a26b"))
 	# the griddle with its noodles, cabbage and pickled ginger, a squeeze bottle and a stack of trays
 	box_into(lt, Vector3(X0 + 0.25, 0.96, ZF - 0.48), Vector3(X1 - 0.75, 1.0, ZF - 0.04), Color("2b2c30"))
@@ -4854,18 +4863,71 @@ func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 	box_into(lt, Vector3(X1 - 0.22, 0.96, ZF - 0.3), Vector3(X1 - 0.14, 1.18, ZF - 0.22), Color("e2a63a"))
 	box_into(st, Vector3(X0 + 0.3, 0.05, ZB + 0.3), Vector3(X0 + 0.9, 0.5, ZB + 0.75), Color("3f6fb8"))  # a cool box
 	box_into(st, Vector3(X0 + 0.28, 0.5, ZB + 0.28), Vector3(X0 + 0.92, 0.56, ZB + 0.77), Color("fbfaf5"))
-	# the canopy, striped front to back, and the noren hung from its front edge
+	# the canopy: canvas pitched over a ridge, striped down its slopes and sagging a little between ridge and eave, the
+	# front slope lit toward its fold and the back one in shade, red gable ends, and a valance round the eaves whose
+	# stripes each end in a scallop; then the noren hung inside its front edge
+	const CX0 := X0 - 0.15
+	const CX1 := X1 + 0.15
+	const CZB := ZB - 0.2
+	const CZF := ZF + 0.35
+	const EAVE := 2.32
+	const RIDGE := 2.64
+	const VAL := 0.13
+	var cz := (CZB + CZF) / 2
+	var quad := func(into: SurfaceTool, v: Array, cols: Array) -> void:
+		for i in [0, 1, 2, 0, 2, 3]:
+			into.set_color(cols[i])
+			into.set_uv(Vector2.ZERO)
+			into.add_vertex(v[i])
+	var tone := func(c: Color, v: float) -> Color: return Color(c.r * v, c.g * v, c.b * v)
+	var scallop := func(into: SurfaceTool, a: Vector3, b: Vector3, y: float, c: Color) -> void:  # a tongue below a..b at y
+		var prev := a
+		for i in range(1, 7):
+			var t := i / 6.0
+			var p := a.lerp(b, t) + Vector3(0, -0.055 * sin(t * PI), 0)
+			quad.call(into, [a.lerp(b, 0.5) + Vector3(0, y - a.y, 0), prev + Vector3(0, y - a.y, 0), p + Vector3(0, y - a.y, 0), a.lerp(b, 0.5) + Vector3(0, y - a.y, 0)], [c, c, c, c, c, c])
+			prev = p
 	var m := 6
+	var bw := (CX1 - CX0) / m
 	for k in m:
-		var x := lerpf(X0 - 0.12, X1 + 0.12, float(k) / m)
-		box_into(st, Vector3(x, 2.3, ZB - 0.15), Vector3(x + (X1 - X0 + 0.24) / m, 2.38, ZF + 0.3), red if k % 2 == 0 else cream)
-	box_into(st, Vector3(X0 - 0.12, 2.18, ZF + 0.26), Vector3(X1 + 0.12, 2.3, ZF + 0.3), red)
+		var xa := CX0 + k * bw
+		var xb := xa + bw
+		var c := red if k % 2 == 0 else cream
+		for side in [[CZF, 0.86, 1.0], [CZB, 0.74, 0.8]]:
+			var ze: float = side[0]
+			for j in 2:  # ridge to eave in two runs, dipping at the middle
+				var t0 := j * 0.5
+				var t1 := t0 + 0.5
+				var y0 := lerpf(RIDGE, EAVE, t0) - 0.03 * sin(t0 * PI)
+				var y1 := lerpf(RIDGE, EAVE, t1) - 0.03 * sin(t1 * PI)
+				var z0 := lerpf(cz, ze, t0)
+				var z1 := lerpf(cz, ze, t1)
+				var c0: Color = tone.call(c, lerpf(side[1], side[2], t0))
+				var c1: Color = tone.call(c, lerpf(side[1], side[2], t1))
+				quad.call(st, [Vector3(xa, y0, z0), Vector3(xb, y0, z0), Vector3(xb, y1, z1), Vector3(xa, y1, z1)], [c0, c0, c1, c0, c1, c1])
+			var vc: Color = tone.call(c, 0.84 if ze == CZF else 0.7)
+			var vs: SurfaceTool = lt if ze == CZF else st  # the lanterns light the front one
+			quad.call(vs, [Vector3(xa, EAVE, ze), Vector3(xb, EAVE, ze), Vector3(xb, EAVE - VAL, ze), Vector3(xa, EAVE - VAL, ze)], [vc, vc, vc, vc, vc, vc])
+			scallop.call(vs, Vector3(xa, EAVE, ze), Vector3(xb, EAVE, ze), EAVE - VAL, vc)
+	var dzc := (CZF - CZB) / m
+	for gx in [[CX0, 0.86], [CX1, 0.72]]:  # gable ends, and the side valances striped along them
+		var gc: Color = tone.call(red.darkened(0.08), gx[1])
+		var x: float = gx[0]
+		quad.call(st, [Vector3(x, EAVE, CZB), Vector3(x, RIDGE, cz), Vector3(x, RIDGE, cz), Vector3(x, EAVE, CZF)], [gc, gc, gc, gc, gc, gc])
+		for k in m:
+			var c: Color = tone.call(cream if k % 2 == 0 else red, gx[1] - 0.04)
+			var a := Vector3(x, EAVE, CZB + k * dzc)
+			var b := a + Vector3(0, 0, dzc)
+			quad.call(st, [a, b, b - Vector3(0, VAL, 0), a - Vector3(0, VAL, 0)], [c, c, c, c, c, c])
+			scallop.call(st, a, b, EAVE - VAL, c)
+	box_into(st, Vector3(CX0 - 0.02, RIDGE - 0.01, cz - 0.03), Vector3(CX1 + 0.02, RIDGE + 0.03, cz + 0.03), Color("e8dcc4"))  # the ridge seam
+	box_into(st, Vector3(X0 - 0.04, EAVE - 0.06, ZF - 0.04), Vector3(X1 + 0.04, EAVE - 0.02, ZF + 0.04), wood.darkened(0.2))  # the beam the canopy sits on
 	for k in 3:
 		var x := lerpf(X0 + 0.02, X1 - 0.02, float(k) / 3)
 		box_into(lt, Vector3(x + 0.02, 1.72, ZF + 0.22), Vector3(x + (X1 - X0 - 0.04) / 3 - 0.02, 2.18, ZF + 0.25), cream)
 		box_into(lt, Vector3(x + 0.02, 2.06, ZF + 0.25), Vector3(x + (X1 - X0 - 0.04) / 3 - 0.02, 2.12, ZF + 0.26), red)
 		box_into(lt, Vector3(x + 0.2, 1.84, ZF + 0.25), Vector3(x + (X1 - X0 - 0.04) / 3 - 0.2, 1.98, ZF + 0.26), Color("8f2a22"))
-	box_into(st, Vector3((X0 + X1) / 2 - 0.01, 1.98, ZF - 0.6), Vector3((X0 + X1) / 2 + 0.01, 2.3, ZF - 0.58), Color("3b2f2b"))
+	box_into(st, Vector3((X0 + X1) / 2 - 0.01, 1.98, ZF - 0.6), Vector3((X0 + X1) / 2 + 0.01, 2.5, ZF - 0.58), Color("3b2f2b"))
 	for c in [X0, X1]:  # a lantern's cord at each front corner
 		box_into(st, Vector3(c - 0.01, 1.8, ZF + 0.33), Vector3(c + 0.01, 2.3, ZF + 0.35), Color("3b2f2b"))
 	commit([st, lt], node)
@@ -4896,7 +4958,7 @@ func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 	mm_node(gm, lantern_glow_mat, node)
 	plane(node, Vector2(4.4, 4.4), Vector3((X0 + X1) / 2, -0.031, ZF + 0.4), stall_glow_mat)
 	plane(node, Vector2(2.4, 2.4), Vector3((X0 + X1) / 2, -0.03, ZF - 0.4), stall_glow_mat)
-	cast(node, Vector2((X0 + X1) / 2, (ZB + ZF) / 2), 0.0, 2.38, 2.1)
+	cast(node, Vector2((X0 + X1) / 2, (ZB + ZF) / 2), 0.0, 2.64, 2.1)
 	blob(node, Vector2((X0 + X1) / 2, (ZB + ZF) / 2), 1.5)
 
 
