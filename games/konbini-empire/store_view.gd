@@ -1007,6 +1007,8 @@ var street_pool_mat: StandardMaterial3D  # a street lamp's pool: a broad, evenly
 var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after dark
 var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
 var beam_mat: StandardMaterial3D  # the cone of light falling from a lit lamp head to its pool
+var headlight_mat: StandardMaterial3D  # a moving car's low beams thrown along the road ahead
+var tail_glow_mat: StandardMaterial3D  # the red its tail lamps cast on the road behind
 var spill_mat: StandardMaterial3D  # shop light falling out of a glass front across the sidewalk
 var shop_spill_mat: StandardMaterial3D  # the same out of your own shop, which a blackout puts out
 var room_dim := Color.WHITE  # your shop's lighting, dimmed while a blackout has cut its power
@@ -1142,6 +1144,19 @@ func _ready() -> void:
 			var d := absf(x / 31.0 - 0.5)
 			cone.set_pixel(x, y, Color(1, 1, 1, smoothstep(hw, hw * 0.4, d) * pow(1.0 - v, 1.1) * smoothstep(0.0, 0.04, v)))
 	beam_mat.albedo_texture = ImageTexture.create_from_image(cone)
+	headlight_mat = pool_mat.duplicate()
+	var throw := Image.create(64, 32, false, Image.FORMAT_RGBA8)  # forward along x: two lamps fanning into one wash
+	for y in 32:
+		var v := (y - 15.5) / 32.0
+		for x in 64:
+			var u := x / 63.0
+			var hw := lerpf(0.16, 0.4, sqrt(u))
+			var side := maxf(smoothstep(hw, 0.0, absf(v - 0.2)), smoothstep(hw, 0.0, absf(v + 0.2)))
+			side = maxf(side, smoothstep(0.5, 0.05, absf(v)) * smoothstep(0.0, 0.3, u))
+			var along := smoothstep(0.0, 0.1, u) * pow(1.0 - u, 1.6) * (1.0 + 0.8 * smoothstep(0.35, 0.1, absf(u - 0.22)))
+			throw.set_pixel(x, y, Color(1, 1, 1, clampf(side * along, 0.0, 1.0)))
+	headlight_mat.albedo_texture = ImageTexture.create_from_image(throw)
+	tail_glow_mat = pool_mat.duplicate()
 	snow_tex = snow_patches()
 	lamp_mat = StandardMaterial3D.new()
 	lamp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -1390,6 +1405,8 @@ func update_light() -> void:
 	street_pool_mat.albedo_color = LAMP * Color(1, 1, 1, minf(1.3 * night, 1.0))
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
+	headlight_mat.albedo_color = Color(1.0, 0.9, 0.7, 0.6 * night)
+	tail_glow_mat.albedo_color = Color(1.0, 0.12, 0.06, 0.6 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
 	var on := 1.0 if room_dim == Color.WHITE or mode != "store" else 0.0
 	shop_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night * on)
@@ -4633,7 +4650,7 @@ func street_life(delta: float) -> void:
 
 
 ## Cars on the set's street, keeping left: each waits behind the one ahead and stops at the crossing on amber and
-## red, headlights washing the road ahead after dark.
+## red, low beams thrown down the road ahead after dark and the tail lamps glowing red behind.
 ## Whether the set's street runs on into the city at its end toward `dir` (else it stops at a quay).
 func street_open(dir: float) -> bool:
 	return street_x.y == SET.end.x if dir > 0.0 else street_x.x == SET.position.x
@@ -4660,10 +4677,18 @@ func street_traffic(delta: float) -> void:
 			node.add_child(shadow(y, 1.5))
 			var beam := MeshInstance3D.new()
 			var pm := PlaneMesh.new()
-			pm.size = Vector2(3.2, 2.2)
+			pm.size = Vector2(7.0, 2.6 if kv != 3 else 1.6)
 			beam.mesh = pm
-			beam.material_override = pool_mat
-			beam.position = Vector3(3.2 * dir, 0.03 - y, 0)
+			beam.material_override = headlight_mat
+			beam.position = Vector3(BEAM_AHEAD * dir, 0.03 - y, 0)
+			beam.rotation.y = 0.0 if dir > 0.0 else PI
+			var tail := MeshInstance3D.new()
+			var tm := PlaneMesh.new()
+			tm.size = Vector2(2.0, 2.4 if kv != 3 else 1.2)
+			tail.mesh = tm
+			tail.material_override = tail_glow_mat
+			tail.position = Vector3(-BEAM_AHEAD - 1.2, 0.0, 0)
+			beam.add_child(tail)
 			node.add_child(beam)
 			node.add_child(car_lamps())
 			node.position = Vector3(x0, y, -1.7 * dir)
@@ -4685,7 +4710,8 @@ func street_traffic(delta: float) -> void:
 				t = Vector3(o.dir, 0, 0)
 			facing(o.node, t, o.kv * 2, VEHICLE_CELL)
 			var beam: Node3D = o.node.get_child(1)
-			beam.position = Vector3(t.x * 3.2, beam.position.y, t.z * 3.2)
+			beam.position = Vector3(t.x * BEAM_AHEAD, beam.position.y, t.z * BEAM_AHEAD)
+			beam.rotation.y = atan2(-t.z, t.x)
 			shine(o.node)
 			lamps_on(o.node)
 			continue
@@ -4715,6 +4741,9 @@ func street_traffic(delta: float) -> void:
 	for o in gone:
 		o.node.queue_free()
 	set_cars = set_cars.filter(func(o): return not gone.has(o))
+
+
+const BEAM_AHEAD := 4.3  # from a car's centre to the middle of its low beams' throw
 
 
 ## Spots in a vehicles.png cell where a lamp is drawn, by frame: [x, y, radius in px, kind] with h a headlight, t a
