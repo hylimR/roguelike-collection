@@ -746,14 +746,19 @@ void fragment() {
 				float cast = min(plan_wall(fp + sunl * 0.3, info.xz, bay, seed), plan_wall(fp + sunl * 0.6, info.xz, bay, seed));
 				fl *= mix(0.72, 1.0, smoothstep(0.0, 0.5, plan_wall(fp, info.xz, bay, seed))) * (cast < 0.0 ? 0.8 : 1.0);
 				fl = face.r >= 0.0 ? face : fl;
-				col = wall < 0.0 ? tint.rgb * 1.08 : fl;
+				// after dark a lit room glows warm in a pool round the ceiling light over its middle, dimming to its corners,
+				// and the rooms left dark fall into shadow
+				float on = step(0.5, fract(r * 13.0)) * switched(fract(r * 29.0), night);
+				vec2 rm = (fract(rc) - 0.5) * 2.0;
+				float pool = 0.2 + exp(-2.2 * dot(rm, rm));
+				col = wall < 0.0 ? tint.rgb * 1.08 : fl * (1.0 - 0.4 * night * (1.0 - on));
 				// windows cut through the outer walls below the cut: the reveal down to the sill, the glass's section across it
 				bool along_x = e.y < e.x;
 				float win = window_in(along_x ? lpos.x : lpos.z, along_x ? bay.x : bay.y, along_x ? step(info.z * 0.5, lpos.z) : 2.0 + step(info.x * 0.5, lpos.x), seed);
 				if (min(e.x, e.y) < 0.3 && win > 0.0) {
 					col = win < 0.05 ? vec3(0.78, 0.8, 0.82) : (abs(min(e.x, e.y) - 0.15) < 0.035 ? vec3(0.72, 0.86, 0.92) : tint.rgb * 0.8);
 				}
-				glow = wall < 0.0 ? vec3(0.0) : fl * vec3(1.0, 0.86, 0.62) * step(0.5, fract(r * 13.0)) * 0.45 * switched(fract(r * 29.0), night);
+				glow = wall < 0.0 ? vec3(0.0) : fl * vec3(1.0, 0.84, 0.58) * pool * on * 0.6;
 			} else {  // a flat roof: coping round a parapet that shades the roof on its sunny sides, membrane in strips, a hatch
 				vec2 q = lpos.xz;
 				float fine = 1.0 - smoothstep(0.1, 0.3, fwidth(q.x) + fwidth(q.y));
