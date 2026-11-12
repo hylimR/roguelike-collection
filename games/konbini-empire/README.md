@@ -12,7 +12,7 @@ The rival fights back. It warns a few seconds ahead, then launches an attack:
 - a blackout that stops the tills and puts your shop's lights, pole sign and floodlights out, dim in daylight and near dark at night, while the tripped board on the back wall flashes its red lamp;
 - a hostile takeover by three suits who each grab 15% of your cash at the door.
 
-Click a threat to chase it off. Click the till to ring up a waiting customer; fast ring-ups build a combo that multiplies XP. Click a shelf to restock it. Customers who find an empty shelf, a full queue or a slow till leave angry, and your rating drops.
+Click a threat to chase it off. Each one wears a tag naming it, with a dot for every click it still needs; tags that would overlap stack upward, each on a stem back to its own threat. Click the till to ring up a waiting customer; fast ring-ups build a combo that multiplies XP. Click a shelf to restock it. Customers who find an empty shelf, a full queue or a slow till leave angry, and your rating drops.
 
 Spend what you earn on staff:
 

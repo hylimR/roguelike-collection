@@ -9009,14 +9009,40 @@ func draw_street() -> void:
 				if not staffed or floori(Time.get_ticks_msec() / 400.0) % 2 == 0:
 					pill(at + Vector2(0, -24), "Ring up!", 11, Color("e98a1d") if staffed else Color("e05a4e"))
 			text(at + Vector2(0, 14), "%d" % reg.queue.size(), 11, Color("6b5236"))
-	# threats: name and clicks left
+	# threats: name and clicks left, each tag lifted clear of the ones below it on a stem back to its own threat
+	var tags: Array = []
 	for t in b.threats:
-		var at := screen(threat_point(t))
 		if t.fleeing:
 			continue
+		var at := screen(threat_point(t))
 		var label: String = {"flyer": "Flyers", "mascot": "Mascot", "trash": "Trash", "review": "1★ review", "shoplifter": "Thief!", "breaker": "Breaker", "suit": "Suit", "spill": "Spill"}[t.type]
 		var top := at + Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit", "review"] else (-36 if t.type == "mascot" else (-30 if t.type == "breaker" else -12)))
-		pill(top, label, 11, Color("e05a4e") if t.type != "spill" else Color("3a9bd9"))
+		var w := maxf(font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 14, t.max_clicks * 9.0 + 2 if t.max_clicks > 1 else 0.0)
+		var below := 13.0 if t.max_clicks > 1 or t.type == "review" else font.get_descent(11) + 2
+		tags.append({"t": t, "label": label, "home": top, "box": Rect2(top.x - w / 2, top.y - font.get_ascent(11) - 2, w, font.get_ascent(11) + 2 + below)})
+	tags.sort_custom(func(p, q): return p.home.y > q.home.y or (p.home.y == q.home.y and p.t.id < q.t.id))
+	var placed: Array = []
+	for g in tags:
+		var box: Rect2 = g.box
+		var moved := true
+		while moved:
+			moved = false
+			for o in placed:
+				if box.grow(2.0).intersects(o):
+					box.position.y = o.position.y - box.size.y - 3.0
+					moved = true
+		placed.append(box)
+		g.top = g.home + Vector2(0, box.position.y - g.box.position.y)
+		if g.top.y < g.home.y - 1.0:  # stems first, so no tag's stem crosses another tag
+			var foot := Vector2(g.top.x, box.end.y)
+			overlay.draw_line(foot + Vector2(1, 0), g.home + Vector2(1, 2), Color(0, 0, 0, 0.3), 2.5)
+			overlay.draw_line(foot, g.home + Vector2(0, 2), Color.WHITE, 1.5)
+			overlay.draw_circle(g.home + Vector2(0, 2), 3.0, Color.WHITE)
+			overlay.draw_circle(g.home + Vector2(0, 2), 2.0, Color("e05a4e") if g.t.type != "spill" else Color("3a9bd9"))
+	for g in tags:
+		var t: Dictionary = g.t
+		var top: Vector2 = g.top
+		pill(top, g.label, 11, Color("e05a4e") if t.type != "spill" else Color("3a9bd9"))
 		if t.max_clicks > 1:
 			for k in t.max_clicks:
 				var dot := top + Vector2((k - (t.max_clicks - 1) / 2.0) * 9, 9)
