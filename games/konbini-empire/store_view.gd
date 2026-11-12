@@ -8744,21 +8744,53 @@ func draw_heat(tint: Color, inside: PackedVector2Array, r: RandomNumberGenerator
 	var low := size.y * 0.6
 	overlay.draw_polygon(PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0), Vector2(size.x, low * 0.6), Vector2(0, low)]),
 		PackedColorArray([glare * Color(1, 1, 1, 0.42 * day), glare * Color(1, 1, 1, 0.22 * day), Color(glare, 0.0), Color(glare, 0.0)]))
-	for i in 34:
-		var x := r.randf() * size.x
-		var y0 := size.y * r.randf_range(0.2, 1.05)
-		var w := r.randf_range(50.0, 110.0)
+	# the stretch of the street on screen, where its centre line crosses the view's edges
+	var s0 := screen(Vector3.ZERO)
+	var step := screen(Vector3(10, 0, 0)) - s0
+	var xs := Vector2(maxf(street_x.x, -s0.x / step.x * 10.0), minf(street_x.y, minf((size.x - s0.x) / step.x, (size.y - s0.y) / step.y) * 10.0))
+	# mirages on the asphalt: the sky's pale blue lying in long sheens down the lanes, breathing in and out
+	var sky := Color(0.86, 0.93, 1.0) * light
+	for i in 6:
+		var cx := r.randf_range(xs.x + 3.0, xs.y - 3.0)
+		var cz := r.randf_range(-2.6, 2.6)
+		var reach := r.randf_range(3.0, 6.0)
+		var a := (0.42 + 0.12 * sin(now * 1.3 + i * 2.1)) * day * day
+		var mid := screen(Vector3(cx, 0.02, cz))
+		var core := PackedVector2Array()
+		var rim := PackedVector2Array()
+		for k in 16:
+			var t := k / 16.0 * TAU
+			var wob := 1.0 + 0.12 * sin(t * 3.0 + now * 2.0 + i)
+			core.append(screen(Vector3(cx + cos(t) * reach * 0.45 * wob, 0.02, cz + sin(t) * 0.22 * wob)))
+			rim.append(screen(Vector3(cx + cos(t) * reach * wob, 0.02, cz + sin(t) * 0.6 * wob)))
+		for k in 16:
+			var n := (k + 1) % 16
+			overlay.draw_polygon(PackedVector2Array([mid, core[k], core[n]]), PackedColorArray([Color(sky, a), Color(sky, a * 0.8), Color(sky, a * 0.8)]))
+			overlay.draw_polygon(PackedVector2Array([core[k], rim[k], rim[n], core[n]]), PackedColorArray([Color(sky, a * 0.8), Color(sky, 0.0), Color(sky, 0.0), Color(sky, a * 0.8)]))
+	# shimmer rising off the road: wavering threads along the lanes, broken into dashes that fade in, thin and drift
+	# away as they climb, so the air over the street wobbles rather than carrying lines
+	for i in 30:
+		var x := r.randf_range(xs.x, xs.y)
+		var z := r.randf_range(-3.3, 3.3)
+		var w := r.randf_range(1.6, 3.2)
 		var life := fposmod(now * r.randf_range(0.16, 0.24) + r.randf(), 1.0)
-		var c := Vector2(x, y0 - life * 70.0)
+		var h := 0.1 + life * 1.4
+		var c := screen(Vector3(x, h, z))
+		if c.x < -60.0 or c.x > size.x + 60.0 or c.y < -20.0 or c.y > size.y + 20.0:
+			continue
 		if inside.size() > 2 and Geometry2D.is_point_in_polygon(c, inside):
 			continue
-		var wave := PackedVector2Array()
-		for k in 9:
-			var u := k / 8.0
-			wave.append(c + Vector2((u - 0.5) * w, sin(u * TAU * 1.5 + now * 3.0 + i) * 2.5))
 		var a := sin(life * PI) * day * day
-		overlay.draw_polyline(wave, Color(1.0, 0.95, 0.82, 0.14 * a), 6.0)
-		overlay.draw_polyline(wave, Color(1.0, 0.98, 0.9, 0.34 * a), 2.0)
+		var dashes := 3 + i % 3
+		for d in dashes:
+			var wave := PackedVector2Array()
+			var cols := PackedColorArray()
+			for k in 6:
+				var u := (d + 0.15 + 0.7 * k / 5.0) / dashes
+				var p := screen(Vector3(x + (u - 0.5) * w, h, z))
+				wave.append(p + Vector2(0, sin(u * TAU * 1.5 + now * 3.0 + i) * 2.0 * (1.0 + life)))
+				cols.append(Color(1.0, 0.97, 0.9, 0.6 * a * (1.0 - life * 0.5) * sin(PI * k / 5.0) * sin(u * PI)))
+			overlay.draw_polyline_colors(wave, cols, 2.0)
 
 
 func text(at: Vector2, s: String, px: int, c: Color, w := 0.0, outline := Color(1, 1, 1, 0.9)) -> void:
