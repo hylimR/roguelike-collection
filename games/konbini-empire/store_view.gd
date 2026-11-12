@@ -2365,15 +2365,17 @@ func mm_node(mm: MultiMesh, m: Material, parent: Node) -> MultiMeshInstance3D:
 
 
 ## Whether r is open country, at least `edge` past the built-up land and clear of roads, parks and water. Out past
-## every road, river, park and plot (C.bounds grown by 120 holds them all) only the sea and the radial routes running
-## on out of town are in the way.
+## every road, river, park and plot (C.bounds grown by 120 holds them all) only the sea and the radial routes and the
+## river running on out of town are in the way.
 func country(r: Rect2, edge: float) -> bool:
 	var p := r.get_center()
+	if not C.run_off.all(func(ro): return Sim.City.seg_rect_dist(ro[0], ro[1], r) > ro[2] + 2.0):
+		return false
 	if not C.bounds.grow(120.0).intersects(r):
 		for q in [p, r.position, r.end, Vector2(r.position.x, r.end.y), Vector2(r.end.x, r.position.y)]:
 			if Geometry2D.is_point_in_polygon(q, C.bay) or Geometry2D.is_point_in_polygon(q, bay_mouth):
 				return false
-		return C.run_off.all(func(ro): return Sim.City.seg_rect_dist(ro[0], ro[1], r) > ro[2] + 2.0)
+		return true
 	return Sim.City.nearest(C, p)[1] > Sim.City.URBAN + edge and not Sim.City.blocked(C, r)
 
 
@@ -2489,6 +2491,19 @@ func build_static() -> void:
 	poly_fill(ws, bay_mouth, -0.14)
 	for poly in C.river:
 		poly_fill(ws, poly, -0.14)
+	# out of town the river runs between levees: a reedy margin at the water, a broad grassy bank, a gravel path along
+	# the dike's crest and its outer slope down to the fields
+	var rw := Sim.City.RIVER_W / 2
+	var river3 := flat3(C.river_off, -0.14)
+	ribbon(ws, river3, -rw, rw, 0.0, 0.0, 0, -1, 0.125)
+	var bank := surface(ground_mat(speckle([Color("ffffff"), Color("f0f4ea"), Color("e4ead8"), Color("f8fbf2")])))
+	var dike := flat3(C.river_off, -0.148)
+	for side in [-1.0, 1.0]:
+		for e in [[0.0, 1.4, "5e9a46"], [1.4, 6.4, "90c062"], [6.4, 7.8, "d4c69e"], [7.8, Sim.City.LEVEE, "78ae52"]]:
+			bank.set_color(Color(e[2]))
+			var a: float = side * (rw + e[0])
+			var c: float = side * (rw + e[1])
+			ribbon(bank, dike, minf(a, c), maxf(a, c), 0.0, 0.0, 0, -1, 0.25)
 	for p in moat_ring(C.parks[0]):
 		ws.set_uv(p * 0.125)
 		ws.add_vertex(Vector3(p.x, -0.14, p.y))
@@ -2502,7 +2517,7 @@ func build_static() -> void:
 	lm_ground = {"water": [sea, 0.125], "grass": [park_tex, 0.25]}
 	for pk in C.parks:
 		poly_fill(ps, Sim.City.ellipse(pk.center, pk.radii, 40), -0.13, 0.25)
-	commit([ws, land, ps], city)
+	commit([ws, land, ps, bank], city)
 	build_shore()
 	build_roads()
 	build_elevated()

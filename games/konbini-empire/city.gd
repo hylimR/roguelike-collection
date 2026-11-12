@@ -31,6 +31,7 @@ const SET_SEEN := Rect2(1.4, -9.2, 16.2, 12.7)  # what the shop view looks at: y
 const URBAN := 92.0  # built-up land reaches this far from the nearest district centre
 const MOAT := 6.0
 const RIVER_W := 16.0
+const LEVEE := 10.0  # the grassy bank and dike either side of the river out in the country
 const RAMP_L := 46.0 * DECK / 6.0  # a 1:7.7 grade up to the deck
 const MERGE_L := 20.0  # a ramp's level top, easing into the deck's outer lanes
 const BRIDGE := 30.0  # the longest water a side street bridges (the Sumida at a slant); longer, it stops at a quay
@@ -507,6 +508,21 @@ static func _run_off(C: Dictionary) -> void:
 				for k in range(n, pts.size()):
 					av.pts.append(Vector2(pts[k].x, pts[k].z))
 				C.run_off.append([from, av.pts[-1], av.w / 2])
+	# the Sumida runs on upstream the same way, winding gently out between the routes: C.river_off is its line from
+	# the last block it passes, its stretches go in C.run_off as wide as the water and its levees
+	var line: PackedVector2Array = C.river_line
+	var ctrl := [line[0]]
+	var dir := (line[0] - line[4]).normalized()
+	while edge.has_point(ctrl[-1]):
+		ctrl.append(ctrl[-1] + dir.rotated(0.22 * sin(ctrl.size() * 0.9 - 0.9) - 0.03) * 60.0)
+		C.run_off.append([ctrl[-2], ctrl[-1], RIVER_W / 2 + LEVEE])
+	var off := PackedVector2Array()
+	for p in line:
+		if C.blocks.any(func(bl): return bl.rect.grow(2.0).has_point(p)):
+			break
+		off.insert(0, p)
+	off.append_array(smooth(ctrl, false, 4.0).slice(1))
+	C.river_off = off
 
 
 ## A route that comes down to the ground ends on a road: the last side street it crosses on land before the end it was
