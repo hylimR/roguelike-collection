@@ -1141,7 +1141,8 @@ func show_choice() -> void:
 	var keys := {}
 	for i in c.options.size():
 		var card := PanelContainer.new()
-		card.add_theme_stylebox_override("panel", box(Color("fffdf5"), 18, 12, 4, 2))
+		var rarity: String = "" if c.source == "listing" else Sim.UPGRADES[c.options[i]].rarity
+		card.add_theme_stylebox_override("panel", card_frame(DISTRICT_COLOR[c.options[i].district] if rarity == "" else RARITY_COLOR[rarity], rarity != "" and rarity != "common"))
 		var col := VBoxContainer.new()
 		col.custom_minimum_size = Vector2(250 if c.source == "listing" else 190, 0)  # room for the longest pair of listing tags
 		col.add_theme_constant_override("separation", 6)
@@ -1150,7 +1151,9 @@ func show_choice() -> void:
 			listing_card(col, c.options[i])
 		else:
 			var u: Dictionary = Sim.UPGRADES[c.options[i]]
-			var r := chip([label(u.rarity.capitalize(), Color.WHITE, 11)], RARITY_COLOR[u.rarity])
+			var pips := label("★".repeat(RARITY_COLOR.keys().find(u.rarity) + 1), Color(1, 1, 1, 0.9), 11)
+			var r := chip([label(u.rarity.capitalize(), Color.WHITE, 11), pips], RARITY_COLOR[u.rarity])
+			(r.get_child(0) as HBoxContainer).add_theme_constant_override("separation", 4)
 			r.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 			col.add_child(r)
 			col.add_child(card_picture(c.options[i], u))
@@ -1259,6 +1262,22 @@ func lot_picture(L: Dictionary) -> PanelContainer:
 	plate.add_theme_stylebox_override("panel", s)
 	plate.add_child(h)
 	return plate
+
+
+## A pick card's face, edged all round in its rarity's colour (a listing's in its district's) over a deeper lip,
+## the rarer cards lifted off the page on a glow of that colour.
+func card_frame(tint: Color, glow: bool) -> StyleBoxFlat:
+	var s := box(Color("fffdf5"), 18, 12, 0, 2)
+	s.set_border_width_all(2)
+	s.border_width_bottom = 5
+	s.border_color = tint.lerp(PAPER, 0.35)
+	s.content_margin_top = 10
+	s.content_margin_bottom = 10
+	if glow:
+		s.shadow_color = Color(tint, 0.4)
+		s.shadow_size = 9
+		s.shadow_offset = Vector2(0, 2)
+	return s
 
 
 ## The card's picture on a plate tinted by its rarity.
