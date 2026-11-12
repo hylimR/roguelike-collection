@@ -170,8 +170,9 @@ void fragment() {
 	ALBEDO = crop * mix(vec3(1.0), texture(furrows, UV).rgb, field) * light;
 }
 """
-# The map's streetlights after dark: a pool on the carriageway under each lamp, the lamps a unit of u apart along
-# both kerbs and staggered, over a faint wash down the whole road; COLOR.r carries the carriageway's width / 40.
+# The map's streetlights after dark, the lamps a unit of u apart along both kerbs and staggered: a hot spot under
+# each lamp's head, its pool cast out over the carriageway cooling to amber at the rim, the kerbs lit all along between
+# them, over a faint warm wash down the whole road; COLOR.r carries the carriageway's width / 40.
 const ROAD_LIGHT_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled, blend_add, depth_draw_never, shadows_disabled;
@@ -182,14 +183,18 @@ uniform float glow = 0.0;
 
 void fragment() {
 	float w = COLOR.r * 40.0;
-	float pool = 0.0;
+	vec3 lit = vec3(0.0);
+	float kerb = 0.0;
 	for (int k = 0; k < 2; k++) {
-		float u = UV.x + 0.5 * float(k);
-		vec2 d = vec2((fract(u) - 0.5) * spacing, (UV.y - (k == 0 ? 0.1 : 0.9)) * w);
-		pool += exp(-dot(d, d) / 16.0) + 0.6 * exp(-dot(d, d) / 1.5);
+		float x = (fract(UV.x + 0.5 * float(k)) - 0.5) * spacing;
+		float y = (UV.y - (k == 0 ? 0.1 : 0.9)) * w;
+		float core = exp(-(x * x + y * y) / 1.2);
+		float pool = exp(-(x * x * 0.55 + y * y) / 9.0);
+		lit += tint * core * 0.55 + mix(vec3(1.0, 0.6, 0.28), tint, pool) * pool * 0.26;
+		kerb += exp(-y * y / 0.6) * (0.35 + 0.65 * exp(-x * x / 40.0));
 	}
 	float edge = smoothstep(0.0, 0.12, UV.y) * smoothstep(1.0, 0.88, UV.y);
-	ALBEDO = tint * glow * (wash * (1.0 + 0.7 * edge) + 0.42 * pool);
+	ALBEDO = glow * (mix(tint, vec3(1.0, 0.66, 0.34), 0.5) * wash * (0.8 + 0.8 * edge) + lit + vec3(1.0, 0.7, 0.4) * kerb * 0.16);
 }
 """
 # Open water on the map: the sea's blue, mottled in broad patches, with short wave crests over a darker trough
@@ -2754,8 +2759,8 @@ func build_roads() -> void:
 	build_rails([])
 
 
-## The map's streetlights: a pool under each lamp along every street and avenue, warm white, and along the
-## expressway's decks in sodium orange; lit after dark.
+## The map's streetlights: a hot spot under each lamp along every street and avenue, its pool and the kerbs warm,
+## and along the expressway's decks in sodium orange; lit after dark.
 func build_road_lights() -> void:
 	road_light_mats = []
 	for t in [[LAMP, 0.06], [Color(1.0, 0.56, 0.22), 0.025]]:
