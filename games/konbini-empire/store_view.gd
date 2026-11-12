@@ -1013,6 +1013,7 @@ var car_lamp_tex: ImageTexture  # the vehicles sheet's lamps lit, frame for fram
 var tv: Node3D  # the set's TV crew, shown on a TV Feature day
 var health: Node3D  # the health centre's wagon and a sanitiser stand, shown on a Health Inspection day
 var heat: Node3D  # a shaved-ice stand and a splashed sidewalk, shown on a Heatwave day
+var wall_bikes: Node3D  # the bicycles along your shop's wall, wheeled off when an event's stall or van takes the bay
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
 var vignette: GradientTexture2D
@@ -6105,6 +6106,8 @@ func build_set() -> void:
 		[8, Vector2(-2.75, -12.3)], [8, Vector2(-2.75, -13.5)], [4, Vector2(3.3, -15.2)]]
 	if b.quirk == "busStop":
 		props_at.append([11, Vector2(-24.5, -4.4)])
+	wall_bikes = Node3D.new()
+	set_node.add_child(wall_bikes)
 	for p in props_at:
 		if p[1].x < street_x.x + 0.5 or p[1].x > street_x.y - 0.5 or in_gaps(p[1].x, far_gaps if p[1].y < 0.0 else near_gaps) or in_gaps(p[1].x, under[0] if p[1].y < 0.0 else under[1]):
 			continue
@@ -6113,12 +6116,13 @@ func build_set() -> void:
 			continue
 		if p[0] <= 2:  # a tree stands in its pit, the grate's long side along the kerb, its trunk's foot drawn a little in
 			plane(set_node, Vector2(1.2, 0.9), Vector3(p[1].x, -0.041, p[1].y - 0.2), tree_pit())
+		var host: Node3D = wall_bikes if p[0] == 8 else set_node
 		var s := sprite("outdoor", Rect2(p[0] * OUTDOOR, 0, OUTDOOR, OUTDOOR), OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55)
 		s.position = Vector3(p[1].x, OUTDOOR / 2.0 * OUTDOOR_PX * OUTDOOR_SCALE[p[0]] * 0.55 - 0.05, p[1].y)
-		set_node.add_child(s)
+		host.add_child(s)
 		lit_sprites.append(s)
-		blob(set_node, p[1], PROP_BLOB.get(p[0], OUTDOOR_SCALE[p[0]] * 1.5))
-		outdoor_cast(set_node, p[0], p[1], OUTDOOR_SCALE[p[0]] * 0.55)
+		blob(host, p[1], PROP_BLOB.get(p[0], OUTDOOR_SCALE[p[0]] * 1.5))
+		outdoor_cast(host, p[0], p[1], OUTDOOR_SCALE[p[0]] * 0.55)
 	spill(set_node, Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7, shop_spill_mat)  # your shop's open front
 	a_board(Vector2(-8.3, -6.2), 0.35)
 	blob(set_node, Vector2(-8.3, -6.2), 0.45)
@@ -8543,6 +8547,8 @@ func _process(delta: float) -> void:
 			health.visible = branch.event != null and branch.event.id == "inspector"
 		if heat:
 			heat.visible = branch.event != null and branch.event.id == "heatwave"
+		if wall_bikes:
+			wall_bikes.visible = branch.event == null or not branch.event.id in ["festival", "tv", "inspector", "heatwave"]
 		refresh_stock()
 		sync_actors(delta)
 		update_power()
