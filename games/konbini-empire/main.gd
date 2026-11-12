@@ -1532,12 +1532,11 @@ func show_report(r: Dictionary) -> void:
 		var hl := report_cell(["Store", "Sales", "Served", "Lost", "Stock", "Rent+wages", "Net", "Rival"][k].to_upper(), MUTED, 10, k in [0, 7])
 		hl.add_theme_font_override("font", bold)
 		g.add_child(hl)
-	for row in r.rows:
+	for i in r.rows.size():
+		var row: Dictionary = r.rows[i]
 		var s: Dictionary = row.stats
 		var stock: int = s.restock + s.fines
-		var n := report_cell(row.name, INK, 13, true)
-		n.add_theme_font_override("font", bold)
-		g.add_child(n)
+		g.add_child(store_cell(i, row))
 		g.add_child(report_cell(yen(s.revenue), INK if s.revenue > 0 else MUTED))
 		g.add_child(report_cell(str(s.customers), INK if s.customers > 0 else MUTED))
 		g.add_child(report_cell(str(s.lost), RED if s.lost > 0 else MUTED))
@@ -1601,17 +1600,38 @@ func report_cell(text: String, color: Color, px := 12, left := false) -> Label:
 	return l
 
 
-## How much of its takings the rival kept: a short bar in its color, or a green tag once it has closed.
+## The store as its tab reads in the dock, its number and name on a pill in its district's colour.
+func store_cell(i: int, row: Dictionary) -> Control:
+	var num := label(str(i + 1), Color(1, 1, 1, 0.8), 11)
+	num.add_theme_font_override("font", bold)
+	var n := label(row.name, Color.WHITE, 13)
+	n.add_theme_font_override("font", bold)
+	var b = sim.branches.filter(func(o): return o.id == row.branch)
+	var p := chip([num, n], DISTRICT_COLOR[b[0].district] if not b.is_empty() else MUTED)
+	p.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return p
+
+
+## How much of its takings the rival kept: its mascot's roundel by a short bar in its color, or a green tag once it has closed.
 func rival_cell(row: Dictionary) -> Control:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	var face := TextureRect.new()
+	face.texture = view.rival_face(row.rival)
+	face.custom_minimum_size = Vector2(28, 28)
+	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	face.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	face.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(face)
 	if row.defeated:
+		face.modulate = Color(1, 1, 1, 0.55)
 		var c := label("CLOSED", Color.WHITE, 10)
 		c.add_theme_font_override("font", bold)
 		var p := chip([c], GREEN)
-		p.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		return p
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 6)
+		h.add_child(p)
+		return h
 	var b := progress(Color(Sim.RIVALS[row.rival].color), 8)
 	b.custom_minimum_size.x = 56
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
