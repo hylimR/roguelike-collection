@@ -1842,7 +1842,7 @@ func road_paint() -> StandardMaterial3D:
 	noise.frequency = 0.08
 	var chips := FastNoiseLite.new()
 	chips.seed = 71
-	chips.frequency = 0.3
+	chips.frequency = 0.16
 	var img := Image.create(128, 128, false, Image.FORMAT_RGB8)
 	var paint := Color("ebe7dc")
 	var grain := {}
@@ -1868,8 +1868,13 @@ func road_paint() -> StandardMaterial3D:
 			var n := noise.get_noise_2d(px, py) * 0.5 + 0.5
 			var wear := 0.03 + 0.2 * smoothstep(0.55, 0.85, n) + 0.3 * path
 			var col := p.lerp(Color(0.62, 0.62, 0.6), wear * 0.4)
-			if (chips.get_noise_2d(px, py) * 0.5 + 0.5) * 0.75 + r.randf() * 0.25 < wear:
-				col = Color(under.r * v, under.g * v, under.b * v).lerp(p, 0.3 * (1.0 - path))
+			# the paint flakes off in patches, its rim thinned to a film the grain shows through
+			var c := (chips.get_noise_2d(px, py) * 0.5 + 0.5) * 0.92 + r.randf() * 0.08
+			var bare := Color(under.r * v, under.g * v, under.b * v).lerp(p, 0.3 * (1.0 - path) + 0.1)
+			if c < wear:
+				col = bare
+			elif c < wear + 0.07:
+				col = col.lerp(bare, 0.55)
 			img.set_pixel(px, py, col)
 	img.generate_mipmaps()
 	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
@@ -1998,13 +2003,21 @@ static func road_grain(r: RandomNumberGenerator) -> float:
 func worn_paint(paint: Color, w: int, h: int, on: int, chips: float, seed_: int) -> StandardMaterial3D:
 	var r := RandomNumberGenerator.new()
 	r.seed = seed_
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_
+	noise.frequency = 0.3
+	var flake := noise.get_seamless_image(w, h)
 	var img := Image.create(w, h, false, Image.FORMAT_RGB8)
 	for y in h:
 		for x in w:
 			var v := road_grain(r)
 			var col := Color(ASPHALT.r * v, ASPHALT.g * v, ASPHALT.b * v)
-			if x < on and r.randf() > chips:
-				col = (paint * r.randf_range(0.9, 1.0)).lerp(Color(0.62, 0.62, 0.6), r.randf_range(0.05, 0.2))
+			if x < on:
+				# flaked off in patches (`chips` of it), the rim round each thinned to a film over the grain
+				var p := (paint * r.randf_range(0.93, 1.0)).lerp(Color(0.62, 0.62, 0.6), r.randf_range(0.05, 0.15))
+				var c := flake.get_pixel(x, y).r
+				var bare := col.lerp(p, 0.25)
+				col = bare if c < chips else (p.lerp(bare, 0.5) if c < chips + 0.08 else p)
 			img.set_pixel(x, y, col)
 	img.generate_mipmaps()
 	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
