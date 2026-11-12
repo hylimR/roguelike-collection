@@ -1323,7 +1323,8 @@ func card_frame(tint: Color, glow: bool) -> StyleBoxFlat:
 	return s
 
 
-## The card's picture on a plate tinted by its rarity.
+## The card's picture on a plate tinted by its rarity, lit from behind by a soft spot of light (rays fanning out from it
+## on the rarer cards), the art standing over its own shadow.
 func card_picture(id: String, u: Dictionary) -> PanelContainer:
 	var pic: TextureRect
 	if u.has("product"):
@@ -1333,13 +1334,73 @@ func card_picture(id: String, u: Dictionary) -> PanelContainer:
 	else:
 		var ic: Array = CARD_ICON.get(id, ["perks", 11])
 		pic = picture(ic[0], ic[1], {"perks": 80, "decor": 96}[ic[0]], Vector2(60, 60))
+	var stage := TextureRect.new()
+	stage.texture = card_stage(u.rarity)
+	stage.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	stage.stretch_mode = TextureRect.STRETCH_SCALE
+	stage.custom_minimum_size = Vector2(0, 76)
+	if not tex.has("card_shade"):
+		tex.card_shade = soft_oval(Color(INK.darkened(0.3), 0.3))
+	var shade := TextureRect.new()
+	shade.texture = tex.card_shade
+	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	shade.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	shade.offset_left = -27
+	shade.offset_right = 27
+	shade.offset_top = -13
+	shade.offset_bottom = -3
+	stage.add_child(shade)
+	pic.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	pic.offset_left = -31
+	pic.offset_right = 31
+	pic.offset_top = -35
+	pic.offset_bottom = 27
+	stage.add_child(pic)
 	var plate := PanelContainer.new()
-	var s := box(Color(RARITY_COLOR[u.rarity]).lerp(PAPER, 0.8), 14, 8)
+	var s := box(Color(RARITY_COLOR[u.rarity]).lerp(PAPER, 0.8), 14, 4)
 	s.border_width_bottom = 2
 	s.border_color = Color(RARITY_COLOR[u.rarity]).lerp(PAPER, 0.55)
 	plate.add_theme_stylebox_override("panel", s)
-	plate.add_child(pic)
+	plate.add_child(stage)
 	return plate
+
+
+## The light behind a card's art, clear at its rim so it melts into the plate: a pale spot, and for rare cards and up
+## rays in the rarity's colour, more of them the rarer the card.
+func card_stage(rarity: String) -> Texture2D:
+	var k := "stage_" + rarity
+	if tex.has(k):
+		return tex[k]
+	var w := 256
+	var h := 72
+	var tint: Color = RARITY_COLOR[rarity]
+	var rays: int = [0, 8, 12, 16][RARITY_COLOR.keys().find(rarity)]
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		for x in w:
+			var q := Vector2((x + 0.5 - w * 0.5) / (w * 0.5), (y + 0.5 - h * 0.45) / (h * 0.55))
+			var d := q.length()
+			var c := Color(1, 1, 1, 0)
+			var spot := pow(clampf(1.0 - d / 0.75, 0.0, 1.0), 1.6)
+			c = c.blend(Color(Color("fffdf5"), 0.95 * spot))
+			if rays > 0:
+				var a := atan2(q.y, q.x * 2.6)  # the fan reads round although the plate is wide
+				var beam := smoothstep(0.35, 0.9, cos(a * rays))
+				var fade := smoothstep(0.0, 0.3, d) * (1.0 - smoothstep(0.55, 0.98, d))
+				c = c.blend(Color(tint.lerp(Color.WHITE, 0.35), 0.3 * beam * fade))
+			img.set_pixel(x, y, c)
+	tex[k] = ImageTexture.create_from_image(img)
+	return tex[k]
+
+
+## A soft oval of `c`, densest at its centre: a shadow to stand art on.
+func soft_oval(c: Color) -> ImageTexture:
+	var img := Image.create(64, 16, false, Image.FORMAT_RGBA8)
+	for y in 16:
+		for x in 64:
+			var d := Vector2((x + 0.5 - 32) / 32.0, (y + 0.5 - 8) / 8.0).length()
+			img.set_pixel(x, y, Color(c, c.a * pow(clampf(1.0 - d, 0.0, 1.0), 1.4)))
+	return ImageTexture.create_from_image(img)
 
 
 func pick(id) -> void:
