@@ -3318,7 +3318,7 @@ func build_buildings() -> void:
 		if not Models.MODELS.has(key):
 			continue
 		var k: float = L.size / 22.0  # models are traced on a 22 m square; a smaller square gets a smaller landmark
-		var rec := {"foot": Rect2(L.pos - Vector2.ONE * L.size / 2, Vector2.ONE * L.size), "h": 0.0, "box": [], "roof": [], "hidden": STANDING, "lm": true}
+		var rec := {"foot": Rect2(L.pos - Vector2.ONE * L.size / 2, Vector2.ONE * L.size), "h": 0.0, "box": [], "roof": [], "hidden": STANDING, "lm": true, "cut": INF}
 		var st: SurfaceTool = null
 		var grounds := {}
 		for q in Models.MODELS[key]:
@@ -3361,6 +3361,8 @@ func build_buildings() -> void:
 				rec.box.append(boxes.size())
 				boxes.append([Vector3(sz.x, (q[6] - q[5]) * k, sz.y), Vector3(at_.x, (q[5] + q[6]) / 2 * k, at_.y), tint, q[8] + 0.245 if q[8] >= 0 else -1.0, q[10] if q.size() > 10 else 0.0])
 				rec.h = maxf(rec.h, q[6] * k)
+				if q[8] >= 0 and q[5] * k < 0.5:  # rooms on the ground, or on a kerb-high plinth
+					rec.cut = minf(rec.cut, q[5] * k + LOW)
 			else:
 				rec.roof.append(roofs.size())
 				roofs.append([at_, sz, q[5] * k, q[6] * k, Color(q[7]), 0.0, q[0] == 1])
@@ -4169,7 +4171,7 @@ func update_fade() -> void:
 					back = kept.end.y
 			elif f.intersects(front) or (f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr)):
 				state = maxf(f.position.y, edge)
-				if rec.has("lm") or f.end.y - state < 2.0 or (state > f.position.y and box_base[rec.box[0]].basis.x.z != 0.0):  # too thin, or turned
+				if f.end.y - state < 2.0 or rec.get("cut", 0.0) == INF or (not rec.has("lm") and state > f.position.y and box_base[rec.box[0]].basis.x.z != 0.0):  # too thin, turned, or no rooms
 					state = GONE
 		if state == rec.hidden and back == rec.get("back", INF):
 			continue
@@ -4192,8 +4194,23 @@ func update_fade() -> void:
 			elif state == STANDING:
 				box_mm.set_instance_transform(k, t)
 				box_mm.set_instance_custom_data(k, Color(cd.r, sz.y, sz.z, cd.a))
-			elif state == GONE or i > 0:
+			elif state == GONE or (i > 0 and not rec.has("lm")):
 				box_mm.set_instance_transform(k, away)
+			elif rec.has("lm"):
+				# a landmark with rooms on the ground is cut down to them: its plinth and paving stay, its halls show
+				# their floor plans and posts and towers go, so its square isn't left as bare paving
+				var z0 := maxf(state, t.origin.z - sz.z / 2)
+				var z1 := t.origin.z + sz.z / 2
+				var y0 := t.origin.y - sz.y / 2
+				var y1 := t.origin.y + sz.y / 2
+				var sliced: bool = y1 > rec.cut
+				if sliced:
+					y1 = rec.cut + 0.004 * (i % 8)  # stepped apart a hair where cut parts overlap
+				if y0 >= rec.cut or (sliced and cd.a < 0.0) or z1 - z0 < 0.5 or (z0 > t.origin.z - sz.z / 2 and t.basis.x.z != 0.0):
+					box_mm.set_instance_transform(k, away)
+				else:
+					box_mm.set_instance_transform(k, Transform3D(t.basis.orthonormalized() * Basis.from_scale(Vector3(sz.x, y1 - y0, z1 - z0)), Vector3(t.origin.x, (y0 + y1) / 2, (z0 + z1) / 2)))
+					box_mm.set_instance_custom_data(k, Color(cd.r, y1 - y0, z1 - z0, cd.a))
 			else:
 				var z0 := maxf(state, t.origin.z - sz.z / 2)
 				var z1 := t.origin.z + sz.z / 2
@@ -4210,7 +4227,7 @@ func update_fade() -> void:
 			roof_mm.set_instance_transform(k, rt)
 			dirty[roof_mm] = true
 		for n in rec.get("shapes", []):
-			n.visible = state == STANDING
+			n.visible = state == STANDING or (state != GONE and not n is MultiMeshInstance3D)  # a cut-down landmark keeps its pools and lawns
 	for tm in tree_mms:
 		for k in tm[1].size():
 			var p: Vector3 = tm[1][k].origin
