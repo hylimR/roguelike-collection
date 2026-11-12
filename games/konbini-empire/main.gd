@@ -1772,11 +1772,13 @@ func show_over() -> void:
 		[picture("decor", 9, 96, Vector2(40, 40)), "Days survived", str(rs.days), ""],
 		[picture("perks", 11, 80, Vector2(40, 40)), "Revenue", yen(rs.revenue), ""],
 		[picture("perks", 10, 80, Vector2(40, 40)), "Customers", Sim.money(rs.customers), ""],
-		[rival_shop(), "Rivals closed", str(rs.rivals_defeated), ""],
+		[rival_badge(), "Rivals closed", str(rs.rivals_defeated), ""],
 		[picture("perks", 1, 80, Vector2(40, 40)), "Threats repelled", str(rs.threats_repelled), ""],
 		[intro_shop(), "Stores opened", str(rs.stores_opened), "peak %d at once%s" % [rs.peak_stores, "" if rs.foreclosed == 0 else ", %d foreclosed" % rs.foreclosed]],
 	]:
-		g.add_child(stat_tile(t[0], t[1], t[2], t[3]))
+		var tile := stat_tile(t[0], t[1], t[2], t[3])
+		tile.get_child(0).size_flags_vertical = Control.SIZE_SHRINK_BEGIN  # level with the note tile in its row
+		g.add_child(tile)
 	v.add_child(g)
 	var total := roll_line("Score", Sim.money(score), INK, 22)
 	var bl := label("New best!" if score > prev else "best %s" % Sim.money(prev), Color.WHITE if score > prev else MUTED, 12)
@@ -1797,24 +1799,28 @@ func show_over() -> void:
 	open_modal("Bankrupt", v, {KEY_SPACE: fresh, KEY_ENTER: fresh}, "over", RED)
 
 
-func rival_shop() -> TextureRect:
-	var r := picture("storefronts", 4, 256, Vector2(40, 40))
-	r.texture.region = Rect2(4 * 256 + 58, 66, 132, 124)  # a rival chain's konbini in the fifth storefront frame
+## The mascot of the chain you were last up against, in its roundel, so it never reads as one of your own shops.
+func rival_badge() -> TextureRect:
+	var r := TextureRect.new()
+	r.texture = view.rival_face(sim.branches[sim.active].rival.id if sim.active < sim.branches.size() else "tanuki")
+	r.custom_minimum_size = Vector2(40, 40)
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	return r
 
 
-## One number on its own sunken tile: its picture on a plate tinted like the card, its caption above it.
+## One number on its own sunken tile: its picture on a plate tinted like the card, its caption above it, both from the top.
 func stat_tile(pic: Control, what: String, value: String, note: String, tint := RED, note_color := MUTED) -> PanelContainer:
 	var plate := PanelContainer.new()
 	var ps := box(tint.lerp(PAPER, 0.86), 12, 4)
 	ps.border_width_bottom = 2
 	ps.border_color = tint.lerp(PAPER, 0.7)
 	plate.add_theme_stylebox_override("panel", ps)
-	plate.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	plate.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	plate.add_child(pic)
 	var c := VBoxContainer.new()
 	c.add_theme_constant_override("separation", 0)
-	c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	c.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	var w := label(what.to_upper(), MUTED, 10)
 	w.add_theme_font_override("font", bold)
 	c.add_child(w)
@@ -1824,6 +1830,7 @@ func stat_tile(pic: Control, what: String, value: String, note: String, tint := 
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	h.custom_minimum_size.x = 176
+	h.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(plate)
 	h.add_child(c)
 	var p := sunken(h)
