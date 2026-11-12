@@ -1599,61 +1599,67 @@ func slabs() -> StandardMaterial3D:
 	return slabs_m
 
 
-## The set's street for a 32 m repeat across its whole 8 m width (uv x/8, z/8, scaled to a quarter along x): coarse
-## grain mottled with grime in broad patches, both lanes' wheel paths worn darker and smoother with a drip line between
-## them blotched with oil, dust along each kerb, two utility cuts patched in fresher tarmac behind a sealed seam, and a
-## few cracks.
+## The set's street for a 32 m repeat across its whole 8 m width (uv x/8, z/8, scaled to a quarter along x), 16 px a
+## metre: fine aggregate, stones a shade lighter in the binder and a few pits dark, mottled with grime in broad patches,
+## both lanes' wheel paths worn darker and smoother with a drip line between them blotched with oil, dust along each
+## kerb, two utility cuts patched in fresher tarmac behind a sealed seam, and a few cracks.
 func tarmac() -> StandardMaterial3D:
 	if tarmac_m:
 		return tarmac_m
+	const W := 512
+	const H := 128
 	var r := RandomNumberGenerator.new()
 	r.seed = 41
-	var img := Image.create(256, 64, false, Image.FORMAT_RGB8)
-	var patches := [Rect2(40, 50, 56, 7), Rect2(150, 10, 12, 13)]  # pixels; rows 32-63 are the far lane (z < 0)
+	var img := Image.create(W, H, false, Image.FORMAT_RGB8)
+	var patches := [Rect2(80, 100, 112, 14), Rect2(300, 20, 24, 26)]  # pixels; rows 64-127 are the far lane (z < 0)
 	var noise := FastNoiseLite.new()
 	noise.seed = 41
-	noise.frequency = 0.045
+	noise.frequency = 0.0225
 	noise.fractal_octaves = 3
-	var grime := noise.get_seamless_image(256, 64)
+	var grime := noise.get_seamless_image(W, H)
 	noise.seed = 43
-	noise.frequency = 0.16
-	var drips := noise.get_seamless_image(256, 64)
-	for py in 64:
-		var z := (py + 0.5) / 8.0
+	noise.frequency = 0.08
+	var drips := noise.get_seamless_image(W, H)
+	for py in H:
+		var z := (py + 0.5) / 16.0
 		if z >= 4.0:
 			z -= 8.0
 		var lane_z := absf(absf(z) - 1.7)
-		for px in 256:
+		var path := 1.0 - smoothstep(0.18, 0.36, absf(lane_z - 0.62))
+		for px in W:
 			var grain := r.randf()
-			var v := r.randf_range(0.95, 1.03) if grain < 0.8 else (r.randf_range(1.07, 1.12) if grain < 0.9 else r.randf_range(0.86, 0.9))
+			# polished smoother in the wheel paths: fewer stones stand proud and fewer pits stay open
+			var v := r.randf_range(0.96, 1.02)
+			if grain > 0.9 - 0.06 * path:
+				v = r.randf_range(1.05, 1.1) * lerpf(1.0, 0.97, path)
+			elif grain < 0.05 * (1.0 - path):
+				v = r.randf_range(0.84, 0.9)
 			var c := ASPHALT
 			var g := grime.get_pixel(px, py).r
 			v *= lerpf(0.9, 1.08, smoothstep(0.2, 0.8, g))
 			if g < 0.36:
 				c = c.lerp(Color("3d4250"), (0.36 - g) * 1.6)
-			if absf(lane_z - 0.62) < 0.24:
-				v = lerpf(v, 0.87, 0.75)
-			elif lane_z < 0.22 and absf(z) < 3.3:  # the drip line between the wheel paths, blotched with oil
+			v = lerpf(v, 0.87, path * 0.75)
+			if lane_z < 0.22 and absf(z) < 3.3:  # the drip line between the wheel paths, blotched with oil
 				var d := drips.get_pixel(px, py).r
-				if d > 0.56 or r.randf() < 0.3:
-					v *= 0.88
+				if d > 0.56 or r.randf() < 0.2:
+					v *= 0.9
 				if d > 0.62:
 					c = c.lerp(Color("262932"), clampf((d - 0.62) * 3.0, 0.0, 0.5))
 			if absf(z) > 3.3:
 				c = c.lerp(Color("8d8577"), (absf(z) - 3.3) * 0.5)
 			for p: Rect2 in patches:
-				if p.grow(1).has_point(Vector2(px, py)):
+				if p.grow(2).has_point(Vector2(px, py)):
 					c = ASPHALT.darkened(0.16)
-					v = r.randf_range(0.97, 1.02)
+					v = r.randf_range(0.97, 1.03)
 					if not p.has_point(Vector2(px, py)):
 						c = ASPHALT.darkened(0.3)
 			img.set_pixel(px, py, Color(c.r * v, c.g * v, c.b * v))
 	for k in 5:  # hairline cracks, wandering across a lane
-		var at := Vector2i(r.randi_range(0, 255), r.randi_range(0, 63))
-		for s in r.randi_range(6, 14):
-			var cc := img.get_pixelv(at)
-			img.set_pixelv(at, cc.darkened(0.3))
-			at = Vector2i(posmod(at.x + r.randi_range(0, 2) - (1 if k % 2 else 0), 256), posmod(at.y + r.randi_range(-1, 1), 64))
+		var at := Vector2i(r.randi_range(0, W - 1), r.randi_range(0, H - 1))
+		for s in r.randi_range(12, 28):
+			img.set_pixelv(at, img.get_pixelv(at).darkened(0.32))
+			at = Vector2i(posmod(at.x + r.randi_range(0, 2) - (1 if k % 2 else 0), W), posmod(at.y + r.randi_range(-1, 1), H))
 	img.generate_mipmaps()
 	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
@@ -1800,16 +1806,12 @@ func car_park() -> StandardMaterial3D:
 	var noise := FastNoiseLite.new()
 	noise.seed = 53
 	noise.frequency = 0.9
-	var grain := {}
 	for py in img.get_height():
 		var z := -16.0 + (py + 0.5) / PX
 		for px in img.get_width():
 			var x := -3.4 + (px + 0.5) / PX
-			var cell := Vector2i(px / 2, py / 2)  # the grain at the street's 8 px a metre
-			if not grain.has(cell):
-				var g := r.randf()
-				grain[cell] = r.randf_range(0.96, 1.03) if g < 0.8 else (r.randf_range(1.06, 1.1) if g < 0.9 else r.randf_range(0.87, 0.91))
-			var v: float = grain[cell]
+			var g := r.randf()  # the grain at the street's 16 px a metre
+			var v := r.randf_range(0.96, 1.02) if g < 0.9 else (r.randf_range(1.05, 1.09) if g < 0.95 else r.randf_range(0.85, 0.91))
 			var c := base
 			var tyre := 0.0
 			for bx in [-1.0, 1.4]:
@@ -1850,18 +1852,14 @@ func road_paint() -> StandardMaterial3D:
 	chips.frequency = 0.16
 	var img := Image.create(128, 128, false, Image.FORMAT_RGB8)
 	var paint := Color("ebe7dc")
-	var grain := {}
 	for py in 128:
 		var z := (py + 0.5) / 16.0
 		if z >= 4.0:
 			z -= 8.0
 		var lane_z := absf(absf(z) - 1.7)
 		for px in 128:
-			var cell := Vector2i(px / 2, py / 2)  # the tarmac's grain at its 8 px a metre
-			if not grain.has(cell):
-				var g := r.randf()
-				grain[cell] = r.randf_range(0.95, 1.03) if g < 0.8 else (r.randf_range(1.07, 1.12) if g < 0.9 else r.randf_range(0.86, 0.9))
-			var v: float = grain[cell]
+			var g := r.randf()  # the tarmac's grain, at its own 16 px a metre
+			var v := r.randf_range(0.96, 1.02) if g < 0.9 else (r.randf_range(1.05, 1.1) if g < 0.95 else r.randf_range(0.84, 0.9))
 			var under := ASPHALT
 			var p := paint * r.randf_range(0.95, 1.01)
 			if absf(z) > 3.3:
@@ -1888,35 +1886,36 @@ func road_paint() -> StandardMaterial3D:
 	return m
 
 
-## The city's side streets and avenues for a 16 m repeat in world uv (x/16, z/16), 8 px a metre: the set street's
-## coarse grain, mottled with grime, a few utility cuts patched in darker tarmac behind a sealed seam and hairline
+## The city's side streets and avenues for a 16 m repeat in world uv (x/16, z/16), 16 px a metre: the set street's
+## fine grain, mottled with grime, a few utility cuts patched in darker tarmac behind a sealed seam and hairline
 ## cracks; mipmapped so whole streets of it stay calm from the city view.
 func side_tarmac() -> StandardMaterial3D:
 	if side_tar_m:
 		return side_tar_m
+	const N := 256
 	var r := RandomNumberGenerator.new()
 	r.seed = 83
 	var noise := FastNoiseLite.new()
 	noise.seed = 83
-	noise.frequency = 0.04
-	var mottle := noise.get_seamless_image(128, 128)
-	var img := Image.create(128, 128, false, Image.FORMAT_RGB8)
-	var patches := [Rect2(18, 70, 30, 6), Rect2(92, 20, 9, 11), Rect2(60, 108, 6, 14)]
-	for py in 128:
-		for px in 128:
+	noise.frequency = 0.02
+	var mottle := noise.get_seamless_image(N, N)
+	var img := Image.create(N, N, false, Image.FORMAT_RGB8)
+	var patches := [Rect2(36, 140, 60, 12), Rect2(184, 40, 18, 22), Rect2(120, 216, 12, 28)]
+	for py in N:
+		for px in N:
 			var v := road_grain(r) * lerpf(0.94, 1.04, mottle.get_pixel(px, py).r)
 			var c := ASPHALT
 			for p: Rect2 in patches:
-				if p.grow(1).has_point(Vector2(px, py)):
+				if p.grow(2).has_point(Vector2(px, py)):
 					c = ASPHALT.darkened(0.3 if not p.has_point(Vector2(px, py)) else 0.15)
-					v = r.randf_range(0.97, 1.02)
+					v = r.randf_range(0.97, 1.03)
 			img.set_pixel(px, py, Color(c.r * v, c.g * v, c.b * v))
 	for k in 7:
-		var at := Vector2i(r.randi_range(0, 127), r.randi_range(0, 127))
+		var at := Vector2i(r.randi_range(0, N - 1), r.randi_range(0, N - 1))
 		var dir := Vector2i(1, 0) if k % 2 else Vector2i(0, 1)
-		for s in r.randi_range(8, 18):
-			img.set_pixelv(at, img.get_pixelv(at).darkened(0.3))
-			at = Vector2i(posmod(at.x + dir.x + (r.randi_range(-1, 1) if dir.y else 0), 128), posmod(at.y + dir.y + (r.randi_range(-1, 1) if dir.x else 0), 128))
+		for s in r.randi_range(16, 36):
+			img.set_pixelv(at, img.get_pixelv(at).darkened(0.32))
+			at = Vector2i(posmod(at.x + dir.x + (r.randi_range(-1, 1) if dir.y else 0), N), posmod(at.y + dir.y + (r.randi_range(-1, 1) if dir.x else 0), N))
 	img.generate_mipmaps()
 	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
@@ -1999,7 +1998,7 @@ func leafy_ground() -> ImageTexture:
 ## One pixel of the street's coarse grain, as a brightness: mostly even, a tenth paler stones, a tenth darker.
 static func road_grain(r: RandomNumberGenerator) -> float:
 	var g := r.randf()
-	return r.randf_range(0.95, 1.03) if g < 0.8 else (r.randf_range(1.07, 1.12) if g < 0.9 else r.randf_range(0.86, 0.9))
+	return r.randf_range(0.96, 1.02) if g < 0.9 else (r.randf_range(1.05, 1.1) if g < 0.95 else r.randf_range(0.84, 0.9))
 
 
 ## A side street's marking paint, w x h px with the first `on` columns painted: dulled with grime, a shade apart and
