@@ -166,7 +166,10 @@ uniform float night = 0.0;
 void fragment() {
 	float field = step(0.99, COLOR.a);  // lanes come in at alpha below 1: bare gravel, no furrows, no crop at night
 	float l = dot(COLOR.rgb, vec3(0.3, 0.59, 0.11));
-	vec3 crop = mix(COLOR.rgb, vec3(0.47, 0.62, 0.36) * (0.9 + 0.4 * (l - 0.66)), 0.8 * night * field);
+	// by moonlight each field keeps its own shade and a trace of its crop, so the patchwork still reads after dark
+	vec3 moon = mix(vec3(l), COLOR.rgb, 0.55) * vec3(1.0, 1.02, 0.94);
+	moon = max(vec3(0.0), moon + (l - 0.62) * 0.6);
+	vec3 crop = mix(COLOR.rgb, moon, night * field);
 	ALBEDO = crop * mix(vec3(1.0), texture(furrows, UV).rgb, field) * light;
 }
 """
