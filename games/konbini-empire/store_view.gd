@@ -1093,7 +1093,7 @@ func _ready() -> void:
 	for y in 64:
 		for x in 64:
 			var d := Vector2(x - 31.5, y - 31.5).length() / 32.0
-			spot.set_pixel(x, y, Color(1, 1, 1, 0.75 * smoothstep(1.0, 0.3, d) + 0.25 * smoothstep(0.5, 0.0, d)))
+			spot.set_pixel(x, y, Color(1, 1, 1, 0.6 * smoothstep(1.0, 0.3, d) + 0.4 * smoothstep(0.5, 0.0, d)))
 	street_pool_mat.albedo_texture = ImageTexture.create_from_image(spot)
 	halo_mat = pool_mat.duplicate()
 	halo_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
@@ -1378,7 +1378,7 @@ func update_light() -> void:
 	for m in road_light_mats:
 		m.set_shader_parameter("glow", night)
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
-	street_pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.6 * night)
+	street_pool_mat.albedo_color = LAMP * Color(1, 1, 1, minf(1.3 * night, 1.0))
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
