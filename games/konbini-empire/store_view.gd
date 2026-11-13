@@ -1049,6 +1049,7 @@ var snow_lot_tex: ImageTexture  # the car park's ploughed snow
 var snow_cover: MeshInstance3D  # the set's snowy ground, shown on a cold snap
 var matsuri: Node3D  # the set's festival lanterns and yatai, shown on a Summer Matsuri
 var lantern_glow_mat: StandardMaterial3D
+var lantern_pool_mat: StandardMaterial3D  # the matsuri lanterns' warm light on the sidewalk under their strings
 var stall_glow_mat: StandardMaterial3D  # the yatai's lamplight on the bay after dark
 var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
@@ -1139,6 +1140,7 @@ func _ready() -> void:
 	flood_mat = pool_mat.duplicate()
 	sign_glow_mat = halo_mat.duplicate()
 	lantern_glow_mat = halo_mat.duplicate()
+	lantern_pool_mat = pool_mat.duplicate()
 	stall_glow_mat = pool_mat.duplicate()
 	works_glow_mat = halo_mat.duplicate()
 	var fall := Image.create(64, 32, false, Image.FORMAT_RGBA8)
@@ -1453,6 +1455,7 @@ func update_light() -> void:
 	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night * on)
 	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night * on)
 	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.75 * night)
+	lantern_pool_mat.albedo_color = Color(1.0, 0.5, 0.28, 0.6 * night)
 	stall_glow_mat.albedo_color = Color(1.0, 0.6, 0.3, 0.95 * night)
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
 	if car_glass:
@@ -5097,6 +5100,7 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 	var bm := multimesh(body, spots.size(), true)
 	var cm := multimesh(shaded_box(), spots.size() * 2, true)
 	var gm := multimesh(QuadMesh.new(), spots.size())
+	var pm := multimesh(PlaneMesh.new(), spots.size())
 	for i in spots.size():
 		var at: Vector3 = spots[i]
 		bm.set_instance_transform(i, Transform3D(Basis(), at))
@@ -5105,6 +5109,7 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 			cm.set_instance_transform(i * 2 + c, Transform3D(Basis().scaled(Vector3(0.21, 0.06, 0.21)), at + Vector3(0, 0.24 if c == 0 else -0.24, 0)))
 			cm.set_instance_color(i * 2 + c, Color("2e2523"))
 		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(2.0, 2.0, 2.0)), at + to_eye() * 0.3))
+		pm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.5, 1.0, 1.25)), Vector3(at.x, -0.032, at.z)))
 	var paper := mat(Color.WHITE, ImageTexture.create_from_image(ribs))
 	paper.vertex_color_use_as_albedo = true
 	paper.vertex_color_is_srgb = true
@@ -5116,6 +5121,7 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 	cap.vertex_color_is_srgb = true
 	mm_node(cm, cap, node)
 	mm_node(gm, lantern_glow_mat, node)
+	mm_node(pm, lantern_pool_mat, node)
 	yatai(node, paper)
 	return node
 
