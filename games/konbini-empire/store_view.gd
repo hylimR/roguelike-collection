@@ -93,6 +93,7 @@ const LAMP := Color(1.0, 0.85, 0.58)
 const SHOP_LIGHT := Color(0.86, 0.95, 1.0)  # a konbini's cool white strip lights
 const BLACKOUT := [Color(0.62, 0.65, 0.74), Color(0.17, 0.2, 0.32)]  # your shop with its power cut: by daylight through the glass, after dark
 const SEA := Color("3a8cc8")
+const SEA_DEEP := Color("1d5a98")  # open water far off any shore, and the sky-less background past the map
 const SEA_NIGHT := Color(0.5, 0.48, 0.46)  # water goes darker than the land after dark instead of glowing blue under the night tint
 const ROOF_TINT := 0.3  # how much of its walls' tint a flat roof takes over its membrane
 const ASPHALT := Color("576074")  # a cool slate rather than flat grey
@@ -223,7 +224,7 @@ void fragment() {
 	ALBEDO = glow * (mix(tint, vec3(1.0, 0.66, 0.34), 0.5) * wash * (0.8 + 0.8 * edge) + lit + vec3(1.0, 0.7, 0.4) * kerb * 0.16);
 }
 """
-# Open water on the map: the sea's blue, mottled in broad patches, with short wave crests over a darker trough
+# Open water on the map: the sea's blue, a paler turquoise over the shallows deepening to navy out from every shore, mottled in broad patches, with short wave crests over a darker trough
 # scattered across it at a steady size on screen at any zoom (two sizes crossfaded), slowly glinting in and out.
 # After dark the crests catch the moon, and off the built-up shore the water carries the city's lights: a warm haze
 # over each light's reflection broken into ripple bars down the view, lamp-gold, shop-white or neon, thinning out away from the land.
@@ -231,6 +232,9 @@ const SWELL_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled;
 uniform vec3 sea : source_color = vec3(0.23, 0.55, 0.78);
+uniform vec3 deep : source_color = vec3(0.11, 0.35, 0.6);
+uniform sampler2D depth : filter_linear, repeat_disable;  // distance out from the shore, 1 by open sea
+uniform vec4 depth_rect = vec4(0.0, 0.0, 1.0, 1.0);
 uniform vec3 light = vec3(1.0);
 uniform float night = 0.0;
 uniform sampler2D town : filter_linear, repeat_disable;  // the built-up blocks, blurred
@@ -290,9 +294,13 @@ void fragment() {
 	float aa = 0.5 / 16.0;
 	vec2 w = mix(crests(wp, s, aa), crests(wp, s * 2.0, aa * 0.5), fract(lv));
 	float m = noise(wp / 260.0) * 0.6 + noise(wp / 70.0) * 0.4;
-	vec3 col = sea * (0.92 + 0.14 * m);
-	col = mix(col, sea * 0.82, w.y * 0.6);
-	col = mix(col, mix(sea, vec3(1.0), 0.55), w.x * 0.85);
+	vec2 du = (gp - depth_rect.xy) / depth_rect.zw;
+	float dp = texture(depth, du).r * step(0.0, min(du.x, du.y)) * step(max(du.x, du.y), 1.0);
+	dp = smoothstep(0.0, 1.0, dp + (m - 0.5) * 0.25 * dp);
+	vec3 water = mix(mix(sea, vec3(0.34, 0.76, 0.8), 0.45), deep, dp);
+	vec3 col = water * (0.92 + 0.14 * m);
+	col = mix(col, water * 0.82, w.y * 0.6);
+	col = mix(col, mix(water, vec3(1.0), 0.5 + 0.1 * dp), w.x * 0.85);
 	col *= light;
 	if (night > 0.0) {
 		vec2 tu = (gp - town_rect.xy) / town_rect.zw;
@@ -1124,7 +1132,7 @@ func _ready() -> void:
 	fit_viewport.call_deferred()
 	env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = SEA  # open sea round the island
+	env.background_color = SEA_DEEP  # open sea round the island
 	var we := WorldEnvironment.new()
 	we.environment = env
 	vp.add_child(we)
@@ -1438,7 +1446,7 @@ func update_light() -> void:
 	for s in casts:
 		s.scale.z = 1.0 + 0.9 * golden_at(h)
 	var dusk_sea := light * Color.WHITE.lerp(SEA_NIGHT, night)
-	env.background_color = SEA * dusk_sea
+	env.background_color = SEA_DEEP * dusk_sea
 	if sea_mat:
 		sea_mat.albedo_color = dusk_sea
 		shore_mat.albedo_color = dusk_sea
@@ -2641,6 +2649,8 @@ func build_static() -> void:
 	town.resize(40, 40, Image.INTERPOLATE_TRILINEAR)
 	swell_mat.set_shader_parameter("town", ImageTexture.create_from_image(town))
 	swell_mat.set_shader_parameter("town_rect", Vector4(tr.position.x, tr.position.y, tr.size.x, tr.size.y))
+	swell_mat.set_shader_parameter("deep", Vector3(SEA_DEEP.r, SEA_DEEP.g, SEA_DEEP.b))
+	swell_depth()
 	var ws := surface(swell_mat)
 	poly_fill(ws, C.bay, -0.14)
 	poly_fill(ws, bay_mouth, -0.14)
@@ -2685,6 +2695,47 @@ func build_static() -> void:
 			continue
 		city_sprite(city, lm[0], Rect2(lm[1] * LANDMARK, 0, LANDMARK, LANDMARK_H[lm[0]]), LANDMARK_SPAN * L.size / 22.0, Vector3(L.pos.x, 0, L.pos.y), lm_sprites)
 	build_paths()
+
+
+## The sea's depth for the swell shader: each cell of the bay and the open sea south of it holds its distance from the
+## nearest land, islands included (two-pass chamfer), reaching 1 a few hundred metres out.
+func swell_depth() -> void:
+	const N := 128
+	var r := Rect2(Vector2(-1300, 0), Vector2(2750, 2800))
+	var cell := r.size / N
+	var far := 1e6
+	var d := PackedFloat32Array()
+	d.resize(N * N)
+	for y in N:
+		for x in N:
+			var q := r.position + (Vector2(x, y) + Vector2(0.5, 0.5)) * cell
+			var wet: bool = Geometry2D.is_point_in_polygon(q, bay_mouth) or (Geometry2D.is_point_in_polygon(q, C.bay) and C.islands.all(func(isl): return not Geometry2D.is_point_in_polygon(q, isl)))
+			d[y * N + x] = far if wet else 0.0
+	var dg := cell.length()
+	for pass_i in 2:
+		var s := 1 if pass_i == 0 else -1
+		for yi in N:
+			var y := yi if s > 0 else N - 1 - yi
+			for xi in N:
+				var x := xi if s > 0 else N - 1 - xi
+				var v := d[y * N + x]
+				if v == 0.0:
+					continue
+				if x - s >= 0 and x - s < N:
+					v = minf(v, d[y * N + x - s] + cell.x)
+				if y - s >= 0 and y - s < N:
+					v = minf(v, d[(y - s) * N + x] + cell.y)
+					if x - s >= 0 and x - s < N:
+						v = minf(v, d[(y - s) * N + x - s] + dg)
+					if x + s >= 0 and x + s < N:
+						v = minf(v, d[(y - s) * N + x + s] + dg)
+				d[y * N + x] = v
+	var img := Image.create(N, N, false, Image.FORMAT_L8)
+	for y in N:
+		for x in N:
+			img.set_pixel(x, y, Color.from_hsv(0, 0, clampf(d[y * N + x] / 320.0, 0.0, 1.0)))
+	swell_mat.set_shader_parameter("depth", ImageTexture.create_from_image(img))
+	swell_mat.set_shader_parameter("depth_rect", Vector4(r.position.x, r.position.y, r.size.x, r.size.y))
 
 
 ## Where the bay meets open country: a beach along the shore, wet sand at the water's edge and dry sand up the shore
