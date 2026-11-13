@@ -1785,9 +1785,9 @@ func slabs() -> StandardMaterial3D:
 
 
 ## The set's street for a 32 m repeat across its whole 8 m width (uv x/8, z/8, scaled to a quarter along x), 16 px a
-## metre: fine aggregate, stones a shade lighter in the binder and a few pits dark, mottled with grime in broad patches,
-## both lanes' wheel paths worn darker and smoother with a drip line between them blotched with oil, dust along each
-## kerb, two utility cuts patched in fresher tarmac behind a sealed seam, and a few cracks.
+## metre: fine aggregate, stones a shade lighter in the binder and a few pits dark, grime smeared in faint streaks along
+## the lanes, both lanes' wheel paths worn darker and smoother with a drip line between them blotched with oil, dust
+## along each kerb, two utility cuts patched in fresher tarmac behind a sealed seam, and a few cracks.
 func tarmac() -> StandardMaterial3D:
 	if tarmac_m:
 		return tarmac_m
@@ -1798,13 +1798,12 @@ func tarmac() -> StandardMaterial3D:
 	var img := Image.create(W, H, false, Image.FORMAT_RGB8)
 	var patches := [Rect2(80, 100, 112, 14), Rect2(300, 20, 24, 26)]  # pixels; rows 64-127 are the far lane (z < 0)
 	var noise := FastNoiseLite.new()
-	noise.seed = 41
-	noise.frequency = 0.0225
-	noise.fractal_octaves = 3
-	var grime := noise.get_seamless_image(W, H)
 	noise.seed = 43
 	noise.frequency = 0.08
+	noise.fractal_octaves = 3
 	var drips := noise.get_seamless_image(W, H)
+	noise.seed = 41
+	noise.frequency = 1.0
 	for py in H:
 		var z := (py + 0.5) / 16.0
 		if z >= 4.0:
@@ -1820,17 +1819,20 @@ func tarmac() -> StandardMaterial3D:
 			elif grain < 0.05 * (1.0 - path):
 				v = r.randf_range(0.84, 0.9)
 			var c := ASPHALT
-			var g := grime.get_pixel(px, py).r
-			v *= lerpf(0.9, 1.08, smoothstep(0.2, 0.8, g))
+			# grime smeared along the lanes by the traffic: noise read round a cylinder so it wraps every 32 m, about
+			# 8 m long to 1.5 m across
+			var a := TAU * px / W
+			var g := noise.get_noise_3d(cos(a) * 0.61, sin(a) * 0.61, z * 0.6) * 0.5 + 0.5
+			v *= lerpf(0.95, 1.04, smoothstep(0.2, 0.8, g))
 			if g < 0.36:
-				c = c.lerp(Color("3d4250"), (0.36 - g) * 1.6)
+				c = c.lerp(Color("3d4250"), (0.36 - g) * 0.8)
 			v = lerpf(v, 0.87, path * 0.75)
 			if lane_z < 0.22 and absf(z) < 3.3:  # the drip line between the wheel paths, blotched with oil
 				var d := drips.get_pixel(px, py).r
 				if d > 0.56 or r.randf() < 0.2:
 					v *= 0.9
 				if d > 0.62:
-					c = c.lerp(Color("262932"), clampf((d - 0.62) * 3.0, 0.0, 0.5))
+					c = c.lerp(Color("262932"), clampf((d - 0.62) * 3.0, 0.0, 0.35))
 			if absf(z) > 3.3:
 				c = c.lerp(Color("8d8577"), (absf(z) - 3.3) * 0.5)
 			for p: Rect2 in patches:
