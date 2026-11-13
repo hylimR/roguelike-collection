@@ -5417,6 +5417,7 @@ func tv_crew() -> Node3D:
 		box_into(st, lt_at + Vector3(minf(f.x, 0) - 0.02, 0, minf(f.y, 0) - 0.02), lt_at + Vector3(maxf(f.x, 0) + 0.02, 0.05, maxf(f.y, 0) + 0.02), Color("3a3b40"))
 	box_into(st, lt_at + Vector3(-0.025, 0, -0.025), lt_at + Vector3(0.025, 1.62, 0.025), Color("8e9196"))
 	box_into(st, lt_at + Vector3(-0.1, 1.55, -0.42), lt_at + Vector3(0.0, 2.12, 0.42), dark)
+	dish_into(st, Vector3(-0.75, 2.42, -14.1), Vector3(0.4, 0.75, 0.5).normalized())
 	commit([st], node)
 	var face := MeshInstance3D.new()
 	var fq := QuadMesh.new()
@@ -5436,18 +5437,6 @@ func tv_crew() -> Node3D:
 	light_up(tm, 1.0)
 	tally.material_override = tm
 	node.add_child(tally)
-	var disc := MeshInstance3D.new()
-	var dm := CylinderMesh.new()
-	dm.top_radius = 0.5
-	dm.bottom_radius = 0.42
-	dm.height = 0.07
-	dm.radial_segments = 16
-	dm.rings = 1
-	disc.mesh = dm
-	disc.material_override = mat(Color("d9d8d2"))
-	disc.basis = Basis(Vector3(1, 0, -1).normalized(), 0.8)
-	disc.position = Vector3(-0.75, 2.55, -14.1)
-	node.add_child(disc)
 	var gm := multimesh(QuadMesh.new(), 2)
 	gm.set_instance_transform(0, Transform3D(Basis().scaled(Vector3(2.4, 2.4, 2.4)), face.position))
 	gm.set_instance_transform(1, Transform3D(Basis().scaled(Vector3(0.6, 0.6, 0.6)), tally.position))
@@ -5459,6 +5448,52 @@ func tv_crew() -> Node3D:
 	blob(node, Vector2(-1.0, -13.15), 1.6)
 	blob(node, Vector2(cam_at.x, cam_at.z), 0.5)
 	return node
+
+
+## A satellite dish on a post rising from `foot`, its bowl aimed along d: the inside shaded by how each ring faces the
+## sky, so its far wall catches the light and its near wall falls into shade under a bright rim lip, a darker shell
+## behind, and a feed arm from the bottom of the rim holding the LNB at the focus.
+func dish_into(st: SurfaceTool, foot: Vector3, d: Vector3, r := 0.5, depth := 0.18, segs := 16, rings := 4) -> void:
+	var u := d.cross(Vector3.UP).normalized()
+	var v := u.cross(d)
+	var c := foot + Vector3(0, 0.2, 0) + d * 0.08
+	var sky := Vector3(-0.8, 0.9, 0.3).normalized()
+	var face := Color("e2e1da")
+	var shell := Color("b4b5b2")
+	var at := func(k: float, a: float, back: float) -> Vector3:
+		return c + (u * cos(a) + v * sin(a)) * r * k + d * (depth * k * k - back)
+	var tone := func(k: float, a: float, col: Color, inside: bool) -> Color:
+		var n := (d - (u * cos(a) + v * sin(a)) * 2.0 * depth * k / r).normalized()
+		if not inside:
+			n = -n
+		var t := 0.64 + 0.4 * maxf(n.dot(sky), 0.0) - (0.05 * (1.0 - k) if inside else 0.0)
+		return Color(col.r * t, col.g * t, col.b * t)
+	for i in rings:
+		var k0 := float(i) / rings
+		var k1 := float(i + 1) / rings
+		for j in segs:
+			var a0 := TAU * j / segs
+			var a1 := TAU * (j + 1) / segs
+			for side in [[face, true, 0.0], [shell, false, 0.025]]:
+				var q := [[k0, a0], [k1, a0], [k1, a1], [k0, a1]]
+				for e in [q[0], q[1], q[2], q[0], q[2], q[3]]:
+					st.set_color(tone.call(e[0], e[1], side[0], side[1]))
+					st.set_uv(Vector2.ZERO)
+					st.add_vertex(at.call(e[0], e[1], side[2]))
+	for j in segs:  # the rim's rolled lip, lit all round
+		var a0 := TAU * j / segs
+		var a1 := TAU * (j + 1) / segs
+		var lip := Color("f4f3ee") if sin((a0 + a1) / 2) > -0.3 else Color("d0cfc8")
+		st.set_color(lip)
+		for e in [[1.0, a0, 0.0], [1.07, a0, 0.0], [1.07, a1, 0.0], [1.0, a0, 0.0], [1.07, a1, 0.0], [1.0, a1, 0.0]]:
+			st.set_uv(Vector2.ZERO)
+			st.add_vertex(at.call(e[0], e[1], e[2]) - d * 0.012 * (e[0] - 1.0) / 0.07)
+	pipe_into(st, foot, c - d * 0.05, 0.035, Color("7d8187"), 8)
+	box_into(st, c - d * 0.09 - Vector3(0.07, 0.07, 0.07), c - d * 0.02 + Vector3(0.07, 0.07, 0.07), Color("8e9196"))
+	var focus := c + d * r * 0.62
+	pipe_into(st, at.call(1.0, -PI / 2, 0.0), focus - d * 0.04, 0.014, Color("9aa0a6"), 6)
+	pipe_into(st, focus - d * 0.06, focus + d * 0.06, 0.035, Color("4a4b50"), 8)
+	pipe_into(st, focus + d * 0.06, focus + d * 0.08, 0.045, Color("2b2c30"), 8)
 
 
 ## A van's running gear (body from x0 to x1, its floor at y): the chassis dark between the axles, and at each end of
