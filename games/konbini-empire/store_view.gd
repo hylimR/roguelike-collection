@@ -7157,8 +7157,9 @@ func near_water() -> bool:
 	return false
 
 
-## Where the made ground meets open water: a concrete quay wall with its coping, standing in its own shade on the
-## water, left open where a road runs on over a bridge.
+## Where the made ground meets open water: a concrete quay wall with its coping, left open where a road runs on over a
+## bridge. At its foot the water darkens with the wall's reflection, laps in a broken line of foam and pales off into
+## the open water, as the city's seawalls do.
 func quay(runs: Array, roads: Array) -> void:
 	if runs.is_empty():
 		return
@@ -7188,7 +7189,7 @@ func quay(runs: Array, roads: Array) -> void:
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
 	var wall_ := surface(m)
-	var shade := surface(mat(Color("2d5b88")))
+	var lap := surface(shore_mat)
 	var box := func(p0: Vector3, p1: Vector3, col: Color) -> void: box_into(wall_, p0, p1, col)
 	const T := 0.3  # the wall's thickness, inside the made ground's edge
 	const TOP := 0.34
@@ -7201,7 +7202,26 @@ func quay(runs: Array, roads: Array) -> void:
 		var hi := Vector2(maxf(e[0].x, e[1].x), maxf(e[0].y, e[1].y))
 		var d := (hi - lo).normalized()
 		var L := lo.distance_to(hi)
-		rect_quad(shade, Rect2(lo, hi - lo).merge(Rect2(lo + n * 0.55, hi - lo)), -0.137)
+		# the lap: bands out from the wall's face, the foam broken along it, each fading out short of other ground
+		var cuts := maxi(1, roundi(L / 0.35))
+		var froth := PackedFloat32Array()
+		for k in cuts + 1:
+			froth.append(maxf(0.0, rr.randf_range(-0.35, 0.95)))
+		for band in [[0.0, 0.26, Color("2c4a56"), 0.85, 0.35], [0.26, 3.2, Color("8fd6d4"), 0.4, 0.0], [0.2, 0.42, Color("f4fbfb"), 1.0, 0.1]]:
+			for k in cuts:
+				var s := [L * k / cuts, L * (k + 1) / cuts]
+				var v := []
+				var al := []
+				for j in 4:
+					var sj: float = s[1 if j in [1, 2] else 0]
+					var w: float = band[1 if j >= 2 else 0]
+					var p := lo + d * sj + n * w
+					v.append(Vector3(p.x, -0.135, p.y))
+					var a: float = band[4 if j >= 2 else 3] * (froth[k + (1 if j in [1, 2] else 0)] if band[2] == Color("f4fbfb") else 1.0)
+					al.append(a if open_water.call(lo + d * sj + n * (band[1] + 0.3)) else 0.0)
+				for j in [0, 1, 2, 0, 2, 3]:
+					lap.set_color(Color(band[2], al[j]))
+					lap.add_vertex(v[j])
 		# a box from s0 to s1 along the edge, w0 to w1 out toward the water (the wall's face at 0), y0 to y1
 		var qb := func(s0: float, s1: float, w0: float, w1: float, y0: float, y1: float, col: Color) -> void:
 			var a := lo + d * s0 + n * w0
@@ -7250,7 +7270,7 @@ func quay(runs: Array, roads: Array) -> void:
 				qb.call(s + side[0], s + side[1], w - 0.05, w, TOP + 0.45 + side[2], TOP + 0.45 + side[3], Color("ea6a2a"))
 			for c in [Vector2(-0.18, 0.0), Vector2(0.18, 0.0), Vector2(0.0, -0.18), Vector2(0.0, 0.18)]:
 				qb.call(s + c.x - 0.045, s + c.x + 0.045, w - 0.055, w + 0.005, TOP + 0.45 + c.y - 0.045, TOP + 0.45 + c.y + 0.045, Color("f4f1e8"))
-	commit([shade, wall_], set_node)
+	commit([lap, wall_], set_node)
 
 
 ## How far along the street (street frame x, on water_runs' grid) the set's street runs: as far as land or a city road
