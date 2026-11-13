@@ -1030,6 +1030,7 @@ var pool_mat: StandardMaterial3D
 var street_pool_mat: StandardMaterial3D  # a street lamp's pool: a broad, evenly lit core with a soft rim
 var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after dark
 var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
+var glare_mat: StandardMaterial3D  # the hot glare of a lit lamp head's lens
 var beam_mat: StandardMaterial3D  # the cone of light falling from a lit lamp head to its pool
 var headlight_mat: StandardMaterial3D  # a moving car's low beams thrown along the road ahead
 var tail_glow_mat: StandardMaterial3D  # the red its tail lamps cast on the road behind
@@ -1158,6 +1159,8 @@ func _ready() -> void:
 			ring.set_pixel(x, y, Color(1, 1, 1, pow(clampf(1.0 - d, 0.0, 1.0), 2.0)))
 	sign_glow_mat.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
 	sign_glow_mat.albedo_texture = ImageTexture.create_from_image(ring)
+	glare_mat = halo_mat.duplicate()
+	glare_mat.albedo_texture = radial([Color.WHITE, Color(1, 1, 1, 0.9), Color(1, 1, 1, 0.3), Color(1, 1, 1, 0)], [0.0, 0.14, 0.38, 1.0])
 	beam_mat = halo_mat.duplicate()
 	beam_mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	var cone := Image.create(32, 64, false, Image.FORMAT_RGBA8)
@@ -1433,6 +1436,7 @@ func update_light() -> void:
 	street_pool_mat.albedo_color = LAMP * Color(1, 1, 1, minf(1.3 * night, 1.0))
 	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
 	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
+	glare_mat.albedo_color = Color(1.0, 0.94, 0.8, 0.95 * night)
 	headlight_mat.albedo_color = Color(1.0, 0.9, 0.7, 0.6 * night)
 	tail_glow_mat.albedo_color = Color(1.0, 0.12, 0.06, 0.6 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
@@ -6750,6 +6754,15 @@ func street_lamp(at: Vector3) -> void:
 	halo.material_override = halo_mat
 	halo.position = at + Vector3(0, 4.2, 1.02 * out)  # below the head, so its housing doesn't hide the bright core
 	set_node.add_child(halo)
+	var glare := MeshInstance3D.new()
+	var gq := QuadMesh.new()
+	gq.size = Vector2(1.2, 1.2)
+	glare.mesh = gq
+	glare.material_override = glare_mat
+	# on the lens, slid toward the camera along its line of sight so the housing can't hide it
+	var p := deg_to_rad(PITCH)
+	glare.position = at + Vector3(0, ay - 0.2, 1.02 * out) + Vector3(sin(PI / 4) * cos(p), sin(p), cos(PI / 4) * cos(p)) * 1.2
+	set_node.add_child(glare)
 	var beam := MeshInstance3D.new()
 	var bq := QuadMesh.new()
 	bq.size = Vector2(3.0, 4.0)
