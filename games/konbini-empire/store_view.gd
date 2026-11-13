@@ -3646,6 +3646,19 @@ func build_buildings() -> void:
 				rec.roof.append(roofs.size())
 				roofs.append([at_, sz, q[5] * k, q[6] * k, Color(q[7]), 0.0, q[0] == 1])
 				rec.h = maxf(rec.h, (q[5] + q[6]) * k)
+		if rec.cut == INF:  # no rooms on the ground: a hall up on its platform shows its widest footing as a plan of its rooms
+			var wide := 0.0
+			for i in rec.box:
+				if boxes[i][3] >= 0.0:
+					rec.style = boxes[i][3]
+			for i in rec.box if rec.has("style") else []:
+				var e: Array = boxes[i]
+				if e[1].y - e[0].y / 2 < 0.5 and e[0].x * e[0].z > wide and e[4] == 0.0:
+					wide = e[0].x * e[0].z
+					rec.plan = i
+					rec.plan_a = e[3]
+			if not rec.has("plan") and not grounds.is_empty():  # and a park keeps what lies below them, its lawns, paths and ponds
+				rec.cut = LOW
 		if st:  # the curved and slanted parts: one mesh in vertex colours, shaded as the plain path of the boxes' shader
 			var mm := multimesh(st.commit(), 1, true, true)
 			mm.set_instance_transform(0, Transform3D.IDENTITY)
@@ -4475,7 +4488,7 @@ func update_fade() -> void:
 					back = kept.end.y
 			elif f.intersects(front) or (f.end.x + f.end.y > depth and foot_rect(f, rec.h).intersects(scr)):
 				state = maxf(f.position.y, edge)
-				if f.end.y - state < 2.0 or rec.get("cut", 0.0) == INF or (not rec.has("lm") and state > f.position.y and box_base[rec.box[0]].basis.x.z != 0.0):  # too thin, turned, or no rooms
+				if f.end.y - state < 2.0 or (rec.get("cut", 0.0) == INF and not rec.has("plan")) or (not rec.has("lm") and state > f.position.y and box_base[rec.box[0]].basis.x.z != 0.0):  # too thin, turned, or nothing low to keep
 					state = GONE
 		if state == rec.hidden and back == rec.get("back", INF):
 			continue
@@ -4497,9 +4510,17 @@ func update_fade() -> void:
 					box_mm.set_instance_custom_data(k, Color(cd.r, sz.y, z1 - z0, cd.a))
 			elif state == STANDING:
 				box_mm.set_instance_transform(k, t)
-				box_mm.set_instance_custom_data(k, Color(cd.r, sz.y, sz.z, cd.a))
+				box_mm.set_instance_custom_data(k, Color(cd.r, sz.y, sz.z, rec.plan_a if k == rec.get("plan", -1) else cd.a))
 			elif state == GONE or (i > 0 and not rec.has("lm")):
 				box_mm.set_instance_transform(k, away)
+			elif rec.has("plan"):
+				var z0 := maxf(state, t.origin.z - sz.z / 2)
+				var z1 := t.origin.z + sz.z / 2
+				if k != rec.plan or z1 - z0 < 2.0:
+					box_mm.set_instance_transform(k, away)
+				else:
+					box_mm.set_instance_transform(k, Transform3D(Basis.from_scale(Vector3(sz.x, LOW, z1 - z0)), Vector3(t.origin.x, LOW / 2, (z0 + z1) / 2)))
+					box_mm.set_instance_custom_data(k, Color(cd.r, LOW, z1 - z0, rec.style))
 			elif rec.has("lm"):
 				# a landmark with rooms on the ground is cut down to them: its plinth and paving stay, its halls show
 				# their floor plans and posts and towers go, so its square isn't left as bare paving
