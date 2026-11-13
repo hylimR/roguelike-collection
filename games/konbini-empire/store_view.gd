@@ -1141,6 +1141,7 @@ var set_node: Node3D
 var actors: Node3D
 var overlay: Control
 var hud_card := Rect2()  # the HUD's store card over the view: the rival's pin keeps clear of it
+var hud_keep: Array = []  # the HUD's chips and buttons over the city map: its labels keep clear of them
 
 
 func _ready() -> void:
@@ -9848,7 +9849,7 @@ func lot_poly(li: int) -> PackedVector2Array:
 func draw_city_marks(font: Font) -> void:
 	if mode != "city":
 		return
-	var taken: Array = []  # rects of labels already placed: one that would overlap them is left out
+	var taken: Array = hud_keep + [Rect2(8, 8, 196, 82)]  # rects already filled, the clock's first: a label that would overlap one is left out
 	var room_for := func(r: Rect2) -> bool:
 		if taken.any(func(q): return q.intersects(r)):
 			return false
@@ -9878,23 +9879,41 @@ func draw_city_marks(font: Font) -> void:
 		overlay.draw_style_box(round_box(Color(0.22, 0.16, 0.1, 0.62), r.size.y / 2), r)
 		overlay.draw_string(bf, Vector2(at.x - w / 2, at.y), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, px, Color("fff1c9") if d.type == "hub" else Color("f7f3e8"))
 	if zoom < 0.45:
+		# a street's name on a cream tag laid along it, a Shuto route's number on a green plate ringed by a white rule,
+		# each left out unless it sits wholly on screen
+		var view := Rect2(Vector2.ZERO, size).grow(-4.0)
 		for av in C.avenues:
 			if av.name == "":
 				continue
 			var pts: PackedVector2Array = av.pts
-			var third: Vector2 = pts[av.get("third", int(pts.size() / 3.0))]
-			var at := screen_world(Vector3(third.x, 0, third.y))
-			var w := font.get_string_size(av.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
-			if room_for.call(Rect2(at + Vector2(-w / 2 - 2, -10), Vector2(w + 4, 13))):
-				overlay.draw_string_outline(font, at + Vector2(-50, 0), av.name, HORIZONTAL_ALIGNMENT_CENTER, 100, 10, 3, Color(1, 1, 1, 0.7))
-				overlay.draw_string(font, at + Vector2(-50, 0), av.name, HORIZONTAL_ALIGNMENT_CENTER, 100, 10, Color("5d5f66"))
+			var i: int = av.get("third", int(pts.size() / 3.0))
+			var at := screen_world(Vector3(pts[i].x, 0, pts[i].y))
+			var a: Vector2 = pts[maxi(i - 1, 0)]
+			var z: Vector2 = pts[mini(i + 1, pts.size() - 1)]
+			var ang := wrapf((screen_world(Vector3(z.x, 0, z.y)) - screen_world(Vector3(a.x, 0, a.y))).angle(), -PI / 2, PI / 2)
+			var w := font.get_string_size(av.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 9).x + 10
+			var h := font.get_ascent(9) + font.get_descent(9) + 3
+			var ext := Vector2(absf(w * cos(ang)) + absf(h * sin(ang)), absf(w * sin(ang)) + absf(h * cos(ang)))
+			var box := Rect2(at - ext / 2, ext)
+			if not view.encloses(box) or not room_for.call(box):
+				continue
+			overlay.draw_set_transform(at, ang)
+			overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.28), h / 2), Rect2(-w / 2, -h / 2 + 1.5, w, h))
+			overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.92), h / 2), Rect2(-w / 2, -h / 2, w, h))
+			overlay.draw_string(font, Vector2(-w / 2, (font.get_ascent(9) - font.get_descent(9)) / 2), av.name, HORIZONTAL_ALIGNMENT_CENTER, w, 9, Color("4f5562"))
+			overlay.draw_set_transform(Vector2.ZERO)
 		for sh in C.shuto:
 			var pts: PackedVector3Array = sh.pts
 			var at := screen_world(pts[sh.get("mid", int(pts.size() / 2.0))] + Vector3(0, 1.5, 0))
-			if room_for.call(Rect2(at + Vector2(-13, -9), Vector2(26, 16))):
-				overlay.draw_rect(Rect2(at + Vector2(-13, -9), Vector2(26, 16)), Color("1f6f43"))
-				overlay.draw_rect(Rect2(at + Vector2(-13, -9), Vector2(26, 16)), Color.WHITE, false, 1.5)
-				overlay.draw_string(font, at + Vector2(-13, 4), sh.name, HORIZONTAL_ALIGNMENT_CENTER, 26, 11, Color.WHITE)
+			var w := maxf(22.0, bf.get_string_size(sh.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x + 12)
+			var r := Rect2(at - Vector2(w / 2, 9), Vector2(w, 17))
+			if not view.encloses(r) or not room_for.call(r):
+				continue
+			overlay.draw_style_box(round_box(Color(0.12, 0.16, 0.12, 0.3), 4), Rect2(r.position + Vector2(0, 2), r.size))
+			overlay.draw_style_box(round_box(Color("1f6f43"), 4), r)
+			overlay.draw_style_box(round_box(Color("f4f6f0"), 3), r.grow(-1.5))
+			overlay.draw_style_box(round_box(Color("23794a"), 2), r.grow(-2.5))
+			overlay.draw_string(bf, Vector2(r.position.x, at.y + (bf.get_ascent(10) - bf.get_descent(10)) / 2 - 0.5), sh.name, HORIZONTAL_ALIGNMENT_CENTER, w, 10, Color.WHITE)
 	var offered := {}
 	if pick == "listing" and sim.choice != null and sim.choice.source == "listing":
 		for k in sim.choice.options.size():

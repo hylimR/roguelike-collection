@@ -89,6 +89,7 @@ var grow_btn: Button
 var store_btn: Button
 var city_btn: Button
 var banner: Label
+var hud_rows: Array[Container] = []  # the HUD's rows over the view, whose chips the map's labels keep clear of
 var dev_js: JavaScriptObject  # keeps the web build's dev hook alive
 
 
@@ -458,6 +459,7 @@ func build() -> void:
 	row.add_theme_constant_override("separation", 6)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bottom.add_child(row)
+	hud_rows = [top, clock_row, tabs, row]
 	ability_row = HBoxContainer.new()
 	ability_row.add_theme_constant_override("separation", 6)
 	ability_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -634,6 +636,12 @@ func _process(delta: float) -> void:
 		sim.tick(minf(0.05, delta) * speed)
 	drain()
 	view.hud_card = Rect2(store_card.global_position - view.global_position, store_card.size) if store_card.visible else Rect2()
+	view.hud_keep.clear()
+	if view.mode == "city":
+		for row in hud_rows:
+			for c in row.get_children():
+				if c is Control and c.visible:
+					view.hud_keep.append(Rect2(c.global_position - view.global_position, c.size).grow(3.0))
 	for t in toasts:
 		t[2] -= delta
 	toasts = toasts.filter(func(t): return t[2] > 0.0)
