@@ -1409,7 +1409,7 @@ func update_light() -> void:
 	tail_glow_mat.albedo_color = Color(1.0, 0.12, 0.06, 0.6 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
 	var on := 1.0 if room_dim == Color.WHITE or mode != "store" else 0.0
-	shop_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night * on)
+	shop_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * night * on)
 	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night * on)
 	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night * on)
 	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.75 * night)
@@ -1468,6 +1468,37 @@ func spill(parent: Node3D, cx: float, w: float, face_z: float, m: Material = nul
 		var g := parent.global_position + Vector3(x, 0, face_z + 1.2)
 		pools.append(Vector3(g.x, g.z, 2.2))
 		x += 2.5
+
+
+## Your shop's light out of its glass front (zl to 6.6, shop-local) over the sidewalk, as spill() lays it: panes
+## fanning out from the ceiling lights, split by the mullions' soft shadows, brightest out of the open door.
+func shop_spill_tex(zl: float) -> ImageTexture:
+	var x0 := zl - 1.0
+	var w := 7.6 - x0
+	var cx := (zl + 6.6) / 2
+	var mull: Array[float] = []
+	for seg in [Vector2(zl, Sim.DOOR_IN.x - 0.8), Vector2(Sim.DOOR_IN.x + 0.8, 6.6)]:
+		var bays := maxi(1, roundi((seg.y - seg.x) / 1.6))
+		for k in bays + 1:
+			mull.append(seg.x + 0.045 + (seg.y - seg.x - 0.09) * k / bays)
+	var iw := int(w * 16)
+	var img := Image.create(iw, 64, false, Image.FORMAT_RGBA8)
+	for y in 64:
+		var d := (y + 0.5) / 64.0 * 4.6
+		var fall := pow(1.0 - d / 4.6, 1.5) * (0.7 + 0.3 * exp(-2.0 * d))
+		var spread := 0.25 * d  # the light fans past the glass's ends as it falls away from it
+		for x in iw:
+			var lx := x0 + (x + 0.5) / 16.0
+			var a := smoothstep(zl - spread - 0.3, zl - spread + 0.5, lx) * smoothstep(6.6 + spread + 0.3, 6.6 + spread - 0.5, lx)
+			var shade := 1.0
+			for m in mull:
+				var sx := m + (m - cx) * d / 7.0
+				var sw := 0.08 + 0.09 * d
+				shade -= 0.6 * exp(-pow((lx - sx) / sw, 2.0)) * (1.0 - d / 6.0)
+			var door := exp(-pow((lx - Sim.DOOR_IN.x - (Sim.DOOR_IN.x - cx) * d / 7.0) / (0.7 + 0.12 * d), 4.0))
+			a *= maxf(shade, 0.35) * (0.8 + 0.45 * door) * fall
+			img.set_pixel(x, y, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
+	return ImageTexture.create_from_image(img)
 
 
 func ground_mat(tex_: ImageTexture) -> StandardMaterial3D:
@@ -6369,6 +6400,7 @@ func build_set() -> void:
 		lit_sprites.append(s)
 		blob(host, p[1], PROP_BLOB.get(p[0], OUTDOOR_SCALE[p[0]] * 1.5))
 		outdoor_cast(host, p[0], p[1], OUTDOOR_SCALE[p[0]] * 0.55)
+	shop_spill_mat.albedo_texture = shop_spill_tex(zl)
 	spill(set_node, Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7, shop_spill_mat)  # your shop's open front
 	a_board(Vector2(-8.3, -6.2), 0.35)
 	blob(set_node, Vector2(-8.3, -6.2), 0.45)
