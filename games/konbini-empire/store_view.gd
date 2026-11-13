@@ -2650,6 +2650,7 @@ func build_shore() -> void:
 	pts.append(coast[coast.size() - 1])
 	var norms := PackedVector2Array()
 	var keep := PackedFloat32Array()
+	var land := PackedFloat32Array()
 	var near: Rect2 = C.bounds.grow(120.0)
 	for i in pts.size():
 		var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
@@ -2657,6 +2658,7 @@ func build_shore() -> void:
 		norms.append(n)
 		var q := pts[i] + n * 9.0
 		var dry := not Sim.City.is_water(C, q) and not Geometry2D.is_point_in_polygon(q, bay_mouth)
+		land.append(1.0 if dry else 0.0)
 		keep.append(1.0 if dry and (not near.has_point(q) or Sim.City.nearest(C, q)[1] > Sim.City.URBAN + 6.0 and not Sim.City.blocked(C, Rect2(q - Vector2(6, 6), Vector2(12, 12)))) else 0.0)
 	# each beach tapers in over its first and last 30 m rather than stopping square
 	var fade := keep.duplicate()
@@ -2713,7 +2715,59 @@ func build_shore() -> void:
 				var c: Color = w[2]
 				surf.set_color(Color(c, al[j]))
 				surf.add_vertex(Vector3(v[j].x, -0.12, v[j].y))
-	commit([sand, surf], city)
+	# the built-up shore between the beaches, and the landfill islands all round, are quays
+	var cope := surface(ground_mat(paving()))
+	var lap := surface(sm)
+	for i in pts.size():
+		land[i] *= 1.0 - fade[i]
+	seawall(cope, lap, pts, norms, land)
+	for isl in C.islands:
+		var ring := PackedVector2Array()
+		for i in isl.size():
+			var n := ceili(isl[i].distance_to(isl[(i + 1) % isl.size()]) / 4.0)
+			for k in n:
+				ring.append(isl[i].lerp(isl[(i + 1) % isl.size()], float(k) / n))
+		ring.append(ring[0])
+		var inward := PackedVector2Array()
+		var all := PackedFloat32Array()
+		for i in ring.size():
+			var t := (ring[(i + 1) % (ring.size() - 1)] - ring[(i - 1 + ring.size() - 1) % (ring.size() - 1)]).normalized()
+			var n := Vector2(t.y, -t.x)
+			inward.append(n if Geometry2D.is_point_in_polygon(ring[i] + n * 2.0, isl) else -n)
+			all.append(1.0)
+		seawall(cope, lap, ring, inward, all)
+	commit([sand, surf, cope, lap], city)
+
+
+## A seawall along pts (n: unit normals toward the land, w: 0..1 how much of one stands there): a stone coping along the
+## edge, its lip darker, and out over the water the wall's wet foot, a lap of foam along it and paler water fading off
+## it. Water bands fade out where the ground beyond them isn't water, so they never tint another shore across a channel.
+func seawall(cope: SurfaceTool, lap: SurfaceTool, pts: PackedVector2Array, n: PackedVector2Array, w: PackedFloat32Array) -> void:
+	var lip := Color("8e8b84")
+	var stone := Color("d8d4ca")
+	var wall := Color("3e5a66")
+	var foam := Color("f4fbfb")
+	var shallow := Color("8fd6d4")
+	for i in pts.size() - 1:
+		var wa := w[i]
+		var wb := w[i + 1]
+		if wa <= 0.0 and wb <= 0.0:
+			continue
+		var a := pts[i]
+		var b := pts[i + 1]
+		for c in [[0.0, 0.35, lip], [0.35, 1.6, stone]]:
+			var v := [a + n[i] * c[0] * wa, b + n[i + 1] * c[0] * wb, b + n[i + 1] * c[1] * wb, a + n[i] * c[1] * wa]
+			for j in [0, 1, 2, 0, 2, 3]:
+				cope.set_color(c[2])
+				cope.set_uv(v[j] * 0.25)
+				cope.add_vertex(Vector3(v[j].x, -0.13, v[j].y))
+		for c in [[0.0, -0.45, wall, 0.7, 0.7], [-0.45, -1.4, foam, 0.75, 0.15], [-1.4, -8.0, shallow, 0.38, 0.0]]:
+			var v := [a + n[i] * c[0] * wa, b + n[i + 1] * c[0] * wb, b + n[i + 1] * c[1] * wb, a + n[i] * c[1] * wa]
+			var al := [c[3] * wa, c[3] * wb, c[4] * wb, c[4] * wa]
+			for j in [0, 1, 2, 0, 2, 3]:
+				var wet: bool = Sim.City.is_water(C, (a if j in [0, 3] else b) + (n[i] if j in [0, 3] else n[i + 1]) * -9.0)
+				lap.set_color(Color(c[2], al[j] if wet else 0.0))
+				lap.add_vertex(Vector3(v[j].x, -0.125, v[j].y))
 
 
 ## The palace moat as triangles: a ring of water from the park's lawn (the same 40-point ellipse) out to the moat's
