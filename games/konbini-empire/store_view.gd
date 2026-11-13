@@ -3869,11 +3869,24 @@ func facade_atlas() -> Array:
 						lobby.call(0, 5, 32, 25, fixed("8c959e"))
 						r.call(0, 30, 32, 2, fixed("8a8a84"))
 				1:  # concrete office, ribbon windows
-					if up:
-						r.call(0, 9, 32, 13, glass)
-						for x in [7, 15, 23, 31]:
-							r.call(x, 9, 1, 13, wall_px(0.9))
-						r.call(0, 22, 32, 2, wall_px(0.8))
+					if up:  # a band of panes in aluminium frames under the slab's shadow: the sky across the top of the glass, a
+						# glint across each pane, office blinds let down part way in some (lit with the room after dark), a sill
+						r.call(0, 8, 32, 1, wall_px(0.62))
+						r.call(0, 9, 32, 13, fixed("c4c9cc"))
+						for x0 in [0, 8, 16, 24]:
+							r.call(x0, 10, 7, 11, glass)
+							r.call(x0, 10, 7, 2, fixed("5d7f9c"))
+							r.call(x0, 10, 7, 1, fixed("6f8fa8"))
+							for i in 5:
+								r.call(x0 + 1 + i, 19 - i, 2, 1, glass2)
+						for b in [[8, 4], [24, 6]]:
+							r.call(b[0], 10, 7, b[1], fixed("e6dcc6"))
+							r.call(b[0], 10 + b[1], 7, 1, fixed("ece6d2"))
+							for y in range(12, 10 + b[1], 3):
+								r.call(b[0], y, 7, 1, fixed("cbbfa6"))
+						r.call(0, 21, 32, 1, fixed("8a9096"))
+						r.call(0, 22, 32, 1, fixed("e2e4e2"))
+						r.call(0, 23, 32, 1, wall_px(0.6))
 					else:  # the lobby set into the wall under a steel canopy, up a step
 						r.call(0, 8, 32, 2, fixed("b8bcc0"))
 						r.call(0, 10, 32, 1, fixed("5a6068"))
