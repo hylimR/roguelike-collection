@@ -1044,6 +1044,8 @@ var sign_glow_mat: StandardMaterial3D  # the glow round your lit pole sign
 var fascia_glows: Array = []  # [weakref to the glow round a rival's lit fascia, its chain's colour]
 var fascia_glow_tex: ImageTexture
 var snow_tex: ImageTexture  # patchy settled snow, tiled 8 m
+var snow_walk_tex: ImageTexture  # a sidewalk's snow across its 3.5 m from wall to kerb, tiled 8 m along it
+var snow_lot_tex: ImageTexture  # the car park's ploughed snow
 var snow_cover: MeshInstance3D  # the set's snowy ground, shown on a cold snap
 var matsuri: Node3D  # the set's festival lanterns and yatai, shown on a Summer Matsuri
 var lantern_glow_mat: StandardMaterial3D
@@ -1185,6 +1187,12 @@ func _ready() -> void:
 	headlight_mat.albedo_texture = ImageTexture.create_from_image(throw)
 	tail_glow_mat = pool_mat.duplicate()
 	snow_tex = snow_patches()
+	var walk := func(d: float) -> float:  # d metres out from the wall toward the kerb
+		return 0.2 * exp(-pow(d / 0.55, 2.0)) + 0.4 * smoothstep(2.5, 3.3, d) - 0.26 * exp(-pow((d - 1.7) / 0.8, 2.0))
+	snow_walk_tex = snow_patches(256, 112, func(_x: float, d: float) -> float: return walk.call(d))
+	snow_lot_tex = snow_patches(227, 282, func(x: float, z: float) -> float:  # 7.1 x 8.8 m, the street at z 8.8
+		var edge := minf(x, 7.1 - x)
+		return -0.2 + 0.5 * smoothstep(1.6, 0.2, z) + 0.3 * smoothstep(0.9, 0.1, edge) * smoothstep(5.5, 3.0, z) + 0.25 * exp(-pow((x - 6.0) / 1.1, 2.0) - pow((z - 1.2) / 1.5, 2.0)))
 	lamp_mat = StandardMaterial3D.new()
 	lamp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	lamp_mat.vertex_color_use_as_albedo = true
@@ -4953,7 +4961,9 @@ func lamps_on(node: Sprite3D) -> void:
 ## Settled snow for an 8 m repeat at 32 px a metre: drifts on seamless noise, each mounded up from a thin rim to a
 ## rounded body, lit on the slopes that face the sun and cool blue on those turned away, thinning to a translucent rim
 ## with the ground showing through, round it a margin of wet, darkened ground flecked with powder, and the odd glint.
-func snow_patches() -> ImageTexture:
+## Given a size and `lie` (metres across and down the texture to a bias), it lays one shaped patch instead of a tile:
+## snow heaped where the bias is up, trodden or ploughed down to wet ground where it is down.
+func snow_patches(w := 256, h := 256, lie := Callable()) -> ImageTexture:
 	const N := 256
 	var fn := FastNoiseLite.new()
 	fn.seed = 23
@@ -4965,21 +4975,30 @@ func snow_patches() -> ImageTexture:
 	fn.frequency = 0.25
 	fn.fractal_octaves = 1
 	var grain := fn.get_seamless_image(N, N).get_data()
+	var lies := lie.is_valid()
+	var vals := PackedFloat32Array()
+	vals.resize(w * h)
 	var height := PackedFloat32Array()
-	height.resize(N * N)
-	for i in N * N:
-		var v := drifts[i] / 255.0
-		height[i] = sqrt(clampf((v - 0.5) / 0.14, 0.0, 1.0)) + 0.8 * v
+	height.resize(w * h)
+	for y in h:
+		for x in w:
+			var v := drifts[y % N * N + x % N] / 255.0
+			if lies:
+				v += lie.call((x + 0.5) / 32.0, (y + 0.5) / 32.0)
+			vals[y * w + x] = v
+			height[y * w + x] = sqrt(clampf((v - 0.5) / 0.14, 0.0, 1.0)) + 0.8 * v
 	var sun := Vector2(SUN.x, SUN.z).normalized()
-	var img := Image.create(N, N, false, Image.FORMAT_RGBA8)
-	for y in N:
-		for x in N:
-			var v := drifts[y * N + x] / 255.0
-			var g := grain[y * N + x] / 255.0 - 0.5
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		var yu := (y + 2) % h if not lies else mini(y + 2, h - 1)
+		var yd := (y + h - 2) % h if not lies else maxi(y - 2, 0)
+		for x in w:
+			var v := vals[y * w + x]
+			var g := grain[y % N * N + x % N] / 255.0 - 0.5
 			var c := Color(1, 1, 1, 0)
 			if v > 0.5:
-				var dx := height[y * N + (x + 2) % N] - height[y * N + (x + N - 2) % N]
-				var dz := height[(y + 2) % N * N + x] - height[(y + N - 2) % N * N + x]
+				var dx := height[y * w + (x + 2) % w] - height[y * w + (x + w - 2) % w]
+				var dz := height[yu * w + x] - height[yd * w + x]
 				var lit := clampf(-(dx * sun.x + dz * sun.y) * 6.0, -1.0, 1.0)
 				c = Color(0.93, 0.95, 0.99).lerp(Color(1.0, 1.0, 0.98), lit) if lit > 0.0 else Color(0.93, 0.95, 0.99).lerp(Color(0.72, 0.79, 0.92), -lit)
 				c = c.darkened(0.03 * g)
@@ -4997,22 +5016,28 @@ func snow_patches() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-## Snow lying on the set: drifts over the sidewalks and the car park, and on the road a dusting along the kerbs and
-## between the wheel tracks, which stay dark. Hidden until a cold snap.
+## Snow lying on the set: on each sidewalk a ridge shovelled up along the kerb and a drift against the walls either
+## side of a trodden path of wet paving, the car park ploughed into heaps round its edges, and on the road a dusting
+## along the kerbs and between the wheel tracks, which stay dark. Hidden until a cold snap.
 func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 	var deep := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
 	var thin := surface(mat(Color(1, 1, 1, 0.6), snow_tex))
-	for sd in [[far_gaps, -7.2], [near_gaps, 3.7]]:
+	var walk := surface(mat(Color(1, 1, 1, 0.999), snow_walk_tex))
+	for sd in [[far_gaps, -7.2, 0.0], [near_gaps, 3.7, 1.0]]:  # v runs from the wall (0) to the kerb (1)
 		for o in open_spans(sd[0]):
-			rect_quad(deep, Rect2(o.x, sd[1], o.y - o.x, 3.5), -0.034, 0.0, false, 0.125)
-	rect_quad(deep, Rect2(-3.4, -16.0, 7.1, 8.8), -0.034, 0.0, false, 0.125)
+			var z0: float = sd[1]
+			add_quad(walk, [Vector3(o.x, -0.034, z0), Vector3(o.y, -0.034, z0), Vector3(o.y, -0.034, z0 + 3.5), Vector3(o.x, -0.034, z0 + 3.5)],
+					[Vector2(o.x / 8.0, sd[2]), Vector2(o.y / 8.0, sd[2]), Vector2(o.y / 8.0, 1.0 - sd[2]), Vector2(o.x / 8.0, 1.0 - sd[2])])
+	var lot := surface(mat(Color(1, 1, 1, 0.999), snow_lot_tex))
+	add_quad(lot, [Vector3(-3.4, -0.034, -16.0), Vector3(3.7, -0.034, -16.0), Vector3(3.7, -0.034, -7.2), Vector3(-3.4, -0.034, -7.2)],
+			[Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
 	var span := rival_span(branch.rival)
 	rect_quad(deep, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(-16.5, -20.2, 20.2, 3.95), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(span.x + 0.2, -16.0, span.y - span.x - 0.4, 8.6), 4.27, 0.0, false, 0.125)  # the rival's roof, round its kit
 	for band in [Vector2(-3.7, -3.05), Vector2(-2.25, -1.55), Vector2(-0.45, 0.45), Vector2(1.55, 2.25), Vector2(3.05, 3.7)]:
 		rect_quad(thin, Rect2(street_x.x, band.x, street_x.y - street_x.x, band.y - band.x), -0.034, 0.0, false, 0.125)
-	var mi := commit([deep, thin], set_node)
+	var mi := commit([deep, thin, walk, lot], set_node)
 	mi.visible = false
 	return mi
 
