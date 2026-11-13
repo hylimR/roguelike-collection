@@ -6355,9 +6355,6 @@ func build_set() -> void:
 		var vw := mine + 16.2  # stops short of your left wall, so the two faces don't fight
 		var vx := (mine - 16.8) / 2
 		block(set_node, Vector3(vw, 3.6, 9.0), Vector3(vx, 1.8, -11.7), Color("d9d3c4"))
-		block(set_node, Vector3(vw + 0.2, 0.14, 0.35), Vector3(vx, 3.67, -7.3), Color("5b4632"))
-		block(set_node, Vector3(0.35, 0.14, 9.3), Vector3(vx - vw / 2, 3.67, -11.7), Color("5b4632"))
-		block(set_node, Vector3(vw + 0.2, 0.14, 0.35), Vector3(vx, 3.67, -16.1), Color("5b4632"))
 		# its roof: a weathered membrane laid in strips with a drain, an old water tank on a frame, two tired AC units
 		# and a vent stack, all kept low so nothing rises over your shop
 		var xl := vx - vw / 2
@@ -6368,6 +6365,10 @@ func build_set() -> void:
 		commit([drift], snow_cover)
 		var kit := surface(km)
 		var faces := surface(condenser())
+		# the parapet, its walls under a coping in your unit's brown trim that overhangs them both ways
+		for pr in [[xl, -7.42, xl + vw, -7.2], [xl, -16.2, xl + vw, -15.98], [xl, -16.2, xl + 0.22, -7.2], [xl + vw - 0.22, -16.2, xl + vw, -7.2]]:
+			box_into(kit, Vector3(pr[0], 3.6, pr[1]), Vector3(pr[2], 3.88, pr[3]), Color("e3ddcf"))
+			box_into(kit, Vector3(pr[0] - 0.04, 3.88, pr[1] - 0.04), Vector3(pr[2] + 0.04, 3.95, pr[3] + 0.04), Color("5b4632"))
 		# the tank: a frame of angle legs braced across under a deck, the FRP drum on it ringed by two hoops, a lid with its
 		# manhole hatch, a vent cap, a sight gauge down its sunny side and the supply pipe dropping down a leg to the roof
 		var tank := Vector3(xl + 1.0, 3.6, -14.9)
@@ -7761,8 +7762,9 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 
 
 ## The vacant unit's roof, left to weather: membrane strips lapped every 1.4 m, each a shade off and mottled with grime,
-## tide-marked stains where rain has ponded, a patch of newer membrane, the coping's shadow, a dark seam round the tank's
-## legs, AC units and vent stack and each one's shadow away from the sun. 10 px a metre, street frame.
+## tide-marked stains where rain has ponded, a patch of newer membrane, dimming toward the parapet's foot all round under
+## its shadow along the sunny sides, a dark seam round the tank's legs, AC units and vent stack and each one's shadow away
+## from the sun. 10 px a metre, street frame.
 func vacant_roof(xl: float, vw: float) -> StandardMaterial3D:
 	var iw := roundi((vw - 0.4) * 10.0)
 	if -iw in roof_texs:
@@ -7814,13 +7816,19 @@ func vacant_roof(xl: float, vw: float) -> StandardMaterial3D:
 			if patch.has_point(Vector2(x, z)):
 				f = f0 * (0.82 if patch.grow(-0.1).has_point(Vector2(x, z)) else 0.72)
 			for pd in ponds:
-				var d: float = Vector2((x - pd[0].x) * 0.8, z - pd[0].y).length() / pd[1] * lerpf(0.8, 1.2, g)
-				if d < 1.0:
-					f *= 0.92 if d < 0.86 else 0.84  # a tide mark round its rim
+				var d: float = Vector2((x - pd[0].x) * 0.8, z - pd[0].y).length() / pd[1] * lerpf(0.85, 1.15, g)
+				if d < 0.88:
+					f *= lerpf(0.9, 0.96, smoothstep(0.0, 0.88, d))  # darkest where it pooled deepest
+				elif d < 1.0:
+					f *= 0.88  # a tide mark round its rim
 				elif d < 1.15:
-					f *= 1.05
-			if i < 2 or j >= ih - 2:
-				f *= 0.8
+					f *= 1.03
+			# the parapet: dimming the membrane toward its foot all round, its shadow a soft band along the sunny sides
+			var rx := iw / 10.0 - gx
+			var rz := ih / 10.0 - gz
+			for d in [gx, rx, gz, rz]:
+				f *= lerpf(0.8, 1.0, smoothstep(0.0, 0.9, d))
+			f *= lerpf(0.62, 1.0, minf(smoothstep(0.1, 0.26, gx), smoothstep(0.18, 0.38, rz)))
 			for c in casts:
 				var at: Rect2 = c[0]
 				var p: Vector2 = Vector2(x, z) - c[1]
