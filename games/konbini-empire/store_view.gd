@@ -154,6 +154,29 @@ void fragment() {
 }
 """
 const FOOT := Vector3(0.7, 0.35, 1.6)  # a person's shadow plane: width, behind the feet, and the height it casts
+# a city tree's shadows (build_trees): a soft patch round its foot (COLOR.r 1), kept faintly after dark, and its
+# crown's laid away from the sun, stretched along it through golden hour
+const TREE_SHADOW_SHADER := """
+shader_type spatial;
+render_mode unshaded, depth_draw_never, cull_disabled;
+uniform sampler2D blob : source_color;
+uniform float strength;
+uniform float contact;
+uniform float stretch = 1.0;
+uniform vec2 dir;
+varying float foot;
+
+void vertex() {
+	foot = COLOR.r;
+	VERTEX.xz += dir * dot(VERTEX.xz, dir) * (stretch - 1.0) * (1.0 - foot);
+}
+
+void fragment() {
+	vec4 c = texture(blob, UV);
+	ALBEDO = c.rgb;
+	ALPHA = c.a * mix(strength, contact, foot);
+}
+"""
 # Farmland: each field's crop colour, furrowed, under the hour's light; after dark the crops fade into one dark green
 # so the lit city stands out rather than a patchwork of maroon, olive and green round it, while the lanes stay gravel.
 const FIELD_SHADER := """
@@ -992,7 +1015,8 @@ var building_mat: ShaderMaterial
 var roof_mm: MultiMesh
 var roof_base: Array = []
 var pillar_mm: MultiMesh
-var tree_mms: Array = []  # [MultiMesh, base transforms, height]
+var tree_mms: Array = []  # [MultiMesh, base transforms, height, its shadows' MultiMesh]
+var tree_shadow_mat: ShaderMaterial
 var mask_vp: SubViewport  # the city seen from the sun, for ground shadows
 var shadow_mat: ShaderMaterial
 var run_off_shadow_mat: StandardMaterial3D  # the shadows the expressway lays out of town, past shadow_mat's reach
@@ -1382,6 +1406,10 @@ func update_light() -> void:
 		run_off_shadow_mat.albedo_color = Color(0.08, 0.1, 0.2, 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	cast_mat.albedo_color.a = 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
 	crown_mat.albedo_color.a = 0.62 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
+	if tree_shadow_mat:
+		tree_shadow_mat.set_shader_parameter("strength", crown_mat.albedo_color.a)
+		tree_shadow_mat.set_shader_parameter("contact", 0.7 - 0.3 * night)
+		tree_shadow_mat.set_shader_parameter("stretch", 1.0 + 0.9 * golden_at(h))
 	awning_mat.albedo_color.a = 0.36 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
 	foot_mat.set_shader_parameter("core", 0.5 - 0.15 * night)
 	foot_mat.set_shader_parameter("sun", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
@@ -4080,6 +4108,13 @@ func build_trees() -> void:
 			if country(Rect2(p - Vector2.ONE, Vector2(2, 2)), 8.0):
 				add.call([1, 1, 3, 1, 4][r.randi() % 5], p, r.randf_range(0.7, 1.1))
 	tree_mms.clear()
+	var d := Vector2(-SUN.x, -SUN.z) / SUN.y
+	var dn := d.normalized()
+	tree_shadow_mat = ShaderMaterial.new()
+	tree_shadow_mat.shader = Shader.new()
+	tree_shadow_mat.shader.code = TREE_SHADOW_SHADER
+	tree_shadow_mat.set_shader_parameter("blob", soft_mat.albedo_texture)
+	tree_shadow_mat.set_shader_parameter("dir", dn)
 	for id in spots:
 		var qs: Vector2 = Vector2(OUTDOOR, OUTDOOR) * OUTDOOR_PX * OUTDOOR_SCALE[id]
 		var q := QuadMesh.new()
@@ -4095,15 +4130,33 @@ func build_trees() -> void:
 		m.billboard_keep_scale = true
 		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		lit_mats.append([weakref(m), Color.WHITE, 0.0])
+		var st := SurfaceTool.new()  # its shadows: the patch round its foot, then its crown's as outdoor_cast lays it
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var f := 0.3 * qs.y
+		var quads := [[Vector2(-f, -f), Vector2(f, -f), Vector2(f, f), Vector2(-f, f), 1.0]]
+		for c in OUTDOOR_CAST[id]:
+			if c.size() > 3:
+				var near: Vector2 = dn * c[0] * qs.y * d.length()
+				var far: Vector2 = dn * c[1] * qs.y * d.length()
+				var w: Vector2 = dn.orthogonal() * c[2] * qs.y / 2
+				quads.append([near - w, near + w, far + w, far - w, 0.0])
+		for qd in quads:
+			st.set_color(Color(qd[4], 0, 0))
+			for k in [0, 1, 2, 0, 2, 3]:
+				st.set_uv([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)][k])
+				st.add_vertex(Vector3(qd[k].x, -0.03, qd[k].y))
 		var list: Array = spots[id]
 		var mm := multimesh(q, list.size())
+		var sh := multimesh(st.commit(), list.size())
 		var base := []
 		for k in list.size():
 			var tf := Transform3D(Basis.from_scale(Vector3.ONE * list[k][1]), list[k][0])
 			mm.set_instance_transform(k, tf)
+			sh.set_instance_transform(k, tf)
 			base.append(tf)
+		mm_node(sh, tree_shadow_mat, city)
 		mm_node(mm, m, city)
-		tree_mms.append([mm, base, qs.y])
+		tree_mms.append([mm, base, qs.y, sh])
 
 
 ## Plots, and in city mode every branch's storefront with its rival beside it (the focused one is the street set).
@@ -4336,7 +4389,9 @@ func update_fade() -> void:
 			var cut: bool = taken.call(Rect2(p.x - 1.5, p.z - 1.5, 3, 3)) or lot_feet.any(func(q): return q.has_point(Vector2(p.x, p.z))) or (on and p.x + p.z > depth and foot_rect(Rect2(p.x - 1.5, p.z - 1.5, 3, 3), tm[2]).intersects(scr))
 			if tm[0].get_instance_transform(k) != (away if cut else tm[1][k]):
 				tm[0].set_instance_transform(k, away if cut else tm[1][k])
+				tm[3].set_instance_transform(k, away if cut else tm[1][k])
 				dirty[tm[0]] = true
+				dirty[tm[3]] = true
 	# the decks overhead, their pillars and the trains always stay: the city keeps them off the set (City.under_deck)
 	# and the set's own buildings and street furniture keep out from under them (decks_near)
 	# the Compatibility renderer can keep drawing a MultiMesh's old instances after it has been drawn and then edited
@@ -4354,6 +4409,8 @@ func update_fade() -> void:
 			for tm in tree_mms:
 				if tm[0] == mm:
 					tm[0] = fresh
+				elif tm[3] == mm:
+					tm[3] = fresh
 	if mask_vp:
 		mask_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
