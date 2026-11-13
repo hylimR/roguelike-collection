@@ -6460,12 +6460,21 @@ func build_set() -> void:
 	for kb in [Rect2(-3.4, -16.25, 7.1, 0.25), Rect2(3.45, -16.25, 0.25, 9.05)]:  # kerb round the back and side
 		rect_quad(kerb, kb, -0.036)
 	var hatch := surface(mat(Color("e2c048")))
-	var hz := -15.4
-	while hz < -11.2:  # yellow hatching keeps the strip along your wall clear for bicycles
-		add_quad(hatch, [Vector3(-3.25, -0.038, hz), Vector3(-3.25, -0.038, hz + 0.16), Vector3(-2.35, -0.038, hz + 0.66), Vector3(-2.35, -0.038, hz + 0.5)], [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
-		hz += 0.7
-	for hr in [Rect2(-3.3, -15.6, 1.04, 0.1), Rect2(-3.3, -11.1, 1.04, 0.1), Rect2(-3.3, -15.6, 0.1, 4.6)]:
+	# the strip along your wall kept clear for bicycles: a yellow box, closed all round, hatched at 45 degrees inside
+	var hb := Rect2(-3.22, -15.52, 0.76, 4.34)
+	for hr in [Rect2(-3.3, -15.6, 0.92, 0.08), Rect2(-3.3, -11.18, 0.92, 0.08), Rect2(-3.3, -15.6, 0.08, 4.5), Rect2(-2.46, -15.6, 0.08, 4.5)]:
 		rect_quad(hatch, hr, -0.038)
+	var hc := hb.position.y - hb.end.x + 0.25
+	while hc < hb.end.y - hb.position.x:  # each stripe the band between z = x + c and z = x + c + 0.12, cut to the box
+		var ends: Array[Vector3] = []
+		for e: float in [hc, hc + 0.12]:
+			var xa := maxf(hb.position.x, hb.position.y - e)
+			var xb := minf(hb.end.x, hb.end.y - e)
+			ends.append(Vector3(xa, xb, e))
+		if ends[0].x < ends[0].y and ends[1].x < ends[1].y:
+			add_quad(hatch, [Vector3(ends[0].x, -0.038, ends[0].x + hc), Vector3(ends[0].y, -0.038, ends[0].y + hc),
+				Vector3(ends[1].y, -0.038, ends[1].y + hc + 0.12), Vector3(ends[1].x, -0.038, ends[1].x + hc + 0.12)], [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
+		hc += 0.5
 	# the yard round the back of the car park and on to the rival, where the set's lots meet: poured concrete scored
 	# into slabs, with a drain grating along the sidewalk, rather than the bare district ground the set cleared
 	var yard := surface(slabs())
