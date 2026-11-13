@@ -5429,13 +5429,30 @@ func roadworks(near_gaps: Array) -> Node3D:
 			var q := a.lerp(b2, float(i + 1) / n)
 			box_into(st, Vector3(minf(p.x, q.x), p.y - h / 2, minf(p.z, q.z)) - Vector3(0.025, 0, 0.025),
 				Vector3(maxf(p.x, q.x), p.y + h / 2, maxf(p.z, q.z)) + Vector3(0.025, 0, 0.025), Color("f2c230") if i % 2 == 0 else Color("2b2a2c"))
-	# the dug lane: steel road plates with their seams, a trench left open and a patch of fresh black tarmac
-	box_into(st, Vector3(x0 + 0.9, -0.045, 2.75), Vector3(x0 + 4.6, -0.02, 3.5), plate)
+	# the dug lane: steel road plates each a shade off, lit along their near edge with a lifting hole at the corner; a
+	# trench left open, sawn clean through the tarmac, its far wall of earth lit over a dark floor where the main they
+	# dug for runs, its spoil heaped on the last plate; and a patch of fresh black tarmac sealed round its edge
 	for k in 4:
-		box_into(st, Vector3(x0 + 1.8 + k * 0.92, -0.045, 2.75), Vector3(x0 + 1.84 + k * 0.92, -0.016, 3.5), plate.darkened(0.35))
-	box_into(st, Vector3(x0 + 4.6, -0.045, 2.75), Vector3(x0 + 5.7, -0.03, 3.5), Color("8a6440"))
-	box_into(st, Vector3(x0 + 4.8, -0.045, 2.88), Vector3(x0 + 5.5, -0.025, 3.37), Color("3e2c20"))
-	box_into(st, Vector3(x0 + 5.7, -0.045, 2.7), Vector3(x1 - 0.8, -0.03, 3.52), Color("2f3135"))
+		var px := x0 + 0.9 + k * 0.925
+		var pc := plate.darkened(0.06 * (k % 3)).lightened(0.04 * int(k == 1))
+		box_into(st, Vector3(px, -0.045, 2.75), Vector3(px + 0.905, -0.02, 3.5), pc)
+		box_into(st, Vector3(px, -0.045, 3.47), Vector3(px + 0.905, -0.017, 3.5), pc.lightened(0.22))
+		box_into(st, Vector3(px + 0.905, -0.045, 2.75), Vector3(px + 0.925, -0.016, 3.5), plate.darkened(0.45))
+		box_into(st, Vector3(px + 0.08, -0.045, 3.33), Vector3(px + 0.14, -0.015, 3.39), plate.darkened(0.5))
+	var heap := Vector3(x0 + 4.05, -0.02, 3.1)
+	for h in [[0.38, 0.3, 0.1, "6f5136"], [0.3, 0.24, 0.2, "7d5c3b"], [0.21, 0.17, 0.29, "8a6842"], [0.11, 0.09, 0.35, "977450"]]:
+		box_into(st, heap + Vector3(-h[0], 0, -h[1]), heap + Vector3(h[0], h[2], h[1]), Color(h[3]))
+	box_into(st, Vector3(x0 + 4.6, -0.045, 2.75), Vector3(x0 + 5.7, -0.03, 3.5), Color("8d9095"))  # the sawn edge
+	box_into(st, Vector3(x0 + 4.64, -0.045, 2.79), Vector3(x0 + 5.66, -0.027, 3.46), Color("2a1d15"))
+	box_into(st, Vector3(x0 + 4.64, -0.045, 2.79), Vector3(x0 + 5.66, -0.025, 2.97), Color("8a6440"))  # the far wall
+	box_into(st, Vector3(x0 + 4.64, -0.045, 2.79), Vector3(x0 + 5.66, -0.024, 2.82), Color("a57a50"))
+	box_into(st, Vector3(x0 + 4.64, -0.045, 2.97), Vector3(x0 + 4.7, -0.025, 3.46), Color("5e4430"))
+	box_into(st, Vector3(x0 + 4.64, -0.045, 3.1), Vector3(x0 + 5.66, -0.022, 3.22), Color("5d7686"))  # the main
+	box_into(st, Vector3(x0 + 4.64, -0.045, 3.1), Vector3(x0 + 5.66, -0.021, 3.13), Color("8fa6b3"))
+	for jx in [x0 + 4.95, x0 + 5.4]:
+		box_into(st, Vector3(jx - 0.05, -0.045, 3.08), Vector3(jx + 0.05, -0.019, 3.24), Color("4d6170"))
+	box_into(st, Vector3(x0 + 5.7, -0.045, 2.7), Vector3(x1 - 0.8, -0.03, 3.52), Color("1c1d20"))
+	box_into(st, Vector3(x0 + 5.74, -0.045, 2.74), Vector3(x1 - 0.84, -0.028, 3.48), Color("2f3135"))
 	for b in [x0 + 0.35, x1 - 0.35]:  # a barricade across each end, two striped boards on white legs, a lamp on top
 		for z in [2.62, 3.48]:
 			box_into(st, Vector3(b - 0.04, -0.04, z - 0.04), Vector3(b + 0.04, 0.95, z + 0.04), Color("eceae4"))
@@ -5453,11 +5470,41 @@ func roadworks(near_gaps: Array) -> Node3D:
 			bar.call(cones[i - 1] + Vector3(0, 0.6, 0), cones[i] + Vector3(0, 0.6, 0), 0.06, 0.2)
 	bar.call(Vector3(x0 + 0.35, 0.6, 2.58), cones[0] + Vector3(0, 0.6, 0), 0.06, 0.2)
 	bar.call(cones[-1] + Vector3(0, 0.6, 0), Vector3(x1 - 0.35, 0.6, 2.58), 0.06, 0.2)
-	# the arrow board on its trailer stand, out ahead of the works where oncoming cars meet it
-	var ab := x1 + 0.7
-	box_into(st, Vector3(ab - 0.35, -0.04, 2.85), Vector3(ab + 0.35, 0.3, 3.4), Color("d9c25a"))
-	box_into(st, Vector3(ab - 0.04, 0.35, 3.08), Vector3(ab + 0.04, 1.1, 3.16), Color("5a5d63"))
-	box_into(st, Vector3(ab - 0.06, 1.1, 2.6), Vector3(ab + 0.06, 2.12, 3.64), Color("2b2a2c"))
+	# the arrow board on its trailer: a yellow chassis on two wheels, a drawbar to a jockey wheel and a jack at the
+	# back; a mast up to the board's housing under a hood, a hazard band below the face and a solar panel on top
+	var ab := x1 + 0.9
+	var yel := Color("e8c440")
+	box_into(st, Vector3(ab - 0.45, 0.22, 2.9), Vector3(ab + 0.35, 0.4, 3.34), yel)
+	box_into(st, Vector3(ab - 0.45, 0.4, 2.9), Vector3(ab + 0.35, 0.42, 3.34), yel.lightened(0.2))
+	box_into(st, Vector3(ab - 0.4, 0.12, 2.94), Vector3(ab + 0.3, 0.22, 3.3), Color("3a3a3e"))
+	for wz: float in [2.83, 3.41]:  # a tyre either side, rounded off in steps, its hub on the outer face
+		var o := 1.0 if wz > 3.12 else -1.0
+		var za := minf(wz - o * 0.06, wz + o * 0.06)
+		var zb := maxf(wz - o * 0.06, wz + o * 0.06)
+		box_into(st, Vector3(ab - 0.2, 0.05, za), Vector3(ab + 0.2, 0.35, zb), Color("232326"))
+		box_into(st, Vector3(ab - 0.15, 0.0, za), Vector3(ab + 0.15, 0.4, zb), Color("232326"))
+		var hz := wz + o * 0.062
+		box_into(st, Vector3(ab - 0.08, 0.12, hz - 0.006), Vector3(ab + 0.08, 0.28, hz + 0.006), Color("b9bcc0"))
+		box_into(st, Vector3(ab - 0.03, 0.17, hz - 0.01 + o * 0.006), Vector3(ab + 0.03, 0.23, hz + 0.01 + o * 0.006), Color("55585e"))
+		box_into(st, Vector3(ab - 0.24, 0.4, za), Vector3(ab + 0.24, 0.44, zb), yel.darkened(0.1))  # the mudguard
+	for k: float in [-1.0, 1.0]:  # the drawbar's two arms meeting at the hitch
+		turned_box_into(st, Transform3D(Basis(Vector3.UP, 0.32 * k) * Basis.from_scale(Vector3(0.62, 0.06, 0.06)), Vector3(ab + 0.62, 0.3, 3.12 + 0.1 * k)), yel.darkened(0.08))
+	box_into(st, Vector3(ab + 0.88, 0.26, 3.07), Vector3(ab + 1.0, 0.34, 3.17), Color("5a5d63"))
+	box_into(st, Vector3(ab + 0.82, 0.08, 3.09), Vector3(ab + 0.86, 0.3, 3.15), Color("9aa0a6"))
+	box_into(st, Vector3(ab + 0.79, 0.0, 3.07), Vector3(ab + 0.89, 0.1, 3.17), Color("232326"))
+	for jz: float in [2.95, 3.29]:  # the back jacks wound down onto pads
+		box_into(st, Vector3(ab - 0.43, 0.02, jz - 0.025), Vector3(ab - 0.38, 0.22, jz + 0.025), Color("9aa0a6"))
+		box_into(st, Vector3(ab - 0.47, -0.04, jz - 0.06), Vector3(ab - 0.34, 0.02, jz + 0.06), Color("5a5d63"))
+	box_into(st, Vector3(ab - 0.2, 0.42, 3.07), Vector3(ab - 0.12, 1.12, 3.17), Color("9aa0a6"))  # the mast
+	box_into(st, Vector3(ab - 0.23, 0.42, 3.04), Vector3(ab - 0.09, 0.5, 3.2), Color("5a5d63"))
+	box_into(st, Vector3(ab - 0.14, 1.06, 2.6), Vector3(ab + 0.02, 2.14, 3.64), Color("b8bcc0"))  # the housing
+	box_into(st, Vector3(ab + 0.02, 1.08, 2.62), Vector3(ab + 0.06, 2.12, 3.62), Color("2b2a2c"))
+	box_into(st, Vector3(ab - 0.14, 2.14, 2.58), Vector3(ab + 0.16, 2.18, 3.66), Color("8a8f95"))  # its hood
+	box_into(st, Vector3(ab + 0.12, 2.04, 2.58), Vector3(ab + 0.16, 2.14, 3.66), Color("6c7177"))
+	bar.call(Vector3(ab + 0.08, 1.13, 2.65), Vector3(ab + 0.08, 1.13, 3.59), 0.08, 0.12)
+	box_into(st, Vector3(ab - 0.08, 2.18, 3.08), Vector3(ab - 0.04, 2.34, 3.16), Color("9aa0a6"))
+	turned_box_into(st, Transform3D(Basis(Vector3.BACK, 0.5) * Basis.from_scale(Vector3(0.62, 0.035, 0.84)), Vector3(ab - 0.06, 2.4, 3.12)), Color("2e4f86"))
+	turned_box_into(st, Transform3D(Basis(Vector3.BACK, 0.5) * Basis.from_scale(Vector3(0.66, 0.025, 0.88)), Vector3(ab - 0.065, 2.39, 3.12)), Color("c9cdd1"))
 	commit([st], node)
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.03
@@ -5490,29 +5537,41 @@ func roadworks(near_gaps: Array) -> Node3D:
 	var lamp := mat(Color("e8392c"))
 	light_up(lamp, 1.0)
 	mm_node(lm, lamp, node)
-	# the board's face: amber chevrons pointing traffic away from the kerb, lit like a sign
-	var img := Image.create(12, 12, false, Image.FORMAT_RGB8)
-	img.fill(Color("1d1c20"))
-	for y in range(2, 10):
-		for tip in [6, 10]:
-			for w in 2:
-				img.set_pixel(tip - w - absi(y * 2 - 11) / 2, y, Color("ffb52e"))
+	# the board's face: a matrix of amber LEDs on black drawing an arrow that turns traffic away from the kerb, the dark
+	# LEDs left as dim dots, lit like a sign
+	var img := Image.create(96, 96, false, Image.FORMAT_RGB8)
+	img.fill(Color("141316"))
+	for j in 12:
+		for i in 12:
+			var on := (j >= 5 and j <= 6 and i >= 1 and i <= 6) or (i >= 6 and i <= 10 and absi(2 * j - 11) <= 2 * (10 - i) + 1)
+			for y in 8:
+				for x in 8:
+					var d := Vector2(x - 3.5, y - 3.5).length()
+					if d < 3.7:
+						img.set_pixel(i * 8 + x, j * 8 + y, Color("ffb52e").lerp(Color("fff0c0"), 0.6 * clampf(1.6 - d, 0.0, 1.0)) if on else Color("2c2622"))
+	img.generate_mipmaps()
 	var face := MeshInstance3D.new()
 	var fq := QuadMesh.new()
-	fq.size = Vector2(0.96, 0.92)
+	fq.size = Vector2(0.94, 0.9)
 	face.mesh = fq
 	var fm := mat(Color.WHITE, ImageTexture.create_from_image(img))
 	light_up(fm, 1.0)
 	face.material_override = fm
 	face.rotation.y = PI / 2
-	face.position = Vector3(ab + 0.065, 1.61, 3.12)
+	face.position = Vector3(ab + 0.065, 1.64, 3.12)
 	node.add_child(face)
 	var gm := multimesh(QuadMesh.new(), lamps.size() + 1)
 	for i in lamps.size():
 		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.2, 1.2, 1.2)), lamps[i]))
-	gm.set_instance_transform(lamps.size(), Transform3D(Basis().scaled(Vector3(2.2, 2.2, 2.2)), Vector3(ab + 0.2, 1.61, 3.12)))
+	gm.set_instance_transform(lamps.size(), Transform3D(Basis().scaled(Vector3(2.2, 2.2, 2.2)), Vector3(ab + 0.2, 1.64, 3.12)))
 	mm_node(gm, works_glow_mat, node)
-	cast(node, Vector2(ab, 3.12), 1.1, 2.12, 1.0)
+	cast(node, Vector2(ab, 3.12), 0.0, 0.44, 0.6)
+	cast(node, Vector2(ab - 0.1, 3.12), 1.06, 2.18, 1.0)
+	for b in [x0 + 0.35, x1 - 0.35]:
+		cast(node, Vector2(b, 3.05), 0.3, 0.9, 0.9)
+	for c in cones:
+		cast(node, Vector2(c.x, c.z), 0.0, 0.7, 0.22)
+	cast(node, Vector2(heap.x, heap.z), 0.0, 0.3, 0.6)
 	return node
 
 
