@@ -155,6 +155,32 @@ void fragment() {
 }
 """
 const FOOT := Vector3(0.7, 0.35, 1.6)  # a person's shadow plane: width, behind the feet, and the height it casts
+# Daylight through your shop's glass front, laid over its floor: every point takes the light that came in over the
+# sill above it, so the panes fall as a band slanting away from the sun, barred by the mullions and brightest out of
+# the open door. `gate` holds what each pane lets through (u across the front, v the depth the light falls to).
+const SUN_IN_SHADER := """
+shader_type spatial;
+render_mode unshaded, depth_draw_never, cull_disabled;
+uniform sampler2D gate : filter_linear, repeat_disable;
+uniform vec4 tint : source_color;  // the sun's own warmth where it lands
+uniform vec4 shade : source_color;  // and the cool the floor keeps where it doesn't
+uniform vec2 size;
+uniform vec2 span;  // the glazing: its near end in the floor's x, and its width
+uniform float front;  // the glass line in the floor's z
+uniform float slant;  // metres along the front per metre into the room
+uniform float reach = 1.0;  // how deep the light falls, lengthening through golden hour
+
+void fragment() {
+	vec2 p = vec2((UV.x - 0.5) * size.x, (UV.y - 0.5) * size.y);
+	float d = front - p.y;
+	float v = d / reach;
+	float u = (p.x - slant * d - span.x) / span.y;
+	vec2 inside = step(vec2(0.0), vec2(u, v)) * step(vec2(u, v), vec2(1.0));
+	float sun = texture(gate, vec2(u, v)).r * inside.x * inside.y;
+	ALBEDO = mix(shade.rgb, tint.rgb, sun);
+	ALPHA = mix(shade.a, tint.a, sun);
+}
+"""
 # a city tree's shadows (build_trees): a soft patch round its foot (COLOR.r 1), kept faintly after dark, and its
 # crown's laid away from the sun, stretched along it through golden hour
 const TREE_SHADOW_SHADER := """
@@ -966,6 +992,7 @@ var sheet_imgs := {}  # sheet images read back for their cells' used rects
 var sim
 var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
 var floor_tex := {}  # shop floor texture by left wall and fixtures
+var sun_gate_tex := {}  # what each pane of the glass front lets through, by left wall
 var set_sig := ""
 var tarmac_m: StandardMaterial3D
 var slabs_m: StandardMaterial3D
@@ -1086,6 +1113,7 @@ var crown_mat: StandardMaterial3D  # the same for a tree's crown or a bush, soft
 var awning_mat: StandardMaterial3D  # the sun's shadow of the rival's canopy down its glass
 var casts: Array = []  # those shadows, stretched as the sun goes down
 var foot_mat: ShaderMaterial  # people's shadows
+var sun_in_mat: ShaderMaterial  # daylight through your shop's glass front, over its floor
 var foot_mesh: PlaneMesh
 var sea_mat: StandardMaterial3D
 var shore_mat: StandardMaterial3D  # foam and shallows, dimmed after dark with the sea
@@ -1252,6 +1280,11 @@ func _ready() -> void:
 	foot_mat.set_shader_parameter("tint", Color(0.1, 0.08, 0.14))
 	foot_mat.set_shader_parameter("size", foot_mesh.size)
 	foot_mat.set_shader_parameter("back", FOOT.y)
+	sun_in_mat = ShaderMaterial.new()
+	sun_in_mat.shader = Shader.new()
+	sun_in_mat.shader.code = SUN_IN_SHADER
+	sun_in_mat.set_shader_parameter("front", 4.5)
+	sun_in_mat.set_shader_parameter("slant", SUN.x / -SUN.z)
 	cam = Camera3D.new()
 	cam.fov = 38.0
 	vp.add_child(cam)
@@ -1465,6 +1498,11 @@ func update_light() -> void:
 	headlight_mat.albedo_color = Color(1.0, 0.9, 0.7, 0.6 * night)
 	tail_glow_mat.albedo_color = Color(1.0, 0.12, 0.06, 0.6 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
+	var low := maxf(golden_at(h), dawn_at(h))  # the lower the sun, the deeper daylight reaches into your shop
+	sun_in_mat.set_shader_parameter("reach", 5.2 * SUN.z / SUN.y * (1.0 + 0.9 * low))
+	var sun_c := Color(1.0, 0.95, 0.84).lerp(Color(1.0, 0.82, 0.52), golden_at(h)).lerp(Color(1.0, 0.76, 0.66), dawn_at(h))
+	sun_in_mat.set_shader_parameter("tint", sun_c * Color(1, 1, 1, (1.0 - night) * (0.14 + 0.2 * low)))
+	sun_in_mat.set_shader_parameter("shade", Color(0.38, 0.44, 0.62) * Color(1, 1, 1, (1.0 - night) * 0.28))
 	var on := 1.0 if room_dim == Color.WHITE or mode != "store" else 0.0
 	shop_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * night * on)
 	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night * on)
@@ -1556,6 +1594,32 @@ func shop_spill_tex(zl: float) -> ImageTexture:
 			var door := exp(-pow((lx - Sim.DOOR_IN.x - (Sim.DOOR_IN.x - cx) * d / 7.0) / (0.7 + 0.12 * d), 4.0))
 			a *= maxf(shade, 0.35) * (0.8 + 0.45 * door) * fall
 			img.set_pixel(x, y, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
+	return ImageTexture.create_from_image(img)
+
+
+## What the glass front (zl to 6.6, shop-local) lets in, for SUN_IN_SHADER: u runs along the front, v is how far the
+## light has fallen into the room, the mullions' bars softening and the whole band fading out as it goes.
+func sun_gate(zl: float) -> ImageTexture:
+	var w := 6.6 - zl
+	var mull: Array[float] = []
+	for seg in [Vector2(zl, Sim.DOOR_IN.x - 0.8), Vector2(Sim.DOOR_IN.x + 0.8, 6.6)]:
+		var bays := maxi(1, roundi((seg.y - seg.x) / 1.6))
+		for k in bays + 1:
+			mull.append(seg.x + 0.045 + (seg.y - seg.x - 0.09) * k / bays)
+	var iw := int(w * 32)
+	var img := Image.create(iw, 64, false, Image.FORMAT_RGB8)
+	for y in 64:
+		var v := (y + 0.5) / 64.0
+		var fade := (1.0 - smoothstep(0.86, 1.0, v)) * (1.0 - 0.3 * v)
+		var sw := 0.07 + 0.2 * v  # the bars soften the further the light falls past the mullion
+		for x in iw:
+			var lx := zl + (x + 0.5) / 32.0
+			var shade := 1.0
+			for m in mull:
+				shade -= (0.8 - 0.35 * v) * exp(-pow((lx - m) / sw, 2.0))
+			var door := exp(-pow((lx - Sim.DOOR_IN.x) / (0.9 + 0.3 * v), 4.0))  # no glass in the doorway
+			var a := fade * maxf(shade, 0.12) * (1.0 + 0.25 * door)
+			img.set_pixel(x, y, Color(clampf(a, 0.0, 1.0), 0, 0))
 	return ImageTexture.create_from_image(img)
 
 
@@ -8197,6 +8261,13 @@ func build_room() -> void:
 	if not floor_tex.has(fk):
 		floor_tex[fk] = shop_floor(zl, L.floor[0], L.floor[1], feet)
 	plane(room, Vector2(w, 9.0), Vector3(cx, 0.002, 0.0), mat(Color.WHITE, floor_tex[fk], true))
+	if sun_in_mat:
+		if not sun_gate_tex.has(zl):
+			sun_gate_tex[zl] = sun_gate(zl)
+		sun_in_mat.set_shader_parameter("gate", sun_gate_tex[zl])
+		sun_in_mat.set_shader_parameter("size", Vector2(w, 9.0))
+		sun_in_mat.set_shader_parameter("span", Vector2(zl - cx, 6.6 - zl))  # the glazing, in the floor plane's own x
+		plane(room, Vector2(w, 9.0), Vector3(cx, 0.004, 0.0), sun_in_mat)
 	# back wall with the shop art, tiled to the width; the left wall plain with the stripes
 	var crop: Image = tex[L.bg].get_image().get_region(L.wall)
 	var wall_h := 3.0
