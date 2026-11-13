@@ -894,7 +894,14 @@ void fragment() {
 				lit = mix(mix(lit, mix(0.12, 0.9, on), fx), 0.45, fy);
 				lamp *= 0.88 + 0.12 * fract(r * 3.7);
 			}
-			glow = m.g * (1.0 - m.b) * lit * lamp * switched(sw, night) + m.r * ACCENT[pick] * 0.9 * switched(0.1 * fract(r * 17.0), night);
+			// a lit pane is the room behind it, not white glass: brightest up under its ceiling light, warming and dimming
+			// toward the sill, each room a little brighter or dimmer than its neighbours, the glass's own sheen dropping out
+			float pane = m.g * (1.0 - m.b) * lit * switched(sw, night);
+			// (a storey under a few pixels, as on the city map, keeps its plain glow so the lit floors still read)
+			float tiny = smoothstep(0.12, 0.35, fwidth(cont.y));
+			vec3 room = lamp * mix(mix(lamp.b > lamp.r ? vec3(0.58, 0.6, 0.64) : vec3(0.6, 0.47, 0.36), vec3(1.0), smoothstep(0.2, 0.85, fract(cont.y))) * (0.8 + 0.2 * fract(r * 5.3)), vec3(1.0), tiny);
+			col *= 1.0 - 0.65 * pane * (1.0 - tiny);
+			glow = pane * room + m.r * ACCENT[pick] * 0.9 * switched(0.1 * fract(r * 17.0), night);
 			inside = m.b * switched(0.3 * fract(r * 29.0), night);
 			lit_in = mix(t.rgb * vec3(1.06, 0.96, 0.8), vec3(1.0, 0.9, 0.68), m.g);  // goods and shelves on a warm glow
 			if (info.y < 1.0) {  // cut down: the wall's solid section on a dark plinth, not a slice of its windows
