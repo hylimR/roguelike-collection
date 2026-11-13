@@ -1078,6 +1078,7 @@ var headlight_mat: StandardMaterial3D  # a moving car's low beams thrown along t
 var tail_glow_mat: StandardMaterial3D  # the red its tail lamps cast on the road behind
 var spill_mat: StandardMaterial3D  # shop light falling out of a glass front across the sidewalk
 var shop_spill_mat: StandardMaterial3D  # the same out of your own shop, which a blackout puts out
+var rival_spill_mat: StandardMaterial3D  # the same out of the rival's glass front, by its mullions and door
 var room_dim := Color.WHITE  # your shop's lighting, dimmed while a blackout has cut its power
 var set_sign_mats: Array = []  # your pole sign's lightbox faces on the set
 var breaker_lamp: Array = []  # [the tripped board's lamp, its glow]
@@ -1193,6 +1194,7 @@ func _ready() -> void:
 			fall.set_pixel(x, y, Color(1, 1, 1, (exp(-2.2 * y / 31.0) - exp(-2.2)) / (1.0 - exp(-2.2)) * smoothstep(0.0, 0.2, u) * smoothstep(0.0, 0.2, 1.0 - u)))
 	spill_mat.albedo_texture = ImageTexture.create_from_image(fall)
 	shop_spill_mat = spill_mat.duplicate()
+	rival_spill_mat = spill_mat.duplicate()
 	var halo := Image.create(64, 16, false, Image.FORMAT_RGBA8)
 	for y in 16:
 		for x in 64:
@@ -1505,6 +1507,7 @@ func update_light() -> void:
 	sun_in_mat.set_shader_parameter("shade", Color(0.38, 0.44, 0.62) * Color(1, 1, 1, (1.0 - night) * 0.28))
 	var on := 1.0 if room_dim == Color.WHITE or mode != "store" else 0.0
 	shop_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * night * on)
+	rival_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * night)
 	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night * on)
 	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night * on)
 	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.75 * night)
@@ -1566,17 +1569,20 @@ func spill(parent: Node3D, cx: float, w: float, face_z: float, m: Material = nul
 		x += 2.5
 
 
-## Your shop's light out of its glass front (zl to 6.6, shop-local) over the sidewalk, as spill() lays it: panes
-## fanning out from the ceiling lights, split by the mullions' soft shadows, brightest out of the open door.
+## Your shop's light out of its glass front (zl to 6.6, shop-local) over the sidewalk, as spill() lays it.
 func shop_spill_tex(zl: float) -> ImageTexture:
-	var x0 := zl - 1.0
-	var w := 7.6 - x0
-	var cx := (zl + 6.6) / 2
 	var mull: Array[float] = []
 	for seg in [Vector2(zl, Sim.DOOR_IN.x - 0.8), Vector2(Sim.DOOR_IN.x + 0.8, 6.6)]:
 		var bays := maxi(1, roundi((seg.y - seg.x) / 1.6))
 		for k in bays + 1:
 			mull.append(seg.x + 0.045 + (seg.y - seg.x - 0.09) * k / bays)
+	return front_spill_tex(zl, 6.6, zl - 1.0, 8.6 - zl, Sim.DOOR_IN.x, mull, 0.45)
+
+
+## Light out of a glass front from zl to zr over a spill() plane w wide from x0: panes fanning out from the ceiling
+## lights, split by the mullions' soft shadows at mull, brighter by `open` out of the door at door.
+func front_spill_tex(zl: float, zr: float, x0: float, w: float, door: float, mull: Array[float], open: float) -> ImageTexture:
+	var cx := (zl + zr) / 2
 	var iw := int(w * 16)
 	var img := Image.create(iw, 64, false, Image.FORMAT_RGBA8)
 	for y in 64:
@@ -1585,14 +1591,14 @@ func shop_spill_tex(zl: float) -> ImageTexture:
 		var spread := 0.25 * d  # the light fans past the glass's ends as it falls away from it
 		for x in iw:
 			var lx := x0 + (x + 0.5) / 16.0
-			var a := smoothstep(zl - spread - 0.3, zl - spread + 0.5, lx) * smoothstep(6.6 + spread + 0.3, 6.6 + spread - 0.5, lx)
+			var a := smoothstep(zl - spread - 0.3, zl - spread + 0.5, lx) * smoothstep(zr + spread + 0.3, zr + spread - 0.5, lx)
 			var shade := 1.0
 			for m in mull:
 				var sx := m + (m - cx) * d / 7.0
 				var sw := 0.08 + 0.09 * d
 				shade -= 0.6 * exp(-pow((lx - sx) / sw, 2.0)) * (1.0 - d / 6.0)
-			var door := exp(-pow((lx - Sim.DOOR_IN.x - (Sim.DOOR_IN.x - cx) * d / 7.0) / (0.7 + 0.12 * d), 4.0))
-			a *= maxf(shade, 0.35) * (0.8 + 0.45 * door) * fall
+			var lit := exp(-pow((lx - door - (door - cx) * d / 7.0) / (0.7 + 0.12 * d), 4.0))
+			a *= maxf(shade, 0.35) * (0.8 + open * lit) * fall
 			img.set_pixel(x, y, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
 	return ImageTexture.create_from_image(img)
 
@@ -7585,7 +7591,16 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		var awning := block(parent, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
 		if not rv.defeated:
 			light_up(awning, 0.5)
-	if not rv.defeated:
+	if not rv.defeated and parent == set_node:
+		var mull: Array[float] = [rv.x - 0.72, rv.x, rv.x + 0.72]
+		var mx := span.x + 0.4
+		while mx < span.y - 0.3:
+			if absf(mx - rv.x) > 0.8:
+				mull.append(mx)
+			mx += 2.0
+		rival_spill_mat.albedo_texture = front_spill_tex(span.x + 0.4, span.y - 0.4, span.x - 0.8, w + 1.6, rv.x, mull, 0.25)
+		spill(parent, cx, w + 1.6, -7.05, rival_spill_mat)
+	elif not rv.defeated:
 		spill(parent, cx, w + 1.6, -7.05)
 	# the end wall: the fascia's stripes wrap round the corner and run its depth, a downpipe at each corner
 	var ex := span.y
