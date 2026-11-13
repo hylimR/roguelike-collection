@@ -950,7 +950,7 @@ var tex := {}
 var sheet_imgs := {}  # sheet images read back for their cells' used rects
 var sim
 var branch: Dictionary = {}  # the focused branch (sim's own dictionary)
-var floor_tex := {}  # shop floor texture by left wall
+var floor_tex := {}  # shop floor texture by left wall and fixtures
 var set_sig := ""
 var tarmac_m: StandardMaterial3D
 var slabs_m: StandardMaterial3D
@@ -2130,7 +2130,7 @@ func worn_paint(paint: Color, w: int, h: int, on: int, chips: float, seed_: int)
 ## The shop floor, 0.5 m vinyl tiles each a shade off the next under bevelled grout, polished to a sheen under the
 ## ceiling lights over each aisle, scuffed grey where the traffic runs (in at the door, along the queue and the cross
 ## aisle) and shaded where it meets the walls and the counter.
-func shop_floor(zl: float, a: Color, b: Color) -> ImageTexture:
+func shop_floor(zl: float, a: Color, b: Color, feet: Array) -> ImageTexture:
 	const PX := 24
 	var wpx := roundi((6.5 - zl) * PX)
 	var img := Image.create(wpx, 9 * PX, false, Image.FORMAT_RGB8)
@@ -2167,6 +2167,10 @@ func shop_floor(zl: float, a: Color, b: Color) -> ImageTexture:
 			var near := minf(minf(x - zl, z + 4.5), Vector2(x - clampf(x, counter.position.x, counter.end.x), z - clampf(z, counter.position.y, counter.end.y)).length())
 			if near < 0.4:
 				c = c.darkened(0.2 * pow(1.0 - near / 0.4, 2.0))
+			for f: Rect2 in feet:
+				var fd := Vector2(x - clampf(x, f.position.x, f.end.x), z - clampf(z, f.position.y, f.end.y)).length()
+				if fd < 0.5:
+					c = c.darkened(0.36 * pow(1.0 - fd / 0.5, 1.6))
 			img.set_pixel(px, py, c)
 	return ImageTexture.create_from_image(img)
 
@@ -8098,9 +8102,17 @@ func build_room() -> void:
 	var cx := (zl + 6.5) / 2
 	var L: Dictionary = LAYOUT
 	block(room, Vector3(w + 0.3, 0.2, 9.3), Vector3(cx, -0.1, 0.0), Color("8a6e4b"))
-	if not floor_tex.has(zl):
-		floor_tex[zl] = shop_floor(zl, L.floor[0], L.floor[1])
-	plane(room, Vector2(w, 9.0), Vector3(cx, 0.002, 0.0), mat(Color.WHITE, floor_tex[zl], true))
+	var feet := []  # the fixtures' footprints, each standing in its own soft shadow on the tiles
+	for pid in st.products:
+		var slot: String = Sim.PRODUCTS[pid].slot
+		if FIXTURES.has(slot_kind(slot)):
+			var p: Vector2 = Sim.SLOTS[slot].pos
+			feet.append(Rect2(p.x - FIXTURE_W / 2 - 0.05, p.y - 0.44, FIXTURE_W + 0.1, 0.88))
+	feet.sort_custom(func(a, b): return a.position < b.position)
+	var fk := str(zl, feet)
+	if not floor_tex.has(fk):
+		floor_tex[fk] = shop_floor(zl, L.floor[0], L.floor[1], feet)
+	plane(room, Vector2(w, 9.0), Vector3(cx, 0.002, 0.0), mat(Color.WHITE, floor_tex[fk], true))
 	# back wall with the shop art, tiled to the width; the left wall plain with the stripes
 	var crop: Image = tex[L.bg].get_image().get_region(L.wall)
 	var wall_h := 3.0
