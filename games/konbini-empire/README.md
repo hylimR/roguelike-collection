@@ -5,14 +5,14 @@ Run konbini across Tokyo in real time, each one in a street fight with the rival
 The rival fights back. It warns a few seconds ahead, then launches an attack:
 
 - a flyer promoter in a happi coat in the chain's colors, or a parade by its costume mascot (Tanuki Mart's tanuki, Usagi Express's rabbit, Kitsune 24's fox, Oni Discount's ogre, MEGAMART's robot), that poaches your customers;
-- trash bags dumped at your door;
+- trash bags dumped at your door, tied-off sacks of rubbish showing through their film with litter strewn round them;
 - a price war;
 - fake reviews, typed on the sidewalk at your door;
 - shoplifters in a hood and mask;
 - a blackout that stops the tills and puts your shop's lights, pole sign and floodlights out, dim in daylight and near dark at night, while the tripped board on the back wall flashes its red lamp;
 - a hostile takeover by three suits who each grab 15% of your cash at the door.
 
-Click a threat to chase it off. Each one wears a tag naming it, with a dot for every click it still needs; tags that would overlap stack upward, each on a stem back to its own threat. Click the till to ring up a waiting customer; fast ring-ups build a combo that multiplies XP. Click a shelf to restock it. Customers who find an empty shelf, a full queue or a slow till leave angry, and your rating drops.
+Click a threat to chase it off. Each one wears a tag naming it, with a dot for every click it still needs; tags that would overlap stack upward, each on a stem back to its own threat. Click the till to ring up a waiting customer; fast ring-ups build a combo that multiplies XP. Click a shelf to restock it. A spill lies on the shop floor as a wet patch the tiles show through, its edge catching the lights, beside the bottle it came out of. Customers who find an empty shelf, a full queue or a slow till leave angry, and your rating drops.
 
 Spend what you earn on staff:
 

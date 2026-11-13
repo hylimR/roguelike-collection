@@ -8834,6 +8834,8 @@ func update_power() -> void:
 		night = -1.0  # relight the sign's glow, floodlight and spill
 	room_dim = d
 	var mats := set_sign_mats.duplicate()
+	for e in threat_nodes.values():
+		mats.append_array(e.get("dim", []))
 	for n in room.find_children("*", "", true, false):
 		if n is Sprite3D:
 			if not n.has_meta("own"):
@@ -8942,36 +8944,122 @@ func make_threat(t: Dictionary) -> Dictionary:
 		var mi := MeshInstance3D.new()
 		match t.type:
 			"trash":
-				var m := SphereMesh.new()
-				m.radius = 0.32
-				m.height = 0.5
-				mi.mesh = m
-				mi.material_override = mat(Color("8597ad"))
-				mi.position.y = 0.25
-				# a lit bulge on the sun side and the tied knot, so the bag reads round
-				for part in [[0.22, Vector3(-0.06, 0.06, 0.12), Color("b3c3d6")], [0.1, Vector3(0, 0.27, 0), Color("8597ad")]]:
-					var bit := MeshInstance3D.new()
-					var bm := SphereMesh.new()
-					bm.radius = part[0]
-					bm.height = part[0] * 2.0
-					bit.mesh = bm
-					bit.material_override = mat(part[2])
-					bit.position = part[1]
-					mi.add_child(bit)
+				trash_bag(mi, t.get("spot", 0))
 			"spill":
-				var m := CylinderMesh.new()
-				m.top_radius = 0.45
-				m.bottom_radius = 0.45
-				m.height = 0.01
-				mi.mesh = m
-				mi.material_override = mat(Color(0.53, 0.78, 0.94, 0.8))
-				mi.position.y = 0.02
+				e.dim = spill_patch(mi, t.id)
 			"breaker":
 				breaker_board(mi)
-		e = {"node": mi}
+		e.node = mi
 	actors.add_child(e.node)
 	e.node.position = Vector3(t.x, e.node.position.y, t.z)
 	return e
+
+
+## A dumped bin bag, `spot` picking which: a translucent sack bellied over its shaded foot and tied off in two ears,
+## the rubbish pressing pale through its film, slumped against a second smaller one or ringed with loose litter, and
+## caught in your shop's light after dark.
+func trash_bag(mi: MeshInstance3D, spot: int) -> void:
+	var kit := mat(Color.WHITE)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var st := surface(kit)
+	var bags: Array = [[[Vector3.ZERO, 0.3, Color("c3d2de")], [Vector3(0.26, 0, 0.22), 0.18, Color("cfdbe4")]],
+		[[Vector3.ZERO, 0.32, Color("b9cad8")]], [[Vector3.ZERO, 0.28, Color("e8d58e")], [Vector3(-0.22, 0, 0.24), 0.16, Color("c3d2de")]]][spot % 3]
+	for bag in bags:
+		var bc: Vector3 = bag[0]
+		var r: float = bag[1]
+		var c: Color = bag[2]
+		# a sack in octagonal tiers on a rounded profile, bellied low and gathered up to the neck
+		for k in 7:
+			var y0 := r * 1.5 * k / 7.0
+			var y1 := r * 1.5 * (k + 1) / 7.0
+			var w := r * sqrt(maxf(0.08, 1.0 - pow((k + 0.5) / 7.0 * 2.0 - 0.75, 2) / 1.6))
+			var tc := c.darkened(0.18 * (1.0 - k / 6.0)).lightened(0.06 * k / 6.0)
+			box_into(st, bc + Vector3(-w, y0, -w * 0.62), bc + Vector3(w, y1, w * 0.62), tc)
+			box_into(st, bc + Vector3(-w * 0.62, y0, -w), bc + Vector3(w * 0.62, y1, w), tc)
+		# the rubbish showing through the film on the street faces, and the film's sheen down the sun side
+		for k in 3:
+			var at := bc + Vector3(-r * 0.4 + k * r * 0.4, r * (0.4 + 0.25 * (k % 2)), r * 0.95 + 0.004)
+			box_into(st, at + Vector3(-r * 0.16, -r * 0.1, 0), at + Vector3(r * 0.16, r * 0.1, 0.004), [Color("c9a46a"), Color("d98c7a"), Color("9fb4c2")][k].lerp(c, 0.55))
+		box_into(st, bc + Vector3(r * 0.95 + 0.002, r * 0.45, -r * 0.5), bc + Vector3(r * 0.95 + 0.006, r * 0.95, r * 0.05), c.lerp(Color.WHITE, 0.65))
+		box_into(st, bc + Vector3(-r * 0.5, r * 0.5, r * 0.95 + 0.006), bc + Vector3(-r * 0.36, r * 1.0, r * 0.95 + 0.01), c.lerp(Color.WHITE, 0.65))
+		box_into(st, bc + Vector3(-0.03, r * 1.5, -0.03), bc + Vector3(0.03, r * 1.5 + 0.06, 0.03), c.darkened(0.25))
+		for e in [-1, 1]:
+			box_into(st, bc + Vector3(e * 0.03 - 0.02, r * 1.5 + 0.04, -0.015), bc + Vector3(e * 0.08 + 0.02, r * 1.5 + 0.1, 0.015), c.darkened(0.14))
+		if c == Color("e8d58e"):  # the ward's printed mark on a burnables bag
+			box_into(st, bc + Vector3(-r * 0.4, r * 0.5, r * 0.95 + 0.01), bc + Vector3(r * 0.1, r * 0.85, r * 0.95 + 0.014), Color("3f6fb8"))
+	if spot % 3 == 1:  # litter spilled out round it: a crushed can, a cup on its side and a scrap of paper
+		box_into(st, Vector3(0.36, 0, 0.12), Vector3(0.48, 0.06, 0.18), Color("c8463c"))
+		box_into(st, Vector3(0.36, 0.055, 0.12), Vector3(0.48, 0.065, 0.18), Color("c9ccd0"))
+		box_into(st, Vector3(-0.2, 0, 0.38), Vector3(-0.08, 0.07, 0.46), Color("f4f1ea"))
+		box_into(st, Vector3(-0.08, 0.005, 0.385), Vector3(-0.06, 0.065, 0.455), Color("3a8a5c"))
+		box_into(st, Vector3(0.1, 0, 0.4), Vector3(0.26, 0.008, 0.5), Color("ece6d6"))
+	commit([st], mi)
+	light_up(kit, 0.35)  # they lie in your shop's light after dark
+	kit.albedo_color = light.lerp(Color.WHITE, 0.35 * clampf(night, 0.0, 1.0))
+	var sh := foot(0.9)  # a walker's shadow fits a sack's: a contact patch and its cast away from the sun
+	sh.position.y = 0.04
+	mi.add_child(sh)
+
+
+## A spill on your shop's floor: a wet patch the tiles show through, edged by a darker meniscus with its lip catching
+## the ceiling lights, a glint across it and a few splashes, and the bottle it came out of on its side by it. Lit by the
+## shop like the floor it lies on; returns its materials for a blackout to dim.
+func spill_patch(mi: MeshInstance3D, id: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = id * 7919 + 13
+	var n := 64
+	var blobs := [[Vector2(32, 32), 18.0]]
+	for k in 4:
+		var a := rng.randf() * TAU
+		blobs.append([Vector2(32, 32) + Vector2(cos(a), sin(a)) * rng.randf_range(8, 14), rng.randf_range(7, 12)])
+	for k in 5:
+		var a := rng.randf() * TAU
+		blobs.append([Vector2(32, 32) + Vector2(cos(a), sin(a)) * rng.randf_range(25, 30), rng.randf_range(1.4, 2.6)])
+	var field := func(x: float, y: float) -> float:
+		var f := -1.0
+		for b in blobs:
+			f = maxf(f, 1.0 - Vector2(x, y).distance_to(b[0]) / b[1])
+		return f
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var glint := Vector2(rng.randf_range(24, 30), rng.randf_range(24, 30))
+	for y in n:
+		for x in n:
+			var f: float = field.call(x + 0.5, y + 0.5)
+			if f <= 0.0:
+				continue
+			var c := Color(0.42, 0.56, 0.68, 0.55)
+			if f < 0.16:
+				# the edge facing the lights (up the screen) catches them; the rest is the dark meniscus
+				c = Color(0.97, 0.99, 1.0, 0.85) if field.call(x - 1.5, y - 1.5) <= 0.0 else Color(0.28, 0.4, 0.52, 0.75)
+			var g := Vector2(x, y) - glint
+			if absf(g.x - g.y) < 1.8 and absf(g.x + g.y) < 12.0:
+				c = Color(1, 1, 1, 0.8)
+			img.set_pixel(x, y, c)
+	var pm := mat(Color.WHITE, ImageTexture.create_from_image(img), true)
+	pm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	pm.texture_repeat = false
+	plane(mi, Vector2(1.3, 1.3), Vector3.ZERO, pm)
+	mi.position.y = 0.012
+	var kit := mat(Color.WHITE, null, true)
+	kit.vertex_color_use_as_albedo = true
+	kit.vertex_color_is_srgb = true
+	var st := surface(kit)
+	var ang := rng.randf() * TAU
+	var at := Vector3(cos(ang), 0, sin(ang)) * 0.5
+	var along := absf(cos(ang)) > absf(sin(ang))  # lying out from the puddle, its neck toward it
+	var lc: Color = [Color("e4572e"), Color("3a8fd0"), Color("f2b630")][id % 3]
+	var hl := Vector3(0.14, 0.05, 0.05) if along else Vector3(0.05, 0.05, 0.14)
+	box_into(st, at - Vector3(hl.x, 0, hl.z), at + hl, Color("dfeef4"))
+	box_into(st, at - Vector3(hl.x, -0.012, hl.z) * 0.7, at + Vector3(hl.x * 0.7, 0.062, hl.z * 0.7), lc)
+	var neck := at - Vector3(signf(at.x) * (hl.x + 0.05), 0, 0) if along else at - Vector3(0, 0, signf(at.z) * (hl.z + 0.05))
+	box_into(st, neck - Vector3(0.03, 0, 0.03), neck + Vector3(0.03, 0.04, 0.03), Color("dfeef4"))
+	commit([st], mi)
+	var ms := [pm, kit]
+	for m: StandardMaterial3D in ms:
+		m.set_meta("own", m.albedo_color)
+		m.albedo_color *= room_dim
+	return ms
 
 
 ## Floaters for what just happened on this street.
