@@ -4276,13 +4276,19 @@ func build_trees() -> void:
 					add.call(1 if r.randf() < 0.75 else 0, p, 0.55)
 			s += 10.0
 	var b: Rect2 = C.bounds.grow(1300.0)
-	for k in 900:  # woods out in the country, clear of the roads
+	for k in 420:  # woods out in the country, clear of the roads: stands of cedar or broadleaf, crowns touching,
+		# taller toward the middle and ringed by bushes, so each reads as one wood rather than a scatter of trees
 		var g := Vector2(r.randf_range(b.position.x, b.end.x), r.randf_range(b.position.y, b.end.y))
-		var rad := r.randf_range(4.0, 14.0)
-		for j in int(rad * rad * 0.12) + 3:
-			var p := g + Vector2.from_angle(r.randf() * TAU) * rad * sqrt(r.randf())
-			if country(Rect2(p - Vector2.ONE, Vector2(2, 2)), 8.0):
-				add.call([1, 1, 3, 1, 4][r.randi() % 5], p, r.randf_range(0.7, 1.1))
+		var rad := Vector2(r.randf_range(8.0, 24.0), r.randf_range(8.0, 24.0))
+		var kinds: Array = [3, 3, 3, 1] if r.randf() < 0.45 else [1, 1, 1, 1, 3]
+		for j in int(rad.x * rad.y * 0.16) + 3:
+			var u := sqrt(r.randf())
+			var p := g + Vector2.from_angle(r.randf() * TAU) * rad * u
+			if country(Rect2(p - Vector2(2, 2), Vector2(4, 4)), 8.0):
+				if u > 0.85 and r.randf() < 0.5:
+					add.call(4, p, r.randf_range(1.8, 2.3))
+				else:
+					add.call(kinds[r.randi() % kinds.size()], p, r.randf_range(1.5, 1.8) + 0.5 * (1.0 - u))
 	tree_mms.clear()
 	var d := Vector2(-SUN.x, -SUN.z) / SUN.y
 	var dn := d.normalized()
