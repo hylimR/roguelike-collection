@@ -1195,6 +1195,7 @@ var tv: Node3D  # the set's TV crew, shown on a TV Feature day
 var health: Node3D  # the health centre's wagon and a sanitiser stand, shown on a Health Inspection day
 var heat: Node3D  # a shaved-ice stand and a splashed sidewalk, shown on a Heatwave day
 var sale: Node3D  # the rival's sale flags along its front and posters on its glass, shown through a price war
+var time_sale: Node3D  # your own sale flags along your front, shown through your Time Sale
 var wall_bikes: Node3D  # the bicycles along your shop's wall, wheeled off when an event's stall or van takes the bay
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
@@ -7257,6 +7258,7 @@ func build_set() -> void:
 	shop_spill_mat.albedo_texture = shop_spill_tex(zl)
 	spill(set_node, Sim.ORIGIN.x + (zl + 6.6) / 2, 8.6 - zl, Sim.ORIGIN.y + 4.7, shop_spill_mat)  # your shop's open front
 	a_board(Vector2(-8.3, -6.2), 0.35)
+	time_sale = time_sale_display(zl)
 	blob(set_node, Vector2(-8.3, -6.2), 0.45)
 	cast(set_node, Vector2(-8.3, -6.2), 0.0, 0.9, 0.44)
 	for d in [[0, Vector2(-6.7, -6.75), 0.6], [0, Vector2(-4.1, -6.75), 0.6]]:
@@ -8198,9 +8200,8 @@ func stair_house(parent: Node3D, at: Vector3, lit: bool) -> void:
 			plane(parent, Vector2(2.0, 2.0), at + Vector3(-0.1, 0.07, 1.4), pool_mat)
 
 
-## A price war's dressing on the rival's front: nobori, tall cloth banners on poles in weighted bases, in red and yellow
-## turn about with SALE down each, stood along the glass either side of the door, and a SALE poster on the glass
-## beside the door each way, lit from behind after dark.
+## A price war's dressing on the rival's front: nobori in red and yellow turn about stood along the glass either side of
+## the door, and a SALE poster on the glass beside the door each way, lit from behind after dark.
 func sale_display(rv: Dictionary, span: Vector2) -> Node3D:
 	var node := Node3D.new()
 	node.visible = false
@@ -8211,39 +8212,11 @@ func sale_display(rv: Dictionary, span: Vector2) -> Node3D:
 	var st := surface(km)
 	var red := Color("dd3a2c")
 	var yellow := Color("f6cf3c")
-	var font: Font = bold if bold else get_theme_default_font()
-	var words := func(text: String, at: Vector3, ink: Color, px: float) -> void:
-		var l := Label3D.new()
-		l.text = text
-		l.font = font
-		l.font_size = 64
-		l.outline_size = 0
-		l.pixel_size = px
-		l.line_spacing = -14.0
-		l.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
-		l.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		l.position = at
-		l.modulate = ink * light
-		lit_mats.append([weakref(l), ink, 0.0])
-		node.add_child(l)
-	const Z := -6.45
 	var k := 0
 	var x := span.x + 1.1
 	while x < span.y - 0.8:
 		if absf(x - rv.x) > 1.4:
-			var cloth := red if k % 2 == 0 else yellow
-			var ink := yellow if k % 2 == 0 else red
-			box_into(st, Vector3(x - 0.2, 0, Z - 0.2), Vector3(x + 0.2, 0.16, Z + 0.2), Color("4a4b50"))  # the base, filled with water
-			box_into(st, Vector3(x - 0.14, 0.16, Z - 0.14), Vector3(x + 0.14, 0.2, Z + 0.14), Color("5c5d62"))
-			box_into(st, Vector3(x - 0.02, 0.2, Z - 0.02), Vector3(x + 0.02, 2.42, Z + 0.02), Color("d9d6cf"))
-			box_into(st, Vector3(x, 2.33, Z - 0.015), Vector3(x + 0.62, 2.36, Z + 0.015), Color("d9d6cf"))  # the bar it hangs from
-			box_into(st, Vector3(x + 0.03, 0.55, Z - 0.005), Vector3(x + 0.6, 2.33, Z + 0.005), cloth)
-			box_into(st, Vector3(x + 0.03, 0.55, Z + 0.005), Vector3(x + 0.08, 2.33, Z + 0.008), cloth.darkened(0.2))  # the loops round the pole
-			box_into(st, Vector3(x + 0.08, 2.14, Z + 0.005), Vector3(x + 0.6, 2.24, Z + 0.008), Color("fbfaf5"))
-			box_into(st, Vector3(x + 0.08, 0.62, Z + 0.005), Vector3(x + 0.6, 0.68, Z + 0.008), Color("fbfaf5"))
-			words.call("S\nA\nL\nE", Vector3(x + 0.34, 1.4, Z + 0.012), ink, 0.0052)
-			cast(node, Vector2(x + 0.3, Z), 0.55, 2.33, 0.57)
-			blob(node, Vector2(x, Z), 0.22)
+			nobori(node, st, x, -6.45, red if k % 2 == 0 else yellow, yellow if k % 2 == 0 else red)
 			k += 1
 		x += 2.1
 	commit([st], node)
@@ -8258,9 +8231,63 @@ func sale_display(rv: Dictionary, span: Vector2) -> Node3D:
 			paper.set_pixel(0, y, yellow)
 		var pm := art_panel(node, paper, Vector2(1.0, 0.62), Vector3(px, 1.62, -6.985), Color.WHITE, 1.0, false)
 		light_up(pm, 0.9)
-		words.call("SALE", Vector3(px, 1.62, -6.98), Color.WHITE, 0.0058)
+		sale_words(node, "SALE", Vector3(px, 1.62, -6.98), Color.WHITE, 0.0058)
 		lit_mats[-1][2] = 1.0
 	return node
+
+
+## Your Time Sale's dressing: nobori in your stripes' orange and green turn about along your front, either side of the
+## A-board and past the planter by the car park, clear of the door and the bench.
+func time_sale_display(zl: float) -> Node3D:
+	var node := Node3D.new()
+	node.visible = false
+	set_node.add_child(node)
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var st := surface(km)
+	var xs := [-3.45, -7.75, -9.8]
+	var x := -11.9
+	while x > Sim.ORIGIN.x + zl + 0.3:
+		if not (branch.store.facilities.has("bench") and absf(x + 13.6) < 1.4):
+			xs.append(x)
+		x -= 2.1
+	for i in xs.size():
+		nobori(node, st, xs[i], -6.45, LAYOUT.stripe[i % 2], Color("fbfaf5"))
+	commit([st], node)
+	return node
+
+
+## A nobori at x: a tall cloth banner on a pole in a weighted base, hung from a bar to the pole's right with white hems
+## top and bottom and SALE down it in `ink`.
+func nobori(node: Node3D, st: SurfaceTool, x: float, z: float, cloth: Color, ink: Color) -> void:
+	box_into(st, Vector3(x - 0.2, 0, z - 0.2), Vector3(x + 0.2, 0.16, z + 0.2), Color("4a4b50"))  # the base, filled with water
+	box_into(st, Vector3(x - 0.14, 0.16, z - 0.14), Vector3(x + 0.14, 0.2, z + 0.14), Color("5c5d62"))
+	box_into(st, Vector3(x - 0.02, 0.2, z - 0.02), Vector3(x + 0.02, 2.42, z + 0.02), Color("d9d6cf"))
+	box_into(st, Vector3(x, 2.33, z - 0.015), Vector3(x + 0.62, 2.36, z + 0.015), Color("d9d6cf"))  # the bar it hangs from
+	box_into(st, Vector3(x + 0.03, 0.55, z - 0.005), Vector3(x + 0.6, 2.33, z + 0.005), cloth)
+	box_into(st, Vector3(x + 0.03, 0.55, z + 0.005), Vector3(x + 0.08, 2.33, z + 0.008), cloth.darkened(0.2))  # the loops round the pole
+	box_into(st, Vector3(x + 0.08, 2.14, z + 0.005), Vector3(x + 0.6, 2.24, z + 0.008), Color("fbfaf5"))
+	box_into(st, Vector3(x + 0.08, 0.62, z + 0.005), Vector3(x + 0.6, 0.68, z + 0.008), Color("fbfaf5"))
+	sale_words(node, "S\nA\nL\nE", Vector3(x + 0.34, 1.4, z + 0.012), ink, 0.0052)
+	cast(node, Vector2(x + 0.3, z), 0.55, 2.33, 0.57)
+	blob(node, Vector2(x, z), 0.22)
+
+
+func sale_words(node: Node3D, text: String, at: Vector3, ink: Color, px: float) -> void:
+	var l := Label3D.new()
+	l.text = text
+	l.font = bold if bold else get_theme_default_font()
+	l.font_size = 64
+	l.outline_size = 0
+	l.pixel_size = px
+	l.line_spacing = -14.0
+	l.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
+	l.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	l.position = at
+	l.modulate = ink * light
+	lit_mats.append([weakref(l), ink, 0.0])
+	node.add_child(l)
 
 
 ## The canopy over the rival's glass, 20 px a metre: standing-seam sheet in the chain's colour, each pan a shade off
@@ -9903,6 +9930,8 @@ func _process(delta: float) -> void:
 			heat.visible = branch.event != null and branch.event.id == "heatwave"
 		if sale:
 			sale.visible = branch.rival.price_war > 0.0
+		if time_sale:
+			time_sale.visible = branch.effects.time_sale > 0.0
 		if wall_bikes:
 			wall_bikes.visible = branch.event == null or not branch.event.id in ["festival", "tv", "inspector", "heatwave"]
 		refresh_stock()
