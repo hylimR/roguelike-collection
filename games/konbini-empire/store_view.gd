@@ -2119,8 +2119,9 @@ func tree_pit() -> StandardMaterial3D:
 
 
 ## Your car park across its whole 7.1 x 8.8 m (uv 0-1 over Rect2(-3.4, -16, 7.1, 8.8)), 16 px a metre: the street's
-## coarse grain a shade paler, tyre paths polished darker into each bay and scuffed across the aisle, an oil stain
-## where each car's engine stands and dust along the kerbs. Its bay lines and arrow are laid over it in road paint.
+## coarse grain a shade paler, mottled with grime in long smears down the bays, tyre tracks polished darker into each
+## bay and curving in to it from the entrance, an oil stain where each car's engine stands, a few cracks sealed in
+## glossy black tar and dust along the kerbs and the shop's wall. Its bay lines and arrow are laid over it in road paint.
 func car_park() -> StandardMaterial3D:
 	if car_park_m:
 		return car_park_m
@@ -2132,34 +2133,62 @@ func car_park() -> StandardMaterial3D:
 	var noise := FastNoiseLite.new()
 	noise.seed = 53
 	noise.frequency = 0.9
+	var grime := FastNoiseLite.new()
+	grime.seed = 59
+	grime.frequency = 0.32
+	grime.fractal_octaves = 3
 	for py in img.get_height():
 		var z := -16.0 + (py + 0.5) / PX
+		var turn := smoothstep(-11.6, -7.4, z)
 		for px in img.get_width():
 			var x := -3.4 + (px + 0.5) / PX
 			var g := r.randf()  # the grain at the street's 16 px a metre
 			var v := r.randf_range(0.96, 1.02) if g < 0.9 else (r.randf_range(1.05, 1.09) if g < 0.95 else r.randf_range(0.85, 0.91))
 			var c := base
+			# grime smeared down the bays by the cars pulling in, about 4 m long to 1.5 m across
+			var m := grime.get_noise_2d(x * 1.1, z * 0.45) * 0.5 + 0.5
+			v *= lerpf(0.94, 1.05, smoothstep(0.2, 0.8, m))
+			if m < 0.4:
+				c = c.lerp(Color("3d4250"), (0.4 - m) * 0.9)
 			var tyre := 0.0
-			for bx in [-1.0, 1.4]:
+			for bx in [-1.0, 1.4]:  # each bay's wheel tracks, swinging in to it from the entrance across the aisle
+				var cx: float = lerpf(bx, 1.07, turn)
 				for wx in [-0.72, 0.72]:
-					var d := absf(x - bx - wx)
-					if d < 0.16 and z > -15.2:
-						tyre = maxf(tyre, clampf((z + 15.2) / 2.0, 0.25, 1.0))
-			if z > -11.0:  # the aisle, where every car turns in
-				tyre = maxf(tyre, 0.45 + 0.25 * noise.get_noise_2d(x * 0.7, z * 0.7))
-			v = lerpf(v, 0.84, tyre * 0.7)
+					var d := absf(x - cx - wx)
+					var w := 1.0 - smoothstep(0.1, 0.24, d)
+					if w > 0.0 and z > -15.2:
+						var worn := clampf((z + 15.2) / 2.0, 0.25, 1.0) * lerpf(1.0, 0.75 + 0.25 * noise.get_noise_2d(x * 0.8, z * 0.8), turn)
+						tyre = maxf(tyre, w * worn)
+			if z > -11.6:  # the aisle, scuffed all over where the cars turn
+				tyre = maxf(tyre, (0.18 + 0.12 * noise.get_noise_2d(x * 0.7, z * 0.7)) * turn)
+			v = lerpf(v, 0.83, tyre * 0.75)
 			for bx in [-1.0, 1.4]:  # an oil stain under each engine, ragged at its edge
 				var e := Vector2((x - bx) / 0.42, (z + 14.35) / 0.55).length() + 0.35 * noise.get_noise_2d(x * 3.0, z * 3.0)
 				if e < 1.0:
 					c = c.lerp(Color("2c2f38"), 0.55 * (1.0 - e * e))
 			if z < -15.75 or x > 3.45:
 				c = c.lerp(Color("8d8577"), 0.35 + 0.25 * noise.get_noise_2d(x * 2.0, z * 2.0))
+			elif x < -3.1:  # dust blown against the shop's wall
+				c = c.lerp(Color("8d8577"), (x + 3.1) / -0.3 * (0.22 + 0.12 * noise.get_noise_2d(x * 2.0, z * 2.0)))
 			img.set_pixel(px, py, Color(c.r * v, c.g * v, c.b * v))
+	for k in 3:  # cracks sealed with a band of tar, glossy along its sunward edge, running across the bays
+		var at := Vector2(r.randf_range(8, 106), r.randf_range(10, 120))
+		var dir := Vector2.from_angle(r.randf_range(0.0, TAU))
+		for s in r.randi_range(18, 34):
+			for o: Vector2i in [Vector2i(0, 0), Vector2i(1, 0)]:
+				var q := Vector2i(at) + o
+				if Rect2i(0, 0, 114, 141).has_point(q):
+					img.set_pixelv(q, Color("2e313a").lerp(img.get_pixelv(q), 0.4 if o.x == 0 else 0.7))
+			var lit := Vector2i(at) + Vector2i(0, -1)
+			if Rect2i(0, 0, 114, 141).has_point(lit) and r.randf() < 0.4:
+				img.set_pixelv(lit, img.get_pixelv(lit).lightened(0.1))
+			dir = dir.rotated(r.randf_range(-0.22, 0.22))
+			at += dir
 	img.generate_mipmaps()
-	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	car_park_m = m
-	return m
+	var mt := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	mt.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	car_park_m = mt
+	return mt
 
 
 ## The set's road markings for an 8 m repeat (uv x/8, z/8), 16 px a metre: the paint a shade apart and dulled with
