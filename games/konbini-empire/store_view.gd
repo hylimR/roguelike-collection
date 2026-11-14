@@ -8155,8 +8155,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 		art_panel(parent, slats, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color.WHITE, 1.0, false)
 		block(parent, Vector3(w - 0.6, 0.3, 0.3), Vector3(cx, 2.72, -7.0), Color("8f8c85"))  # the shutter boxes
 	else:
-		var shelves: Image = load("res://art/bg_super.png").get_image().get_region(Rect2i(80, 126, 560, 119))
-		art_panel(parent, shelves, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
+		art_panel(parent, rival_floor(w - 0.8, rv.x - span.x - 0.4, c), Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
 	block(parent, Vector3(w - 0.8, 0.12, 0.12), Vector3(cx, 2.6, -7.06), Color("5e6670"))
 	block(parent, Vector3(w - 0.8, 0.16, 0.14), Vector3(cx, 0.08, -7.06), Color("5e6670"))
 	var x0 := span.x + 0.4
@@ -8606,6 +8605,103 @@ func skylight_mats() -> Array:
 	fascia_glows.append([weakref(lm), SHOP_LIGHT])
 	skylight_pair = [weakref(gms[0]), weakref(lm), weakref(gms[1])]
 	return [gms[0], lm, gms[1]]
+
+
+## The rival's shop floor behind its glass, 40 px a metre, `door` metres in from the left: strip lights on the ceiling,
+## glass-door fridges along the back wall under a header in the chain's colour, bottles lit on their shelves, gondola
+## runs in front under cream caps banded in the chain's colour, stocked in runs of packs, with an aisle between, and a
+## magazine rack along the window, the covers' titles over their pictures, opening onto the floor at the door.
+func rival_floor(w: float, door: float, c: Color) -> Image:
+	var iw := roundi(w * 40.0)
+	var img := Image.create(iw, 104, false, Image.FORMAT_RGB8)
+	var r := RandomNumberGenerator.new()
+	r.seed = 61 + int(door * 10.0)
+	var rect := func(x: int, y: int, ww: int, hh: int, col: Color) -> void:
+		var a := Rect2i(x, y, ww, hh).intersection(Rect2i(0, 0, iw, 104))
+		if a.has_area():
+			img.fill_rect(a, col)
+	var dx := roundi(door * 40.0)
+	rect.call(0, 0, iw, 8, Color("d9dedf"))
+	for lx in range(6, iw, 52):
+		rect.call(lx, 3, 36, 2, Color("fbfdff"))
+	rect.call(0, 8, iw, 4, c)
+	rect.call(0, 12, iw, 1, Color.WHITE)
+	rect.call(0, 13, iw, 1, c.darkened(0.35))
+	# the fridges: graphite frames round lit doors, bottles a shade apart with paler caps on wire shelves
+	rect.call(0, 14, iw, 52, Color("3c4148"))
+	var drinks := ["3f8fd0", "e04a3a", "f2c94c", "5fb36a", "f08a3c", "e8e8e0", "8a5ac0", "2f8f7f"]
+	for x0 in range(0, iw, 28):
+		rect.call(x0 + 2, 15, 25, 46, Color("e6f0f4"))
+		rect.call(x0 + 2, 15, 25, 2, Color("fbfdff"))
+		for sy in [26, 37, 48, 59]:
+			var bx := x0 + 3
+			while bx < x0 + 25:
+				var dc := Color(drinks[r.randi() % drinks.size()]).lerp(Color("e6f0f4"), 0.25)
+				var bh := r.randi_range(6, 8)
+				for i in r.randi_range(3, 5):
+					if bx >= x0 + 25:
+						break
+					rect.call(bx, sy - bh, 2, bh, dc.darkened(0.1) if i % 2 else dc)
+					rect.call(bx, sy - bh, 2, 1, dc.lightened(0.4))
+					bx += 3
+			rect.call(x0 + 2, sy, 25, 1, Color("aab4ba"))
+		rect.call(x0 + 23, 22, 1, 30, Color("c9d0d4"))
+		rect.call(x0 + 2, 61, 25, 5, Color("50565e"))
+		for gx in range(x0 + 3, x0 + 26, 2):
+			rect.call(gx, 62, 1, 3, Color("30343a"))
+	rect.call(0, 66, iw, 14, Color("d8d4c8"))
+	for lx in range(0, iw, 20):
+		rect.call(lx, 66, 1, 14, Color("c6c2b6"))
+	# gondola runs, an aisle between them and straight in from the door
+	var goods := ["e0a040", "d05050", "60a060", "5a8fd0", "e8e0c8", "f0cf5a", "c0628e", "3f8f8a", "8a5a3a"]
+	var x := 6
+	while x < iw - 30:
+		var run := mini(r.randi_range(72, 104), iw - 6 - x)
+		var next := x + run + 24
+		if dx + 26 > x and dx - 26 < x + run:
+			run = dx - 26 - x
+			next = dx + 26
+		if run >= 24:
+			rect.call(x, 44, run, 3, Color("f1ecdf"))
+			rect.call(x, 47, run, 2, Color("5a5f66"))
+			rect.call(x, 48, run, 1, c)
+			rect.call(x, 49, run, 31, Color("eceae2"))
+			for sy in [59, 69, 79]:
+				var px := x + 1
+				while px < x + run - 1:
+					var gc := Color(goods[r.randi() % goods.size()]).lerp(Color("eceae2"), 0.3)
+					var gh := r.randi_range(6, 8)
+					for i in r.randi_range(3, 6):
+						if px >= x + run - 4:
+							break
+						if r.randf() > 0.06:
+							rect.call(px, sy - gh, 4, gh, gc.darkened(0.08) if i % 2 else gc)
+							rect.call(px, sy - gh, 4, 1, gc.lightened(0.3))
+						px += 4
+					px += 2
+				rect.call(x, sy, run, 2, Color("9a9f9c"))
+			rect.call(x, 49, 2, 31, Color("d6d3ca"))
+			rect.call(x + run - 2, 49, 2, 31, Color("c4c1b8"))
+		x = next
+	# the magazine rack along the glass: two tiers of covers, a title band over a picture, on a grey frame
+	var covers := ["e85a7a", "4a90d9", "f2c230", "62b06a", "f07a3a", "9b6bd1", "2bb3b0", "d94a4a", "f4f1e6"]
+	rect.call(0, 80, iw, 21, Color("8a9098"))
+	for x0 in range(0, iw, 8):
+		for tier in [[81, 10], [92, 8]]:
+			var cc := Color(covers[r.randi() % covers.size()]).lerp(Color("f4f1e6"), 0.3)
+			var ty: int = tier[0]
+			rect.call(x0 + 1, ty, 7, tier[1], cc if ty == 81 else cc.darkened(0.15))
+			rect.call(x0 + 1, ty + 1, 7, 2, Color("fbf8ee") if cc.v < 0.9 else Color("d94a4a"))
+			rect.call(x0 + 2, ty + 4, 5, tier[1] - 5, cc.lightened(0.35) if r.randf() < 0.5 else cc.darkened(0.25))
+	rect.call(0, 91, iw, 1, Color("6b7178"))
+	rect.call(0, 100, iw, 1, Color("6b7178"))
+	rect.call(dx - 30, 66, 60, 35, Color("d8d4c8"))  # the way in: floor tiles to the back, a mat inside the door
+	for fx in range(dx - 30, dx + 30, 20):
+		rect.call(fx, 66, 1, 35, Color("c6c2b6"))
+	rect.call(dx - 20, 94, 40, 7, Color("5d6168"))
+	rect.call(dx - 18, 95, 36, 1, Color("6e737a"))
+	rect.call(0, 101, iw, 3, Color("6b7178"))
+	return img
 
 
 ## The rival's roof as the city's flat roofs are drawn, kept tidier than the vacant unit's: a coating in strips across its
