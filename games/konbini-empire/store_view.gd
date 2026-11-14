@@ -1156,6 +1156,7 @@ var run_off_shadow_mat: StandardMaterial3D  # the shadows the expressway lays ou
 var env: Environment
 var light := Color.WHITE  # the hour's tint (DAYLIGHT)
 var night := 0.0  # 0 by day, 1 from 22:00, fading out at first light: lit windows and lamp pools
+var lamps := 0.0  # the street lamps, which switch on at dusk as the light fails rather than with the night
 var lit_mats: Array = []  # [weakref to an outdoor material (or a sign's Label3D), its own colour, how far it lights up after dark (lightboxes)]
 var lit_sprites: Array = []  # outdoor sprites that stand still, relit when the light changes
 var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the street after dark
@@ -1577,10 +1578,12 @@ func update_light() -> void:
 	var t := clampf(inverse_lerp(DAYLIGHT[k - 1][0], DAYLIGHT[k][0], h), 0.0, 1.0)
 	var c: Color = DAYLIGHT[k - 1][1].lerp(DAYLIGHT[k][1], t)
 	var n := maxf(clampf((h - 18.0) / 4.0, 0.0, 1.0), 0.7 * clampf((7.0 - h) / 1.0, 0.0, 1.0))  # lamps still on at first light
-	if is_equal_approx(n, night) and Vector3(c.r - light.r, c.g - light.g, c.b - light.b).length() < 0.004:
+	var ln := maxf(n, 0.8 * smoothstep(18.4, 19.6, h))
+	if is_equal_approx(n, night) and is_equal_approx(ln, lamps) and Vector3(c.r - light.r, c.g - light.g, c.b - light.b).length() < 0.004:
 		return
 	light = c
 	night = n
+	lamps = ln
 	lit_mats = lit_mats.filter(func(e): return e[0].get_ref() != null)
 	for e in lit_mats:
 		var o: Object = e[0].get_ref()
@@ -1604,7 +1607,7 @@ func update_light() -> void:
 		tree_shadow_mat.set_shader_parameter("stretch", 1.0 + 0.9 * golden_at(h))
 	awning_mat.albedo_color.a = 0.36 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
 	foot_mat.set_shader_parameter("core", 0.5 - 0.15 * night)
-	foot_mat.set_shader_parameter("glow", night)
+	foot_mat.set_shader_parameter("glow", lamps)
 	foot_mat.set_shader_parameter("sun", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	foot_mat.set_shader_parameter("reach", FOOT.z * Vector2(SUN.x, SUN.z).length() / SUN.y * (1.0 + 0.9 * golden_at(h)))
 	casts = casts.filter(func(s): return is_instance_valid(s))
@@ -1621,12 +1624,12 @@ func update_light() -> void:
 		field_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
 		field_mat.set_shader_parameter("night", night)
 	for m in road_light_mats:
-		m.set_shader_parameter("glow", night)
+		m.set_shader_parameter("glow", lamps)
 	pool_mat.albedo_color = LAMP * Color(1, 1, 1, 0.75 * night)
-	street_pool_mat.albedo_color = LAMP * Color(1, 1, 1, minf(1.3 * night, 1.0))
-	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * night)
-	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * night)
-	glare_mat.albedo_color = Color(1.0, 0.94, 0.8, 0.95 * night)
+	street_pool_mat.albedo_color = LAMP * Color(1, 1, 1, minf(1.3 * lamps, 1.0))
+	halo_mat.albedo_color = LAMP * Color(1, 1, 1, 0.55 * lamps)
+	beam_mat.albedo_color = LAMP * Color(1, 1, 1, 0.5 * lamps)
+	glare_mat.albedo_color = Color(1.0, 0.94, 0.8, 0.95 * lamps)
 	headlight_mat.albedo_color = Color(1.0, 0.9, 0.7, 0.6 * night)
 	tail_glow_mat.albedo_color = Color(1.0, 0.12, 0.06, 0.6 * night)
 	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
@@ -1647,7 +1650,7 @@ func update_light() -> void:
 	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.8 * lit)
 	lantern_pool_mat.albedo_color = Color(1.0, 0.5, 0.28, 0.55 * lit)
 	stall_glow_mat.albedo_color = Color(1.0, 0.6, 0.3, 0.95 * lit)
-	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
+	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), lamps)
 	if car_glass:
 		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
 	soft_mat.albedo_color.a = 0.34 - 0.14 * night
@@ -1674,10 +1677,10 @@ func light_at(p: Vector3) -> Color:
 	if shop_area.has_point(Vector2(p.x, p.z)):
 		return room_dim
 	var k := 0.0
-	if night > 0.0:
+	if lamps > 0.0:
 		for q in pools:
 			k = maxf(k, 1.0 - Vector2(p.x - q.x, p.z - q.y).length() / q.z)
-	return light.lerp(LAMP, k * night * 0.8)
+	return light.lerp(LAMP, k * lamps * 0.8)
 
 
 func shine(s: Sprite3D) -> void:
@@ -3308,7 +3311,7 @@ func build_road_lights() -> void:
 		m.shader.code = ROAD_LIGHT_SHADER
 		m.set_shader_parameter("tint", Vector3(t[0].r, t[0].g, t[0].b))
 		m.set_shader_parameter("wash", t[1])
-		m.set_shader_parameter("glow", maxf(night, 0.0))
+		m.set_shader_parameter("glow", lamps)
 		road_light_mats.append(m)
 	var S := 24.0
 	var SW := Sim.City.SIDEWALK
