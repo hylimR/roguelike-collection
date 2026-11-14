@@ -1305,7 +1305,21 @@ func lot_picture(L: Dictionary) -> PanelContainer:
 	var vs := label("vs", tint.darkened(0.25), 13)
 	vs.add_theme_font_override("font", bold)
 	h.add_child(vs)
-	h.add_child(theirs)
+	# the chain's mascot roundel breaks the corner of its shop, so a red chain's front never reads as a second konbini of yours
+	var rival := Control.new()
+	rival.custom_minimum_size = theirs.custom_minimum_size
+	theirs.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rival.add_child(theirs)
+	var reg: Rect2 = theirs.texture.region
+	var right := 48.0 + minf(96.0, 56.0 * reg.size.x / reg.size.y) / 2.0
+	var face := TextureRect.new()
+	face.texture = view.rival_face(L.rival)
+	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	face.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	face.size = Vector2(28, 28)
+	face.position = Vector2(right - 18.0, -8.0)
+	rival.add_child(face)
+	h.add_child(rival)
 	var plate := PanelContainer.new()
 	var s := box(tint.lerp(PAPER, 0.8), 14, 8)
 	s.border_width_bottom = 2
