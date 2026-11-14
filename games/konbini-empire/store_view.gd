@@ -5808,6 +5808,44 @@ func van_nose(st: SurfaceTool, x0: float, x1: float, zf: float, lamp_y: float, b
 		box_into(st, Vector3(minf(x + side * 0.1, x + side * 0.18), g.position.y + 0.02, zg - 0.3), Vector3(maxf(x + side * 0.1, x + side * 0.18), g.position.y + 0.24, zg - 0.22), Color("2b2c30"))
 
 
+## A car body lofted along z about x = cx into a vertex-coloured surface. Each section is [z, PackedVector2Array of
+## (half-width, height) up its side from the sill to the roof edge]; between sections i and i + 1 the strips up its
+## sides take cols[i] (one colour a strip) and its top tops[i], so a bonnet, a raked windscreen and a roof narrowing
+## over the doors fall out of how the sections step. caps[0] and caps[1] colour the nose's and the tail's strips.
+## Every face takes the house's tones by where it faces, as turned_box_into shades them.
+func hull_into(st: SurfaceTool, cx: float, secs: Array, cols: Array, tops: Array, caps: Array) -> void:
+	var at := func(sec: Array, k: int, side: float) -> Vector3:
+		var pt: Vector2 = sec[1][k]
+		return Vector3(cx + pt.x * side, pt.y, sec[0])
+	var face := func(q: Array, col: Color, out: Vector3) -> void:
+		var n: Vector3 = (q[1] - q[0]).cross(q[2] - q[0])
+		if n.length() < 1e-6:
+			n = (q[2] - q[0]).cross(q[3] - q[0])
+		if n.length() < 1e-6:
+			return
+		n = n.normalized()
+		if n.dot(out) < 0.0:
+			n = -n
+		var side := 0.9 if n.z - n.x > 0.0 else 0.75
+		var t := lerpf(side, 1.0, n.y) if n.y > 0.0 else lerpf(side, 0.7, -n.y)
+		st.set_color(Color(col.r * t, col.g * t, col.b * t))
+		add_quad(st, q, [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	var m: int = secs[0][1].size()
+	for i in secs.size() - 1:
+		var a: Array = secs[i]
+		var b: Array = secs[i + 1]
+		for side in [-1.0, 1.0]:
+			for k in m - 1:
+				var q := [at.call(a, k, side), at.call(b, k, side), at.call(b, k + 1, side), at.call(a, k + 1, side)]
+				face.call(q, cols[i][k], Vector3(side, 0.2, 0))
+		face.call([at.call(a, m - 1, -1.0), at.call(b, m - 1, -1.0), at.call(b, m - 1, 1.0), at.call(a, m - 1, 1.0)], tops[i], Vector3.UP)
+	for e in [[secs[0], caps[0]], [secs[-1], caps[1]]]:
+		var sec: Array = e[0]
+		var out := Vector3(0, 0, signf(sec[0] - secs[secs.size() / 2][0]))
+		for k in m - 1:
+			face.call([at.call(sec, k, -1.0), at.call(sec, k, 1.0), at.call(sec, k + 1, 1.0), at.call(sec, k + 1, -1.0)], e[1][k], out)
+
+
 ## Health Inspection: the ward health centre's white wagon nosed into your free bay, a green band round it and a green
 ## cross on its roof sign, and a sanitiser stand set out by your door; the sign lights up after dark. Built hidden.
 func health_check() -> Node3D:
@@ -5820,31 +5858,54 @@ func health_check() -> Node3D:
 	var st := surface(kit)
 	var body := Color("f4f3ee")
 	var green := Color("2e9a5c")
-	var glass := Color("33414f")
-	# a compact wagon, nose to the street: wheels under the skirt, a low bonnet, a glass house over the cabin and the
-	# band along its sides, the centre's badge on the door you see
+	var glass := Color("394c62")
+	var sky := Color("7593ab")
+	var trim := Color("9aa0a6")
+	var cowl := Color("3a3c41")
+	# a compact wagon, nose to the street: a rounded nose under a short bonnet, the windscreen raked back to a roof
+	# narrowing over the side glass, a tailgate leaning in, the band along its sides at the bumpers' height
 	van_wheels(st, -1.7, -0.3, [-14.4, -12.1], 0.25, 0.26)
-	box_into(st, Vector3(-1.7, 0.26, -14.95), Vector3(-0.3, 0.92, -11.35), body)
-	box_into(st, Vector3(-1.6, 0.92, -14.88), Vector3(-0.4, 1.5, -12.3), body)
-	box_into(st, Vector3(-1.72, 0.58, -14.97), Vector3(-0.28, 0.72, -11.33), green)
-	box_into(st, Vector3(-1.52, 0.97, -12.33), Vector3(-0.48, 1.43, -12.27), glass)
-	box_into(st, Vector3(-1.52, 0.99, -14.91), Vector3(-0.48, 1.4, -14.85), glass)
-	for x in [-1.62, -0.42]:  # side glass in two panes either side of a pillar
-		box_into(st, Vector3(x - 0.02, 0.98, -14.72), Vector3(x + 0.04, 1.43, -13.62), glass)
-		box_into(st, Vector3(x - 0.02, 0.98, -13.46), Vector3(x + 0.04, 1.43, -12.42), glass)
-	box_into(st, Vector3(-1.72, 0.22, -11.38), Vector3(-0.28, 0.4, -11.28), Color("9aa0a6"))
-	box_into(st, Vector3(-1.72, 0.22, -15.02), Vector3(-0.28, 0.4, -14.92), Color("9aa0a6"))
-	for x in [-1.55, -0.45]:
-		box_into(st, Vector3(x - 0.12, 0.74, -11.36), Vector3(x + 0.12, 0.84, -11.32), Color("fff3c4"))
-	van_nose(st, -1.7, -0.3, -11.35, 0.74, 0.22, Rect2(-1.52, 0.97, 1.04, 0.46), -12.27)
-	for x in [-1.62, -0.42]:  # the sky caught along the top of the side glass
-		box_into(st, Vector3(x + 0.04, 1.34, -14.72), Vector3(x + 0.045, 1.43, -13.62), Color("6f8aa0"))
-		box_into(st, Vector3(x + 0.04, 1.34, -13.46), Vector3(x + 0.045, 1.43, -12.42), Color("6f8aa0"))
-	for z in [-13.54, -12.36]:  # the doors' shut lines below the glass, each with its handle
-		box_into(st, Vector3(-0.3, 0.3, z - 0.015), Vector3(-0.29, 0.92, z + 0.015), body.darkened(0.35))
-		box_into(st, Vector3(-0.3, 0.82, z - 0.22), Vector3(-0.28, 0.86, z - 0.08), Color("9aa0a6"))
-	box_into(st, Vector3(-0.3, 0.76, -13.3), Vector3(-0.27, 0.9, -12.95), Color("fbfaf5"))
+	var sec := func(z: float, belt: float, glass_top: float, roof: float, inset := 0.0) -> Array:
+		var w := 0.7 - inset
+		return [z, PackedVector2Array([Vector2(w - 0.02, 0.24), Vector2(w, 0.58), Vector2(w, 0.72), Vector2(w - 0.03, belt),
+				Vector2(lerpf(w - 0.04, 0.59, (glass_top - belt) / 0.4), glass_top), Vector2(lerpf(w - 0.04, 0.58, (roof - belt) / 0.5), roof),
+				Vector2(lerpf(w - 0.04, 0.55, (roof - belt) / 0.5), roof + (0.06 if roof > belt else 0.0))])]
+	var secs := [sec.call(-11.33, 0.8, 0.8, 0.8, 0.06), sec.call(-11.5, 0.89, 0.89, 0.89), sec.call(-12.18, 0.95, 0.95, 0.95),
+			sec.call(-12.26, 0.95, 0.97, 0.97), sec.call(-12.82, 0.95, 1.34, 1.42), sec.call(-12.95, 0.95, 1.36, 1.44),
+			sec.call(-13.05, 0.95, 1.36, 1.44), sec.call(-13.58, 0.95, 1.36, 1.44), sec.call(-13.68, 0.95, 1.36, 1.44),
+			sec.call(-14.45, 0.95, 1.36, 1.44), sec.call(-14.78, 0.95, 1.36, 1.44), sec.call(-14.93, 0.93, 1.3, 1.38, 0.02)]
+	var lower := [body, green, body]
+	var pane := lower + [glass, sky, body]
+	var pillar := lower + [body, body, body]
+	var cols := [[trim, body, body, body, body, body], pillar, pillar, pillar, pillar, pillar, pane, pillar, pane, pillar, pillar]
+	var tops := [body, body, cowl, glass, sky, body, body, body, body, body, glass]
+	hull_into(st, -1.0, secs, cols, tops, [[trim, body, body, body, body, body], [trim, green, body, glass, glass, body]])
+	box_into(st, Vector3(-1.69, 0.2, -11.4), Vector3(-0.31, 0.38, -11.28), trim)  # the bumpers, wrapped round the corners
+	box_into(st, Vector3(-1.69, 0.22, -15.0), Vector3(-0.31, 0.4, -14.88), trim)
+	# its face: lamps swept round the corners, a grille between them, indicators below, the plate on the bumper
+	for side in [-1.0, 1.0]:
+		var x: float = -1.0 + side * 0.5
+		box_into(st, Vector3(x - 0.15, 0.63, -11.43), Vector3(x + 0.15, 0.77, -11.34), cowl)
+		box_into(st, Vector3(x - 0.13, 0.65, -11.42), Vector3(x + 0.13, 0.75, -11.32), Color("fff3c4"))
+		box_into(st, Vector3(x - side * 0.13, 0.67, -11.42), Vector3(x - side * 0.04, 0.73, -11.315), Color("e8edf0"))
+		box_into(st, Vector3(x - 0.1, 0.5, -11.38), Vector3(x + 0.1, 0.56, -11.32), Color("f0a03a"))
+		box_into(st, Vector3(-1.0 + side * 0.665 - 0.005, 0.62, -11.85), Vector3(-1.0 + side * 0.665 + 0.005, 0.66, -11.6), Color("f0a03a"))
+		box_into(st, Vector3(x - 0.12, 0.66, -14.96), Vector3(x + 0.12, 0.9, -14.9), Color("c8322b"))  # tail lamps
+		# a mirror out on each door at the windscreen's foot
+		box_into(st, Vector3(-1.0 + side * 0.66 - 0.04, 0.95, -12.42), Vector3(-1.0 + side * 0.66 + 0.04, 0.99, -12.36), cowl)
+		box_into(st, Vector3(minf(-1.0 + side * 0.7, -1.0 + side * 0.8), 0.94, -12.43), Vector3(maxf(-1.0 + side * 0.7, -1.0 + side * 0.8), 1.08, -12.37), cowl)
+	box_into(st, Vector3(-1.32, 0.56, -11.36), Vector3(-0.68, 0.62, -11.31), cowl)
+	box_into(st, Vector3(-1.2, 0.27, -11.29), Vector3(-0.8, 0.37, -11.27), Color("f4f2e8"))
+	box_into(st, Vector3(-1.14, 0.3, -11.27), Vector3(-0.86, 0.32, -11.26), Color("2e6b48"))
+	for x in [-1.48, -0.98]:  # wipers parked along the windscreen's foot
+		box_into(st, Vector3(x, 0.97, -12.31), Vector3(x + 0.44, 0.99, -12.27), Color("1d1d20"))
+	for z in [-13.6, -12.27]:  # the doors' shut lines below the glass, each with its handle
+		box_into(st, Vector3(-0.3, 0.3, z - 0.015), Vector3(-0.29, 0.94, z - 0.0), body.darkened(0.35))
+		box_into(st, Vector3(-0.31, 0.82, z - 0.24), Vector3(-0.28, 0.86, z - 0.1), trim)
+	box_into(st, Vector3(-0.3, 0.76, -13.3), Vector3(-0.27, 0.9, -12.95), Color("fbfaf5"))  # the centre's badge
 	box_into(st, Vector3(-0.27, 0.8, -13.18), Vector3(-0.26, 0.86, -13.07), green)
+	for x in [-1.42, -0.58]:  # roof rails
+		box_into(st, Vector3(x - 0.03, 1.5, -14.6), Vector3(x + 0.03, 1.55, -13.1), Color("8e9196"))
 	# the roof sign on two feet, side-on like a taxi's lamp
 	for z in [-13.85, -13.05]:
 		box_into(st, Vector3(-1.04, 1.5, z - 0.05), Vector3(-0.96, 1.6, z + 0.05), Color("8e9196"))
