@@ -637,11 +637,11 @@ func _process(delta: float) -> void:
 	drain()
 	view.hud_card = Rect2(store_card.global_position - view.global_position, store_card.size) if store_card.visible else Rect2()
 	view.hud_keep.clear()
-	if view.mode == "city":
-		for row in hud_rows:
-			for c in row.get_children():
-				if c is Control and c.visible:
-					view.hud_keep.append(Rect2(c.global_position - view.global_position, c.size).grow(3.0))
+	view.hud_dock.clear()
+	for row in (hud_rows if view.mode == "city" else hud_rows.slice(2)):
+		for c in row.get_children():
+			if c is Control and c.visible:
+				(view.hud_keep if view.mode == "city" else view.hud_dock).append(Rect2(c.global_position - view.global_position, c.size).grow(3.0))
 	for t in toasts:
 		t[2] -= delta
 	toasts = toasts.filter(func(t): return t[2] > 0.0)

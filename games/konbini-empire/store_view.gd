@@ -1142,6 +1142,7 @@ var actors: Node3D
 var overlay: Control
 var hud_card := Rect2()  # the HUD's store card over the view: the rival's pin keeps clear of it
 var hud_keep: Array = []  # the HUD's chips and buttons over the city map: its labels keep clear of them
+var hud_dock: Array = []  # the HUD's store tabs and bottom buttons over the street: threat tags stack up clear of them
 
 
 func _ready() -> void:
@@ -9737,7 +9738,7 @@ func draw_street() -> void:
 		var below := 13.0 if t.max_clicks > 1 or t.type == "review" else font.get_descent(11) + 2
 		tags.append({"t": t, "label": label, "home": top, "box": Rect2(top.x - w / 2, top.y - font.get_ascent(11) - 2, w, font.get_ascent(11) + 2 + below)})
 	tags.sort_custom(func(p, q): return p.home.y > q.home.y or (p.home.y == q.home.y and p.t.id < q.t.id))
-	var placed: Array = []
+	var placed: Array = hud_dock.duplicate()
 	for g in tags:
 		var box: Rect2 = g.box
 		var moved := true
