@@ -10339,11 +10339,34 @@ func draw_street() -> void:
 		if t.fleeing:
 			continue
 		var at := screen(threat_point(t))
-		var label: String = {"flyer": "Flyers", "mascot": "Mascot", "trash": "Trash", "review": "1★ review", "shoplifter": "Thief!", "breaker": "Breaker", "suit": "Suit", "spill": "Spill"}[t.type]
-		var top := at + Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit", "review"] else (-36 if t.type == "mascot" else (-30 if t.type == "breaker" else -12)))
+		var g = null
+		if t.type in ["trash", "spill"]:  # a heap of one kind of mess shares one tag, stemmed to each piece
+			for o in tags:
+				if o.t.type == t.type and o.pts.any(func(p): return p.distance_to(at) < 90.0):
+					g = o
+					break
+		if g == null:
+			tags.append({"t": t, "pts": [at], "foot": at.y})
+		else:
+			g.pts.append(at)
+			g.foot = maxf(g.foot, at.y)
+	for g in tags:
+		var t: Dictionary = g.t
+		var n: int = g.pts.size()
+		var label: String = {"flyer": "Flyers", "mascot": "Mascot", "trash": "Trash", "review": "1★ review", "shoplifter": "Thief!", "breaker": "Breaker", "suit": "Suit", "spill": "Spill"}[t.type] + (" ×%d" % n if n > 1 else "")
+		g.lift = Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit", "review"] else (-36 if t.type == "mascot" else (-30 if t.type == "breaker" else -12)))
+		var top: Vector2 = g.pts[0] + g.lift
+		if n > 1:  # over the middle of the heap, high enough that its stems fan out to each piece
+			var sx := 0.0
+			for p in g.pts:
+				sx += p.x
+				top.y = minf(top.y, p.y + g.lift.y - 16.0)
+			top.x = sx / n
 		var w := maxf(font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 14, t.max_clicks * 9.0 + 2 if t.max_clicks > 1 else 0.0)
 		var below := 13.0 if t.max_clicks > 1 or t.type == "review" else font.get_descent(11) + 2
-		tags.append({"t": t, "label": label, "home": top, "foot": at.y, "box": Rect2(top.x - w / 2, top.y - font.get_ascent(11) - 2, w, font.get_ascent(11) + 2 + below)})
+		g.label = label
+		g.home = top
+		g.box = Rect2(top.x - w / 2, top.y - font.get_ascent(11) - 2, w, font.get_ascent(11) + 2 + below)
 	tags.sort_custom(func(p, q): return p.home.y > q.home.y or (p.home.y == q.home.y and p.t.id < q.t.id))
 	var placed: Array = hud_dock.duplicate()
 	var over: Array = hud_top + [Rect2(8, 8, 196, 82), Rect2(sign_at + Vector2(-(bw + 50) / 2 - 20, 12 - ph), Vector2(bw + 76, ph + 6))]
@@ -10378,13 +10401,19 @@ func draw_street() -> void:
 						moved = true
 		placed.append(box)
 		g.top = g.home + box.position - g.box.position
-		var to: Vector2 = g.home + Vector2(0, 2) if box.position.y < g.home.y else Vector2(g.home.x, g.foot)  # a tag hung below takes its stem up to the feet
-		if g.top.distance_to(g.home) > 1.0 and not over.any(func(o): return o.has_point(to)):  # stems first, so no tag's stem crosses another; none to a threat hidden under the HUD
-			var foot := Vector2(clampf(to.x, box.position.x + 8.0, box.end.x - 8.0), box.end.y if to.y > box.end.y else (box.position.y if to.y < box.position.y else box.get_center().y))
-			overlay.draw_line(foot + Vector2(1, 0), to + Vector2(1, 0), Color(0, 0, 0, 0.3), 2.5)
-			overlay.draw_line(foot, to, Color.WHITE, 1.5)
-			overlay.draw_circle(to, 3.0, Color.WHITE)
-			overlay.draw_circle(to, 2.0, Color("e05a4e") if g.t.type != "spill" else Color("3a9bd9"))
+		var hung: bool = box.position.y >= g.home.y  # a tag hung below takes its stem up to the feet
+		var tos: Array = [g.home + Vector2(0, 2) if not hung else Vector2(g.home.x, g.foot)]
+		if g.pts.size() > 1:
+			tos = g.pts.map(func(p): return p + (g.lift + Vector2(0, 2) if not hung else Vector2.ZERO))
+		if g.top.distance_to(g.home) > 1.0 or tos.size() > 1:  # stems first, so no tag's stem crosses another; none to a threat hidden under the HUD
+			for to in tos:
+				if over.any(func(o): return o.has_point(to)):
+					continue
+				var foot := Vector2(clampf(to.x, box.position.x + 8.0, box.end.x - 8.0), box.end.y if to.y > box.end.y else (box.position.y if to.y < box.position.y else box.get_center().y))
+				overlay.draw_line(foot + Vector2(1, 0), to + Vector2(1, 0), Color(0, 0, 0, 0.3), 2.5)
+				overlay.draw_line(foot, to, Color.WHITE, 1.5)
+				overlay.draw_circle(to, 3.0, Color.WHITE)
+				overlay.draw_circle(to, 2.0, Color("e05a4e") if g.t.type != "spill" else Color("3a9bd9"))
 	for g in tags:
 		var t: Dictionary = g.t
 		var top: Vector2 = g.top
