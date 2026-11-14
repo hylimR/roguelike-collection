@@ -5489,20 +5489,81 @@ func roadworks(near_gaps: Array) -> Node3D:
 		box_into(st, Vector3(px, -0.045, 3.47), Vector3(px + 0.905, -0.017, 3.5), pc.lightened(0.22))
 		box_into(st, Vector3(px + 0.905, -0.045, 2.75), Vector3(px + 0.925, -0.016, 3.5), plate.darkened(0.45))
 		box_into(st, Vector3(px + 0.08, -0.045, 3.33), Vector3(px + 0.14, -0.015, 3.39), plate.darkened(0.5))
+	# the spoil: a lumpy mound of earth faceted over a grid, each facet shaded by the way it faces, damp and dark at its
+	# foot and drying paler toward a peak pushed off centre, clods and broken tarmac rolled out round it and a shovel
+	# driven into its crown
 	var heap := Vector3(x0 + 4.05, -0.02, 3.1)
-	for h in [[0.38, 0.3, 0.1, "6f5136"], [0.3, 0.24, 0.2, "7d5c3b"], [0.21, 0.17, 0.29, "8a6842"], [0.11, 0.09, 0.35, "977450"]]:
-		box_into(st, heap + Vector3(-h[0], 0, -h[1]), heap + Vector3(h[0], h[2], h[1]), Color(h[3]))
+	var hr := RandomNumberGenerator.new()
+	hr.seed = 5281
+	var peak := Vector2(-0.06, -0.03)
+	var lumps: Array = []
+	for i in 5:
+		lumps.append(Vector3(hr.randf_range(-0.6, 0.6), hr.randf_range(-0.6, 0.6), hr.randf_range(-0.05, 0.06)))
+	var mound := func(u: float, v: float) -> Vector3:  # u, v across the heap's footprint in -1..1
+		var r2 := u * u + v * v
+		var y := 0.0
+		if r2 < 1.0:
+			var q := Vector2(u, v) - peak
+			y = 0.36 * pow(1.0 - r2, 0.9) * (1.0 - 0.25 * q.length())
+			for l in lumps:
+				y += l.z * exp(-(Vector2(u, v) - Vector2(l.x, l.y)).length_squared() * 9.0) * (1.0 - r2)
+		return heap + Vector3(u * 0.44, maxf(y, 0.0), v * 0.34)
+	const N := 8
+	for j in N:
+		for i in N:
+			var u0 := -1.0 + 2.0 * i / N
+			var u1 := -1.0 + 2.0 * (i + 1) / N
+			var v0 := -1.0 + 2.0 * j / N
+			var v1 := -1.0 + 2.0 * (j + 1) / N
+			var q: Array = [mound.call(u0, v1), mound.call(u1, v1), mound.call(u1, v0), mound.call(u0, v0)]
+			var hy: float = ((q[0] + q[1] + q[2] + q[3]) / 4.0).y - heap.y
+			if hy < 0.003:
+				continue
+			var n: Vector3 = (q[2] - q[0]).cross(q[1] - q[3]).normalized()
+			if n.y < 0.0:
+				n = -n
+			var side := 0.9 if n.z - n.x > 0.0 else 0.75
+			var t := lerpf(side, 1.0, n.y)
+			var col := Color("5a402c").lerp(Color("9c7a52"), clampf(hy / 0.3, 0.0, 1.0)).lightened(hr.randf_range(0.0, 0.05))
+			st.set_color(Color(col.r * t, col.g * t, col.b * t))
+			add_quad(st, q, [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
+	for i in 9:
+		var a := TAU * i / 9.0 + hr.randf_range(-0.3, 0.3)
+		var p := heap + Vector3(cos(a) * hr.randf_range(0.36, 0.5), 0, sin(a) * hr.randf_range(0.28, 0.4))
+		var s := hr.randf_range(0.025, 0.05)
+		var tarmac := i % 3 == 0
+		box_into(st, p - Vector3(s, 0, s * 0.8), p + Vector3(s, s * (0.7 if tarmac else 1.0), s * 0.8), Color("34363a") if tarmac else Color("6b4d34").lightened(hr.randf_range(0.0, 0.12)))
+	var top: Vector3 = mound.call(peak.x + 0.1, peak.y) - Vector3(0, 0.03, 0)
+	turned_box_into(st, Transform3D(Basis(Vector3.BACK, -0.3) * Basis.from_scale(Vector3(0.025, 0.95, 0.025)), top + Vector3(0.14, 0.42, 0)), Color("b08a5a"))  # the handle
+	turned_box_into(st, Transform3D(Basis(Vector3.BACK, -0.3) * Basis.from_scale(Vector3(0.11, 0.035, 0.035)), top + Vector3(0.28, 0.87, 0)), Color("2b2a2c"))  # its grip
+	turned_box_into(st, Transform3D(Basis(Vector3.BACK, -0.3) * Basis.from_scale(Vector3(0.02, 0.16, 0.2)), top + Vector3(0.0, -0.02, 0)), Color("8c9298"))  # the blade, half buried
+	# the trench, sawn clean through the road: its far wall shows the cut through the surface course, the grey crushed
+	# stone under it and the earth darkening down toward a floor puddled over the main they dug for, its end wall in
+	# shade and a shadow cast in from the near lip
 	box_into(st, Vector3(x0 + 4.6, -0.045, 2.75), Vector3(x0 + 5.7, -0.03, 3.5), Color("8d9095"))  # the sawn edge
 	box_into(st, Vector3(x0 + 4.64, -0.045, 2.79), Vector3(x0 + 5.66, -0.027, 3.46), Color("2a1d15"))
-	box_into(st, Vector3(x0 + 4.64, -0.045, 2.79), Vector3(x0 + 5.66, -0.025, 2.97), Color("8a6440"))  # the far wall
-	box_into(st, Vector3(x0 + 4.64, -0.045, 2.79), Vector3(x0 + 5.66, -0.024, 2.82), Color("a57a50"))
-	box_into(st, Vector3(x0 + 4.64, -0.045, 2.97), Vector3(x0 + 4.7, -0.025, 3.46), Color("5e4430"))
+	for w in [[2.79, 2.815, "5e6065"], [2.815, 2.85, "323337"], [2.85, 2.9, "8e8a82"], [2.9, 2.96, "7a5a3b"], [2.96, 3.02, "614631"], [3.02, 3.06, "4a3424"]]:
+		box_into(st, Vector3(x0 + 4.64, -0.045, w[0]), Vector3(x0 + 5.66, -0.025, w[1]), Color(w[2]))
+	for i in 14:  # the crushed stone's chips
+		var sx := x0 + 4.68 + i * 0.07 + hr.randf_range(0.0, 0.03)
+		box_into(st, Vector3(sx, -0.045, 2.86 + hr.randf_range(0.0, 0.025)), Vector3(sx + 0.02, -0.0245, 2.875 + hr.randf_range(0.0, 0.02)), Color("b4aea3") if i % 2 == 0 else Color("6a6660"))
+	box_into(st, Vector3(x0 + 4.64, -0.045, 2.85), Vector3(x0 + 4.72, -0.025, 3.46), Color("4e3828"))  # the end wall
+	box_into(st, Vector3(x0 + 4.64, -0.045, 2.79), Vector3(x0 + 4.72, -0.0245, 2.85), Color("4a4b50"))
 	box_into(st, Vector3(x0 + 4.64, -0.045, 3.1), Vector3(x0 + 5.66, -0.022, 3.22), Color("5d7686"))  # the main
 	box_into(st, Vector3(x0 + 4.64, -0.045, 3.1), Vector3(x0 + 5.66, -0.021, 3.13), Color("8fa6b3"))
 	for jx in [x0 + 4.95, x0 + 5.4]:
 		box_into(st, Vector3(jx - 0.05, -0.045, 3.08), Vector3(jx + 0.05, -0.019, 3.24), Color("4d6170"))
-	box_into(st, Vector3(x0 + 5.7, -0.045, 2.7), Vector3(x1 - 0.8, -0.03, 3.52), Color("1c1d20"))
+	box_into(st, Vector3(x0 + 5.0, -0.045, 3.26), Vector3(x0 + 5.5, -0.0265, 3.36), Color("3b4248"))  # a puddle
+	box_into(st, Vector3(x0 + 5.08, -0.045, 3.28), Vector3(x0 + 5.3, -0.026, 3.3), Color("6d7f8c"))
+	box_into(st, Vector3(x0 + 4.64, -0.045, 3.38), Vector3(x0 + 5.66, -0.0262, 3.46), Color("1d140e"))  # under the near lip
+	# the patch already laid: fresh tarmac black and still glossy, rolled in passes along the lane, its joint with the
+	# old road sealed in a band of shiny tar
+	box_into(st, Vector3(x0 + 5.7, -0.045, 2.7), Vector3(x1 - 0.8, -0.03, 3.52), Color("17181b"))
 	box_into(st, Vector3(x0 + 5.74, -0.045, 2.74), Vector3(x1 - 0.84, -0.028, 3.48), Color("2f3135"))
+	for k in 4:
+		var z := 2.76 + k * 0.18
+		box_into(st, Vector3(x0 + 5.76, -0.045, z), Vector3(x1 - 0.86, -0.0275, z + 0.07), Color("383a3f") if k % 2 == 0 else Color("292b2f"))
+	box_into(st, Vector3(x0 + 5.74, -0.045, 2.74), Vector3(x1 - 0.84, -0.0272, 2.765), Color("4a4d54"))
 	for b in [x0 + 0.35, x1 - 0.35]:  # a barricade across each end, two striped boards on white legs, a lamp on top
 		for z in [2.62, 3.48]:
 			box_into(st, Vector3(b - 0.04, -0.04, z - 0.04), Vector3(b + 0.04, 0.95, z + 0.04), Color("eceae4"))
