@@ -431,6 +431,7 @@ uniform float snow = 0.0;  // a cold snap: snow lying on every roof
 uniform sampler2D snow_tex : filter_nearest, repeat_enable;
 varying vec3 lpos;
 varying vec2 wxz;
+varying float wy;
 // per instance or face: flat, as the hashes below blow up the slightest drift across a triangle into patches
 varying flat vec3 lnrm;
 varying flat vec4 info;
@@ -449,7 +450,9 @@ void vertex() {
 	tint = COLOR;
 	lnrm = NORMAL;
 	lpos = (VERTEX + 0.5) * INSTANCE_CUSTOM.xyz;
-	wxz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	vec3 wv = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	wxz = wv.xz;
+	wy = wv.y;
 	sunl = vec2(dot(normalize(MODEL_MATRIX[0].xz), vec2(-0.35, 0.6)), dot(normalize(MODEL_MATRIX[2].xz), vec2(-0.35, 0.6)));
 	float run = length(vec2(0.5 * length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz)));
 	slope = vec3(VERTEX.z * length(MODEL_MATRIX[2].xyz), (0.5 - abs(VERTEX.x)) * 2.0 * run, run);
@@ -1042,6 +1045,17 @@ void fragment() {
 		float up = slope.z - q.y;
 		f = up < 0.2 ? (up < 0.05 ? 1.12 : 0.8) : (q.y < 0.1 ? 0.7 : f);  // the ridge cap, and the eave's edge
 		col = tint.rgb * mix(1.0, f, fine);
+	} else if (info.w < -0.5 && lnrm.y > 0.98 && wy < 0.75 && min(info.x, info.z) > 1.5 && max(tint.g - max(tint.r, tint.b), tint.b - tint.r) < 0.05
+			&& dot(tint.rgb, vec3(0.3, 0.59, 0.11)) > 0.4) {
+		// a landmark's plinth or paving (not its lawns, pools or tarmac), laid in 60 cm slabs on the world's grid so
+		// neighbouring parts line up: each slab a shade off, a few weathered darker, dark joints, edges toward the sun
+		// lit; lost into the flat colour once the slabs are only a few pixels across
+		vec2 q = wxz / 0.6;
+		vec2 g = fract(q);
+		float h = fract(sin(dot(floor(q), vec2(12.9898, 78.233))) * 43758.5453);
+		float f = h < 0.88 ? 0.95 + 0.08 * fract(h * 7.13) : 0.88;
+		f = min(min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)) < 0.04 ? 0.8 : (g.x < 0.1 || g.y > 0.9 ? f * 1.05 : f);
+		col = tint.rgb * mix(1.0, f, 1.0 - smoothstep(0.035, 0.11, max(fwidth(wxz.x), fwidth(wxz.y))));
 	} else if (info.x == 0.0 && tint.a < 0.99) {  // a landmark face packed with alpha under 1 is floodlit after dark
 		glow = vec3(1.0, 0.62, 0.3) * (1.0 - tint.a) * 2.0 * night;  // a warm floodlight, its strength in the alpha
 	}
