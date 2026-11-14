@@ -1185,6 +1185,7 @@ var matsuri: Node3D  # the set's festival lanterns and yatai, shown on a Summer 
 var lantern_glow_mat: StandardMaterial3D
 var lantern_pool_mat: StandardMaterial3D  # the matsuri lanterns' warm light on the sidewalk under their strings
 var stall_glow_mat: StandardMaterial3D  # the yatai's lamplight on the bay after dark
+var festive_mats: Array = []  # [weakref to a matsuri lantern's or the yatai's material, its colour, how far it lights up]
 var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
 var car_lamp_tex: ImageTexture  # the vehicles sheet's lamps lit, frame for frame, over a clear ground
@@ -1433,6 +1434,12 @@ func mat(color: Color, texture: Texture2D = null, indoor := false) -> StandardMa
 
 
 ## Marks an outdoor material as a lightbox: after dark it lights up toward its own colour by k instead of dimming.
+## Lights a matsuri material from sunset, as update_light ramps the festival's lanterns, rather than with the night.
+func festive(m: StandardMaterial3D, color: Color, k: float) -> void:
+	light_up(m, 0.0)
+	festive_mats.append([weakref(m), color, k])
+
+
 func light_up(m: StandardMaterial3D, k: float) -> void:
 	for i in range(lit_mats.size() - 1, -1, -1):  # just made, so near the end
 		if lit_mats[i][0].get_ref() == m:
@@ -1613,9 +1620,13 @@ func update_light() -> void:
 	rival_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * night)
 	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night * on)
 	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night * on)
-	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.75 * night)
-	lantern_pool_mat.albedo_color = Color(1.0, 0.5, 0.28, 0.6 * night)
-	stall_glow_mat.albedo_color = Color(1.0, 0.6, 0.3, 0.95 * night)
+	var lit := maxf(night, smoothstep(17.6, 19.0, h))  # a matsuri's lanterns are lit by sunset, not at full dark
+	festive_mats = festive_mats.filter(func(e): return e[0].get_ref() != null)
+	for e in festive_mats:
+		e[0].get_ref().albedo_color = e[1] * light.lerp(Color.WHITE, e[2] * lit)
+	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.8 * lit)
+	lantern_pool_mat.albedo_color = Color(1.0, 0.5, 0.28, 0.55 * lit)
+	stall_glow_mat.albedo_color = Color(1.0, 0.6, 0.3, 0.95 * lit)
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), night)
 	if car_glass:
 		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
@@ -5516,13 +5527,13 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 		for c in 2:
 			cm.set_instance_transform(i * 2 + c, Transform3D(Basis().scaled(Vector3(0.21, 0.06, 0.21)), at + Vector3(0, 0.24 if c == 0 else -0.24, 0)))
 			cm.set_instance_color(i * 2 + c, Color("2e2523"))
-		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(2.0, 2.0, 2.0)), at + to_eye() * 0.3))
-		pm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.5, 1.0, 1.25)), Vector3(at.x, -0.032, at.z)))
+		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(2.4, 2.4, 2.4)), at + to_eye() * 0.3))
+		pm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.8, 1.0, 2.0)), Vector3(at.x, -0.032, at.z)))
 	var paper := mat(Color.WHITE, ImageTexture.create_from_image(ribs))
 	paper.vertex_color_use_as_albedo = true
 	paper.vertex_color_is_srgb = true
 	paper.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
-	light_up(paper, 1.0)
+	festive(paper, Color.WHITE, 1.0)
 	mm_node(bm, paper, node)
 	var cap := mat(Color.WHITE)
 	cap.vertex_color_use_as_albedo = true
@@ -5545,7 +5556,7 @@ func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 	var under := mat(Color.WHITE)  # what the bulb and lanterns light: the counter, its griddle and the noren
 	under.vertex_color_use_as_albedo = true
 	under.vertex_color_is_srgb = true
-	light_up(under, 0.7)
+	festive(under, Color.WHITE, 0.7)
 	var lt := surface(under)
 	var wood := Color("8a5a34")
 	var red := Color("d6402e")
@@ -5670,7 +5681,7 @@ func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 	bl.scale = Vector3(0.09, 0.11, 0.09)
 	bl.position = bulb
 	var lm := mat(Color("fff1c8"))
-	light_up(lm, 1.0)
+	festive(lm, Color("fff1c8"), 1.0)
 	bl.material_override = lm
 	node.add_child(bl)
 	var gm := multimesh(QuadMesh.new(), hung.size() + 1)
