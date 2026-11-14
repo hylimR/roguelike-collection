@@ -3012,8 +3012,7 @@ func build_static() -> void:
 	land.set_color(Color(Sim.City.GROUND.hub))
 	for isl in C.islands:
 		poly_fill(land, isl, -0.135, 0.25)
-	var park_tex := tiled(speckle([Color("68a84a"), Color("76b656"), Color("5c9c42"), Color("86c262")]), Vector2.ONE)
-	park_tex.texture_repeat = true
+	var park_tex := lawn()
 	var ps := surface(park_tex)
 	lm_ground = {"water": [sea, 0.125], "grass": [park_tex, 0.25]}
 	for pk in C.parks:
@@ -6699,6 +6698,42 @@ func leaf_tex() -> ImageTexture:
 	for i in 10:
 		img.set_pixel(r.randi() % 16, r.randi() % 16, Color(0.42, 0.44, 0.46))
 	return ImageTexture.create_from_image(img)
+
+
+## A 4 m square of mown lawn in 12.5 cm pixels, as fine as the paving: grass in soft clumps a shade lighter or darker,
+## each tuft lit on its tip over a darker root, so a park reads as turf up close; mipmapped so it settles to an even
+## green from the city view.
+func lawn() -> StandardMaterial3D:
+	var r := RandomNumberGenerator.new()
+	r.seed = 13
+	var lat := []
+	for i in 16:
+		lat.append(r.randf())
+	var tone := PackedFloat32Array()
+	tone.resize(32 * 32)
+	for y in 32:
+		for x in 32:
+			var u := x / 8.0
+			var v := y / 8.0
+			var fx := smoothstep(0.0, 1.0, u - floorf(u))
+			var fy := smoothstep(0.0, 1.0, v - floorf(v))
+			var i := int(u)
+			var j := int(v)
+			var c: float = lerpf(lerpf(lat[j * 4 + i], lat[j * 4 + (i + 1) % 4], fx), lerpf(lat[(j + 1) % 4 * 4 + i], lat[(j + 1) % 4 * 4 + (i + 1) % 4], fx), fy)
+			tone[y * 32 + x] = 0.2 + 0.5 * c + r.randf_range(-0.08, 0.08)
+	for n in 150:  # tufts: a lit tip with its shaded root a pixel below
+		var x := r.randi() % 32
+		var y := r.randi() % 32
+		tone[y * 32 + x] += 0.3
+		tone[(y + 1) % 32 * 32 + x] -= 0.22
+	var img := Image.create(32, 32, false, Image.FORMAT_RGB8)
+	for y in 32:
+		for x in 32:
+			img.set_pixel(x, y, Color("56963c").lerp(Color("8ec86a"), clampf(tone[y * 32 + x], 0.0, 1.0)))
+	img.generate_mipmaps()
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	return m
 
 
 func speckle(colors: Array) -> ImageTexture:
