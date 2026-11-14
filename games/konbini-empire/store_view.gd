@@ -1240,6 +1240,7 @@ var overlay: Control
 var hud_card := Rect2()  # the HUD's store card over the view: the rival's pin keeps clear of it
 var hud_keep: Array = []  # the HUD's chips and buttons over the city map: its labels keep clear of them
 var hud_dock: Array = []  # the HUD's store tabs and bottom buttons over the street: threat tags stack up clear of them
+var hud_top: Array = []  # the HUD's chips and clock row over the street: a threat tag under one hangs below its threat
 
 
 func _ready() -> void:
@@ -10175,11 +10176,15 @@ func draw_street() -> void:
 		var top := at + Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit", "review"] else (-36 if t.type == "mascot" else (-30 if t.type == "breaker" else -12)))
 		var w := maxf(font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 14, t.max_clicks * 9.0 + 2 if t.max_clicks > 1 else 0.0)
 		var below := 13.0 if t.max_clicks > 1 or t.type == "review" else font.get_descent(11) + 2
-		tags.append({"t": t, "label": label, "home": top, "box": Rect2(top.x - w / 2, top.y - font.get_ascent(11) - 2, w, font.get_ascent(11) + 2 + below)})
+		tags.append({"t": t, "label": label, "home": top, "foot": at.y, "box": Rect2(top.x - w / 2, top.y - font.get_ascent(11) - 2, w, font.get_ascent(11) + 2 + below)})
 	tags.sort_custom(func(p, q): return p.home.y > q.home.y or (p.home.y == q.home.y and p.t.id < q.t.id))
 	var placed: Array = hud_dock.duplicate()
+	var over: Array = hud_top + [Rect2(8, 8, 196, 82), Rect2(sign_at + Vector2(-(bw + 50) / 2 - 20, 12 - ph), Vector2(bw + 76, ph + 6))]
+	if hud_card.has_area():
+		over.append(hud_card.grow(3.0))
 	for g in tags:
 		var box: Rect2 = g.box
+		box.position.x = clampf(box.position.x, 4.0, overlay.size.x - box.size.x - 4.0)
 		var moved := true
 		while moved:
 			moved = false
@@ -10187,14 +10192,32 @@ func draw_street() -> void:
 				if box.grow(2.0).intersects(o):
 					box.position.y = o.position.y - box.size.y - 3.0
 					moved = true
+		# stacked up under the clock, a chip, the store card or the rival's plate: the tag hangs below its threat's feet instead, or
+		# beside the HUD when that is nearer, and anything placed under it pushes it on down
+		var hud := Rect2()
+		for o in over:
+			if box.grow(2.0).intersects(o):
+				hud = hud.merge(o) if hud.has_area() else o
+		if hud.has_area():
+			var down := Vector2(box.position.x, maxf(hud.end.y, g.foot) + 4.0)
+			var side := Vector2(hud.end.x + 4.0 if box.get_center().x > hud.get_center().x or hud.position.x < box.size.x + 8.0 else hud.position.x - box.size.x - 4.0, box.position.y)
+			box.position = side if side.distance_to(g.box.position) < down.distance_to(g.box.position) and side.x + box.size.x < overlay.size.x - 4.0 else down
+			moved = true
+			while moved:
+				moved = false
+				for o in placed + over:
+					if box.grow(2.0).intersects(o):
+						box.position.y = o.end.y + 3.0
+						moved = true
 		placed.append(box)
-		g.top = g.home + Vector2(0, box.position.y - g.box.position.y)
-		if g.top.y < g.home.y - 1.0:  # stems first, so no tag's stem crosses another tag
-			var foot := Vector2(g.top.x, box.end.y)
-			overlay.draw_line(foot + Vector2(1, 0), g.home + Vector2(1, 2), Color(0, 0, 0, 0.3), 2.5)
-			overlay.draw_line(foot, g.home + Vector2(0, 2), Color.WHITE, 1.5)
-			overlay.draw_circle(g.home + Vector2(0, 2), 3.0, Color.WHITE)
-			overlay.draw_circle(g.home + Vector2(0, 2), 2.0, Color("e05a4e") if g.t.type != "spill" else Color("3a9bd9"))
+		g.top = g.home + box.position - g.box.position
+		var to: Vector2 = g.home + Vector2(0, 2) if box.position.y < g.home.y else Vector2(g.home.x, g.foot)  # a tag hung below takes its stem up to the feet
+		if g.top.distance_to(g.home) > 1.0 and not over.any(func(o): return o.has_point(to)):  # stems first, so no tag's stem crosses another; none to a threat hidden under the HUD
+			var foot := Vector2(clampf(to.x, box.position.x + 8.0, box.end.x - 8.0), box.end.y if to.y > box.end.y else (box.position.y if to.y < box.position.y else box.get_center().y))
+			overlay.draw_line(foot + Vector2(1, 0), to + Vector2(1, 0), Color(0, 0, 0, 0.3), 2.5)
+			overlay.draw_line(foot, to, Color.WHITE, 1.5)
+			overlay.draw_circle(to, 3.0, Color.WHITE)
+			overlay.draw_circle(to, 2.0, Color("e05a4e") if g.t.type != "spill" else Color("3a9bd9"))
 	for g in tags:
 		var t: Dictionary = g.t
 		var top: Vector2 = g.top
