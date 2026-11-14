@@ -1225,7 +1225,10 @@ var cam_base := 12.0
 var zoom := 1.0
 var cam_dist := 400.0
 # the bay's open water carried on south past the city's own bay, widening as it goes, so the map never shows its edge
-var bay_mouth := PackedVector2Array([Vector2(-380, 999), Vector2(640, 999), Vector2(790, 1300), Vector2(760, 1640), Vector2(1080, 2050), Vector2(1450, 2800), Vector2(-1300, 2800), Vector2(-880, 2120), Vector2(-600, 1720), Vector2(-590, 1380)])
+const BAY_MOUTH := [Vector2(-380, 999), Vector2(640, 999), Vector2(790, 1300), Vector2(760, 1640), Vector2(1080, 2050), Vector2(1450, 2800), Vector2(-1300, 2800), Vector2(-880, 2120), Vector2(-600, 1720), Vector2(-590, 1380)]
+var sea_edge := PackedVector2Array()  # the bay and its mouth as one outline, its shores wandering out of town (plan_sea)
+var shore_line := PackedVector2Array()  # the coast build_shore lines with beaches and quays, west shore round to east
+var sea_plan: Array = []  # the bay, its mouth and the shores as planned: sea_edge lies inside them, within 54 m of those shores
 var yaw := PI / 4
 var yaw_drag := 0.0  # right-drag turned so far; yaw follows it in quarter turns
 
@@ -2774,7 +2777,7 @@ func country(r: Rect2, edge: float) -> bool:
 		return false
 	if not C.bounds.grow(120.0).intersects(r):
 		for q in [p, r.position, r.end, Vector2(r.position.x, r.end.y), Vector2(r.end.x, r.position.y)]:
-			if Geometry2D.is_point_in_polygon(q, C.bay) or Geometry2D.is_point_in_polygon(q, bay_mouth):
+			if in_sea(q):
 				return false
 		return true
 	return not _near_built(r.grow(edge)) and not Sim.City.blocked(C, r)
@@ -2881,6 +2884,7 @@ func build_static() -> void:
 	C = Sim.City.get_city()
 	for c in city.get_children():
 		c.free()
+	plan_sea()
 	plan_farms()
 	lm_sprites.clear()
 	elevated.clear()
@@ -2989,8 +2993,7 @@ func build_static() -> void:
 	swell_mat.set_shader_parameter("deep", Vector3(SEA_DEEP.r, SEA_DEEP.g, SEA_DEEP.b))
 	swell_depth()
 	var ws := surface(swell_mat)
-	poly_fill(ws, C.bay, -0.14)
-	poly_fill(ws, bay_mouth, -0.14)
+	poly_fill(ws, sea_edge, -0.14)
 	for poly in C.river:
 		poly_fill(ws, poly, -0.14)
 	# out of town the river runs between levees: a reedy margin at the water, a broad grassy bank, a gravel path along
@@ -3045,7 +3048,7 @@ func swell_depth() -> void:
 	for y in N:
 		for x in N:
 			var q := r.position + (Vector2(x, y) + Vector2(0.5, 0.5)) * cell
-			var wet: bool = Geometry2D.is_point_in_polygon(q, bay_mouth) or (Geometry2D.is_point_in_polygon(q, C.bay) and C.islands.all(func(isl): return not Geometry2D.is_point_in_polygon(q, isl)))
+			var wet: bool = in_sea(q) and C.islands.all(func(isl): return not Geometry2D.is_point_in_polygon(q, isl))
 			d[y * N + x] = far if wet else 0.0
 	var dg := cell.length()
 	for pass_i in 2:
@@ -3074,15 +3077,83 @@ func swell_depth() -> void:
 	swell_mat.set_shader_parameter("depth_rect", Vector4(r.position.x, r.position.y, r.size.x, r.size.y))
 
 
+## The sea's outline: the city's bay as the rules lay it out in town, and past the town both its shores and the open
+## sea's run south off the map wandering in coves and headlands, out to sea of the straight lines they're planned on
+## (never inland, where the fields and the coast road keep to those lines) and settling onto them over their last
+## 160 m toward the town. shore_line is the coast from the west shore round the bay and down the east one.
+func plan_sea() -> void:
+	var w := PackedVector2Array([BAY_MOUTH[6], BAY_MOUTH[7], BAY_MOUTH[8], BAY_MOUTH[9], C.bay[0], C.bay[1]])
+	var e := PackedVector2Array([C.bay[-3], C.bay[-2], C.bay[-1], BAY_MOUTH[2], BAY_MOUTH[3], BAY_MOUTH[4], BAY_MOUTH[5]])
+	sea_plan = [C.bay, PackedVector2Array(BAY_MOUTH), [w, e]]
+	var west := wander(w, 0.0)
+	var east := wander(e, 2.1)
+	sea_edge = west[0].slice(0, -1)
+	sea_edge.append_array(C.bay.slice(1, -2))
+	sea_edge.append_array(east[0].slice(1))
+	shore_line = west[0].slice(west[1][1])
+	shore_line.append_array(C.bay.slice(2, -3))
+	shore_line.append_array(east[0].slice(0, east[1][5] + 1))
+
+
+## Whether q is in sea_edge, tested against the planned outlines first, which settle most points far quicker.
+func in_sea(q: Vector2) -> bool:
+	if not (Geometry2D.is_point_in_polygon(q, sea_plan[0]) or Geometry2D.is_point_in_polygon(q, sea_plan[1])):
+		return false
+	for run in sea_plan[2]:
+		for i in run.size() - 1:
+			if q.distance_squared_to(Geometry2D.get_closest_point_to_segment(q, run[i], run[i + 1])) < 3136.0:
+				return Geometry2D.is_point_in_polygon(q, sea_edge)
+	return true
+
+
+## Whether q is water as the map draws it: the city's water, with the sea's shores where plan_sea moved them.
+func wet_at(q: Vector2) -> bool:
+	if in_sea(q):
+		return C.islands.all(func(isl): return not Geometry2D.is_point_in_polygon(q, isl))
+	return Sim.City.is_water(C, q) and not Geometry2D.is_point_in_polygon(q, C.bay)
+
+
+## Sim.City.blocked for a stretch of shore, but with the water where the map draws it.
+func shore_blocked(r: Rect2) -> bool:
+	if Sim.City.blocked(C, r, true):
+		return true
+	for fx in [0.0, 0.5, 1.0]:
+		for fz in [0.0, 0.5, 1.0]:
+			if wet_at(r.position + r.size * Vector2(fx, fz)):
+				return true
+	return false
+
+
+## pts (running with the land on their left) cut every 12 m and pushed out to sea, up to 54 m, by a sum of waves along
+## them, along a normal averaged over 100 m so the corners round off, still at both ends; with where each of pts landed.
+func wander(pts: PackedVector2Array, phase: float) -> Array:
+	var out := PackedVector2Array()
+	var at: Array[int] = []
+	for i in pts.size() - 1:
+		at.append(out.size())
+		var n := ceili(pts[i].distance_to(pts[i + 1]) / 12.0)
+		for k in n:
+			out.append(pts[i].lerp(pts[i + 1], float(k) / n))
+	at.append(out.size())
+	out.append(pts[-1])
+	var cum := PackedFloat32Array([0.0])
+	for i in range(1, out.size()):
+		cum.append(cum[i - 1] + out[i].distance_to(out[i - 1]))
+	var total := cum[-1]
+	var moved := out.duplicate()
+	for i in out.size():
+		var t := (out[mini(i + 4, out.size() - 1)] - out[maxi(i - 4, 0)]).normalized()
+		var s := cum[i]
+		var d := maxf(0.0, 22.0 + 18.0 * sin(s / 167.0 + phase) + 10.0 * sin(s / 61.0 + 2.3 + phase) + 4.0 * sin(s / 23.0 + 0.7))
+		moved[i] = out[i] - Vector2(t.y, -t.x) * d * smoothstep(0.0, 160.0, s) * smoothstep(0.0, 160.0, total - s)
+	return [moved, at]
+
+
 ## Where the bay meets open country: a beach along the shore, wet sand at the water's edge and dry sand up the shore
 ## in a width that swells and narrows, with a line of foam and a band of paler shallows out over the water. It tapers
 ## out where the shore reaches the city's quays, rivers and roads.
 func build_shore() -> void:
-	# the coast as one line, the open sea's west shore north into the city's bay and out down its east shore
-	var coast := PackedVector2Array()
-	coast.append_array(bay_mouth.slice(7))
-	coast.append_array(C.bay)
-	coast.append_array(bay_mouth.slice(2, 5))
+	var coast := shore_line
 	var pts := PackedVector2Array()
 	for i in coast.size() - 1:
 		var n := ceili(coast[i].distance_to(coast[i + 1]) / 5.0)
@@ -3098,9 +3169,9 @@ func build_shore() -> void:
 		var n := Vector2(t.y, -t.x)  # left of the way the coast runs: the land
 		norms.append(n)
 		var q := pts[i] + n * 9.0
-		var dry := not Sim.City.is_water(C, q) and not Geometry2D.is_point_in_polygon(q, bay_mouth)
+		var dry := not wet_at(q)
 		land.append(1.0 if dry else 0.0)
-		keep.append(1.0 if dry and (not near.has_point(q) or Sim.City.nearest(C, q)[1] > Sim.City.URBAN + 6.0 and not Sim.City.blocked(C, Rect2(q - Vector2(6, 6), Vector2(12, 12)))) else 0.0)
+		keep.append(1.0 if dry and (not near.has_point(q) or Sim.City.nearest(C, q)[1] > Sim.City.URBAN + 6.0 and not shore_blocked(Rect2(q - Vector2(6, 6), Vector2(12, 12)))) else 0.0)
 	# each beach tapers in over its first and last 30 m rather than stopping square
 	var fade := keep.duplicate()
 	for i in pts.size():
