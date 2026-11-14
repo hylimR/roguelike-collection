@@ -91,6 +91,7 @@ const GOLDEN := [16.0, 17.8, 19.2]  # golden hour's rise, peak and end: walls fa
 const DAWN := [6.0, 6.5, 7.8]  # the same for sunrise, from the other side and rosier
 const LAMP := Color(1.0, 0.85, 0.58)
 const SHOP_LIGHT := Color(0.86, 0.95, 1.0)  # a konbini's cool white strip lights
+const FLOOD := Rect2(-5.6, -18.2, 11.5, 12.6)  # where your car park's floodlight falls, its bays and kerbs and beyond
 const BLACKOUT := [Color(0.62, 0.65, 0.74), Color(0.17, 0.2, 0.32)]  # your shop with its power cut: by daylight through the glass, after dark
 const SEA := Color("3a8cc8")
 const SEA_DEEP := Color("1d5a98")  # open water far off any shore, and the sky-less background past the map
@@ -1280,6 +1281,7 @@ func _ready() -> void:
 	halo_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	spill_mat = pool_mat.duplicate()
 	flood_mat = pool_mat.duplicate()
+	flood_mat.albedo_texture = flood_tex()
 	sign_glow_mat = halo_mat.duplicate()
 	lantern_glow_mat = halo_mat.duplicate()
 	lantern_pool_mat = pool_mat.duplicate()
@@ -1533,6 +1535,23 @@ func art_panel(parent: Node3D, img: Image, size_: Vector2, pos: Vector3, tint :=
 	mi.position = pos
 	parent.add_child(mi)
 	return m
+
+
+## Your car park's floodlight, 8 px a metre over FLOOD (street frame): the bays lit evenly out to the kerb, brighter
+## where the pole's two floods aim, back along the bays and out toward the street, and fading over the kerb and
+## the sidewalk past it rather than a round pool that left most of the lot dark.
+func flood_tex() -> ImageTexture:
+	var w := int(FLOOD.size.x * 8.0)
+	var h := int(FLOOD.size.y * 8.0)
+	var bays := Rect2(-3.4, -16.0, 7.1, 8.8)
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		for x in w:
+			var p := FLOOD.position + Vector2(x + 0.5, y + 0.5) / 8.0
+			var out := Vector2(maxf(maxf(bays.position.x - p.x, p.x - bays.end.x), 0.0), maxf(maxf(bays.position.y - p.y, p.y - bays.end.y), 0.0)).length()
+			var aim := maxf(exp(-(p - Vector2(-0.6, -14.4)).length_squared() / 9.0), exp(-(p - Vector2(1.9, -11.2)).length_squared() / 11.0))
+			img.set_pixel(x, y, Color(1, 1, 1, (0.42 + 0.58 * aim) * smoothstep(2.2, 0.0, out)))
+	return ImageTexture.create_from_image(img)
 
 
 func radial(colors: Array, offsets: Array) -> GradientTexture2D:
@@ -8765,8 +8784,8 @@ func pole_sign(parent: Node3D) -> void:
 		head.transform = Transform3D(b * Basis(Vector3.RIGHT, PI / 2), ps + a * 0.68 + Vector3(0, 4.98, 0) + b * Vector3(0, -0.068, 0))
 		head.material_override = lamp_mat
 		parent.add_child(head)
-	var lot := ps + Vector3(-2.8, 0, 4.2)
-	plane(parent, Vector2(10.5, 10.5), Vector3(lot.x, -0.032, lot.z), flood_mat)
+	var lot := Vector3(FLOOD.get_center().x, 0, FLOOD.get_center().y)
+	plane(parent, FLOOD.size, Vector3(lot.x, -0.032, lot.z), flood_mat)
 	if parent == set_node:
 		var w := parent.global_position + lot
 		pools.append(Vector3(w.x, w.z, 4.4))
