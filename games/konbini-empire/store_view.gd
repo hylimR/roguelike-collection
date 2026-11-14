@@ -126,6 +126,8 @@ void fragment() {
 """
 # A person's shadow, metres from the feet (y away from the sun): a soft contact patch, and while the sun is up a
 # body-length shadow tapering away from it, as the poles cast theirs, but not across your shop's roofed floor.
+# After dark one standing in a lamp's pool or a shop's spill (lamps: x, z, radius) casts it away from that light
+# instead, short under it and lengthening toward the rim; drawn over the light, so it shades what the light lit.
 const FOOT_SHADER := """
 shader_type spatial;
 render_mode unshaded, depth_draw_never, cull_disabled;
@@ -136,18 +138,44 @@ uniform float reach;
 uniform vec2 size;
 uniform float back;
 uniform vec4 indoor;
+uniform float glow;
+uniform vec3 lamps[64];
+uniform int lamp_count;
 varying vec2 wpos;
+varying float cast_a;
+varying float cast_len;
 
 void vertex() {
+	vec2 o = MODEL_MATRIX[3].xz;
+	float best = 0.0;
+	vec2 away = vec2(0.0);
+	for (int i = 0; i < lamp_count; i++) {
+		vec2 d = o - lamps[i].xy;
+		float k = 1.0 - length(d) / lamps[i].z;
+		if (k > best) {
+			best = k;
+			away = d;
+		}
+	}
+	float lamp = glow * 0.7 * smoothstep(0.0, 0.45, best);
+	cast_a = sun;
+	cast_len = reach;
+	if (lamp > sun && length(away) > 0.05) {
+		vec2 s = MODEL_MATRIX[2].xz;
+		float f = atan(away.x, away.y) - atan(s.x, s.y);
+		VERTEX.xz = vec2(VERTEX.x * cos(f) + VERTEX.z * sin(f), VERTEX.z * cos(f) - VERTEX.x * sin(f));
+		cast_a = lamp;
+		cast_len = mix(1.9, 0.5, best);
+	}
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
 }
 
 void fragment() {
 	vec2 p = vec2((UV.x - 0.5) * size.x, UV.y * size.y - back);
 	float contact = core * (1.0 - smoothstep(0.08, 0.3, length(p * vec2(1.0, 1.25))));
-	float t = p.y / reach;
+	float t = p.y / cast_len;
 	float hw = mix(0.17, 0.08, clamp(t, 0.0, 1.0));
-	float body = sun * smoothstep(-0.05, 0.12, p.y) * (1.0 - smoothstep(0.5, 1.0, t)) * (1.0 - smoothstep(hw * 0.45, hw, abs(p.x)));
+	float body = cast_a * smoothstep(-0.05, 0.12, p.y) * (1.0 - smoothstep(0.5, 1.0, t)) * (1.0 - smoothstep(hw * 0.45, hw, abs(p.x)));
 	vec2 in_shop = step(indoor.xy, wpos) * step(wpos, indoor.xy + indoor.zw);
 	body *= 1.0 - in_shop.x * in_shop.y;
 	ALBEDO = tint.rgb;
@@ -1165,6 +1193,7 @@ var casts: Array = []  # those shadows, stretched as the sun goes down
 var foot_mat: ShaderMaterial  # people's shadows
 var sun_in_mat: ShaderMaterial  # daylight through your shop's glass front, over its floor
 var foot_mesh: PlaneMesh
+var foot_lamps := []  # the lights people's shadows fall away from after dark, as last sent to foot_mat
 var sea_mat: StandardMaterial3D
 var shore_mat: StandardMaterial3D  # foam and shallows, dimmed after dark with the sea
 var field_mat: ShaderMaterial
@@ -1335,6 +1364,7 @@ func _ready() -> void:
 	foot_mat.set_shader_parameter("tint", Color(0.1, 0.08, 0.14))
 	foot_mat.set_shader_parameter("size", foot_mesh.size)
 	foot_mat.set_shader_parameter("back", FOOT.y)
+	foot_mat.render_priority = 1
 	sun_in_mat = ShaderMaterial.new()
 	sun_in_mat.shader = Shader.new()
 	sun_in_mat.shader.code = SUN_IN_SHADER
@@ -1528,6 +1558,7 @@ func update_light() -> void:
 		tree_shadow_mat.set_shader_parameter("stretch", 1.0 + 0.9 * golden_at(h))
 	awning_mat.albedo_color.a = 0.36 * (1.0 - night) * (1.0 + 0.3 * golden_at(h))
 	foot_mat.set_shader_parameter("core", 0.5 - 0.15 * night)
+	foot_mat.set_shader_parameter("glow", night)
 	foot_mat.set_shader_parameter("sun", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	foot_mat.set_shader_parameter("reach", FOOT.z * Vector2(SUN.x, SUN.z).length() / SUN.y * (1.0 + 0.9 * golden_at(h)))
 	casts = casts.filter(func(s): return is_instance_valid(s))
@@ -9752,6 +9783,11 @@ func _gui_input(e: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if city_sig != "":
 		update_light()
+		var lit: Array = pools.slice(0, 64) if mode == "store" else []
+		if lit != foot_lamps:
+			foot_lamps = lit
+			foot_mat.set_shader_parameter("lamps", PackedVector3Array(lit + range(64 - lit.size()).map(func(_i): return Vector3.ZERO)))
+			foot_mat.set_shader_parameter("lamp_count", lit.size())
 		var cold: bool = mode == "store" and not branch.is_empty() and branch.event != null and branch.event.id == "coldSnap"
 		building_mat.set_shader_parameter("snow", 1.0 if cold else 0.0)
 	if paused or city_sig == "":
