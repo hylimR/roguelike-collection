@@ -1564,15 +1564,32 @@ func role_tag(role: String) -> PanelContainer:
 	return p
 
 
-## The staffer as they walk the street, standing on a plate tinted their role's color.
+## The staffer's head and shoulders, cut from their standing frame on the street, in a round badge of their role's color.
 func role_plate(role: String) -> PanelContainer:
-	var r := picture("walk", 0, 72, Vector2(18, 24))
-	r.texture.region = Rect2(0, StoreView.WALK_ROW[role] * StoreView.PERSON.y, StoreView.PERSON.x, StoreView.PERSON.y)
+	var n := 56
+	var img: Image = tex.walk.get_image().get_region(Rect2i(10, StoreView.WALK_ROW[role] * StoreView.PERSON.y + 2, n, n))
+	img.convert(Image.FORMAT_RGBA8)
+	var bg: Color = ROLE_COLOR[role].lerp(PAPER, 0.78)
+	for y in n:
+		for x in n:
+			var d := Vector2(x - n / 2.0 + 0.5, y - n / 2.0 + 0.5).length() / (n / 2.0)
+			var c := img.get_pixel(x, y)
+			var under: Color = bg.darkened(0.06 * smoothstep(0.2, 1.0, (y + 0.5) / n))  # a touch of shade down to its rim
+			c = under.lerp(Color(c.r, c.g, c.b), c.a)
+			c.a = clampf((1.0 - d) * n / 2.0, 0.0, 1.0)  # cut round, edge smoothed over a pixel
+			img.set_pixel(x, y, c)
+	var r := TextureRect.new()
+	r.texture = ImageTexture.create_from_image(img)
+	r.custom_minimum_size = Vector2(30, 30)
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	r.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var plate := PanelContainer.new()
-	var ps := box(ROLE_COLOR[role].lerp(PAPER, 0.82), 8, 2)
+	var ps := box(ROLE_COLOR[role].lerp(PAPER, 0.35), 17, 2)
 	ps.border_width_bottom = 2
-	ps.border_color = ROLE_COLOR[role].lerp(PAPER, 0.6)
+	ps.border_color = ROLE_COLOR[role].darkened(0.1)
 	plate.add_theme_stylebox_override("panel", ps)
+	plate.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	plate.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	plate.add_child(r)
 	return plate
