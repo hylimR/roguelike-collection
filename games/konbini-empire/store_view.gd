@@ -1095,6 +1095,10 @@ var paths: Array = []  # every road as a path for movers: {pts, cum, w, kind, cl
 var set_feet: Array = []  # world footprints of what the street set builds behind its street, where the city gives way
 var elevated: Array = []  # deck pieces (MeshInstance3D), drawn again into the shadow mask
 var brecs: Array = []  # per building: {foot, h, box: [instance], roof: instance or -1, hidden}
+var farms: Array = []  # farmsteads out in the fields past the built-up edge: buildings like the city's
+var farm_grounds: Array = []  # [rect, gravel yard or greenhouse soil]
+var built := {}  # 64 m cell -> footprints of the city's blocks, buildings and landmarks in it
+var farm_yards := {}  # 64 m cell -> the farmsteads' yards in it, kept clear of fields, lanes and woods
 var box_mm: MultiMesh
 var box_base: Array = []
 var building_mat: ShaderMaterial
@@ -2677,6 +2681,10 @@ func mm_node(mm: MultiMesh, m: Material, parent: Node) -> MultiMeshInstance3D:
 ## river running on out of town are in the way.
 func country(r: Rect2, edge: float) -> bool:
 	var p := r.get_center()
+	for k in _farm_cells(r):
+		for y in farm_yards.get(k, []):
+			if y.intersects(r):
+				return false
 	if not C.run_off.all(func(ro): return Sim.City.seg_rect_dist(ro[0], ro[1], r) > ro[2] + 2.0):
 		return false
 	if not C.bounds.grow(120.0).intersects(r):
@@ -2684,7 +2692,102 @@ func country(r: Rect2, edge: float) -> bool:
 			if Geometry2D.is_point_in_polygon(q, C.bay) or Geometry2D.is_point_in_polygon(q, bay_mouth):
 				return false
 		return true
-	return Sim.City.nearest(C, p)[1] > Sim.City.URBAN + edge and not Sim.City.blocked(C, r)
+	return not _near_built(r.grow(edge)) and not Sim.City.blocked(C, r)
+
+
+func _near_built(r: Rect2) -> bool:
+	for k in _farm_cells(r):
+		for q in built.get(k, []):
+			if q.intersects(r):
+				return true
+	return false
+
+
+func _farm_cells(r: Rect2) -> Array:
+	var out := []
+	for cx in range(floori(r.position.x / 64.0), floori(r.end.x / 64.0) + 1):
+		for cy in range(floori(r.position.y / 64.0), floori(r.end.y / 64.0) + 1):
+			out.append(Vector2i(cx, cy))
+	return out
+
+
+## Farmsteads over the fields round the city, thick at the built-up edge and thinning out into the country, so the
+## town frays into farmland instead of stopping at its last block: two to four houses and a tin shed round a gravel
+## yard, and often a row of plastic greenhouses beside it. Each is a yard in farm_yards and buildings in farms.
+func plan_farms() -> void:
+	farms.clear()
+	farm_grounds.clear()
+	farm_yards.clear()
+	built.clear()
+	var foots: Array = C.blocks.map(func(bl): return bl.rect) + Sim.City.buildings().map(func(bd): return bd.rect)
+	foots += C.landmarks.map(func(L): return Rect2(L.pos - Vector2.ONE * L.size / 2, Vector2.ONE * L.size))
+	for r in foots:
+		for k in _farm_cells(r):
+			if not built.has(k):
+				built[k] = []
+			built[k].append(r)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31
+	var taken := []
+	var b: Rect2 = C.bounds.grow(180.0)  # inside the ground shadows' reach
+	var y := b.position.y
+	while y < b.end.y:
+		var x := b.position.x
+		while x < b.end.x:
+			var p := Vector2(x, y) + Vector2(rng.randf_range(-18.0, 18.0), rng.randf_range(-18.0, 18.0))
+			var yard := Rect2(p, Vector2(rng.randf_range(22.0, 32.0), rng.randf_range(18.0, 26.0)))
+			var gh := Rect2()
+			if rng.randf() < 0.35:
+				var n := rng.randi_range(2, 4)
+				var l := rng.randf_range(16.0, 24.0)
+				var ws := n * 5.0 + (n - 1) * 1.6
+				gh = Rect2(yard.end.x + 3.0, yard.position.y, l, ws) if rng.randf() < 0.5 else Rect2(yard.position.x, yard.end.y + 3.0, ws, l)
+			var whole := yard.merge(gh) if gh.has_area() else yard
+			var odds := 0.0  # by how far the nearest of the town lies
+			for band in [[30.0, 0.85], [60.0, 0.55], [100.0, 0.3], [160.0, 0.12]]:
+				if _near_built(whole.grow(band[0])):
+					odds = band[1]
+					break
+			if odds > 0.0 and b.encloses(whole) and rng.randf() < odds and country(whole.grow(3.0), 8.0) \
+					and not taken.any(func(q): return q.intersects(whole.grow(10.0))):
+				taken.append(whole)
+				_farmstead(rng, yard, gh)
+			x += 36.0
+		y += 36.0
+	for r in taken:
+		for k in _farm_cells(r.grow(2.0)):
+			if not farm_yards.has(k):
+				farm_yards[k] = []
+			farm_yards[k].append(r.grow(2.0))
+
+
+func _farmstead(rng: RandomNumberGenerator, yard: Rect2, gh: Rect2) -> void:
+	farm_grounds.append([yard, true])
+	if gh.has_area():
+		farm_grounds.append([gh.grow(0.8), false])
+	var placed := []
+	var inner := yard.grow(-1.5)
+	var count := rng.randi_range(3, 5)
+	for i in 40:
+		if placed.size() >= count:
+			break
+		var shed := placed.size() == 2
+		var sz := Vector2(rng.randf_range(5.0, 7.0), rng.randf_range(4.0, 6.0)) if shed else Vector2(rng.randf_range(7.0, 11.0), rng.randf_range(7.0, 9.0))
+		if rng.randf() < 0.5:
+			sz = Vector2(sz.y, sz.x)
+		var fp := Rect2(inner.position + (inner.size - sz) * Vector2(rng.randf(), rng.randf()), sz)
+		if sz.x > inner.size.x or sz.y > inner.size.y or placed.any(func(q): return q.grow(2.0).intersects(fp)):
+			continue
+		placed.append(fp)
+		var style: int = Sim.City.WAREHOUSE if shed else (Sim.City.WOOD if rng.randf() < 0.4 else Sim.City.HOUSE)
+		farms.append(Sim.City._building(rng, style, fp, 1 if shed else rng.randi_range(1, 2)))
+	if gh.has_area():
+		var along := gh.size.x > gh.size.y
+		var n := roundi(((gh.size.y if along else gh.size.x) + 1.6) / 6.6)
+		for i in n:
+			var o := i * 6.6
+			var fp := Rect2(gh.position + (Vector2(0, o) if along else Vector2(o, 0)), Vector2(gh.size.x, 5.0) if along else Vector2(5.0, gh.size.y))
+			farms.append({"rect": fp, "center": fp.get_center(), "size": fp.size, "greenhouse": true})
 
 
 ## Builds the fixed city once: ground, water, parks, streets, avenues, the expressway and the Yamanote, buildings,
@@ -2693,6 +2796,7 @@ func build_static() -> void:
 	C = Sim.City.get_city()
 	for c in city.get_children():
 		c.free()
+	plan_farms()
 	lm_sprites.clear()
 	elevated.clear()
 	var b: Rect2 = C.bounds
@@ -2732,7 +2836,7 @@ func build_static() -> void:
 		while fx < fb.end.x:
 			var bw := fr.randf_range(80.0, 170.0)
 			for ln in [Rect2(fx, fy, bw, LANE), Rect2(fx, fy, LANE, bh)]:
-				if country(ln.grow(12.0), 16.0):
+				if country(ln.grow(5.0), 6.0):
 					fs.set_color(lane.darkened(fr.randf_range(0.0, 0.05)))
 					rect_quad(fs, ln, -0.155)
 			var blk := Rect2(fx + LANE, fy + LANE, bw - LANE, bh - LANE)
@@ -2750,7 +2854,7 @@ func build_static() -> void:
 					if length - t0 - fl < 16.0:
 						fl = length - t0
 					var r := Rect2(blk.position + (Vector2(t0, s0) if along else Vector2(s0, t0)), Vector2(fl, sw) if along else Vector2(sw, fl)).grow(-0.9)
-					if country(r.grow(12.0), 16.0):
+					if country(r.grow(5.0), 6.0):
 						var at := r.get_center() + Vector2(fr.randf_range(-40.0, 40.0), fr.randf_range(-40.0, 40.0))
 						var cell := Vector2i((at / 110.0).floor())
 						if not crops.has(cell):
@@ -2774,6 +2878,9 @@ func build_static() -> void:
 		var gs: SurfaceTool = gravel if leafy else paved
 		gs.set_color(Color(Sim.City.GROUND[dt]))
 		rect_quad(gs, bl.rect.grow(0.2), -0.15, 0.0, false, 0.0625 if leafy else 0.25)
+	for fg in farm_grounds:  # the farmsteads' packed gravel yards, and bare soil under the greenhouses
+		gravel.set_color(Color("cdb88e") if fg[1] else Color("8a7056"))
+		rect_quad(gravel, fg[0], -0.15, 0.0, false, 0.0625)
 	commit([paved, gravel], city)
 	var sea_tex := speckle([SEA, SEA.lightened(0.08), SEA.darkened(0.08), SEA.lightened(0.16)])
 	var sea := mat(Color.WHITE, sea_tex)
@@ -3640,7 +3747,7 @@ func build_buildings() -> void:
 	building_mat.set_shader_parameter("accents", atlas[1])
 	building_mat.set_shader_parameter("styles", float(Sim.City.STYLE_COUNT))
 	building_mat.set_shader_parameter("snow_tex", snow_tex)
-	var all: Array = Sim.City.buildings()
+	var all: Array = Sim.City.buildings() + farms
 	var boxes := []
 	var roofs := []
 	brecs.clear()
@@ -3648,6 +3755,12 @@ func build_buildings() -> void:
 		var r: Rect2 = bd.rect
 		var c: Vector2 = bd.center
 		var sz: Vector2 = bd.size
+		if bd.has("greenhouse"):  # low film walls under a pitched film roof, milky white over the crops
+			var film := Color(0.9, 0.94, 0.93, 0.5 / 8.0)
+			brecs.append({"foot": r, "h": 2.6, "box": [boxes.size()], "roof": [roofs.size()], "hidden": STANDING})
+			boxes.append([Vector3(sz.x, 1.5, sz.y), Vector3(c.x, 0.75, c.y), film.darkened(0.06), -1.0, 0.0])
+			roofs.append([c, sz, 1.5, 1.1, Color(0.95, 0.97, 0.96), 0.0, sz.x > sz.y])
+			continue
 		var h: float = bd.floors * Sim.City.FLOOR
 		var rec := {"foot": r, "h": h, "box": [boxes.size()], "roof": [], "hidden": STANDING}
 		var tint: Color = bd.tint
