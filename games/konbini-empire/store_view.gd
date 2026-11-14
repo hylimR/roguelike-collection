@@ -250,6 +250,50 @@ void fragment() {
 	ALBEDO = glow * (mix(tint, vec3(1.0, 0.66, 0.34), 0.5) * wash * (0.8 + 0.8 * edge) + lit + vec3(1.0, 0.7, 0.4) * kerb * 0.16);
 }
 """
+# A heatwave's air over the street, on the 3D view's own picture: rows of it waver sideways as the heat climbs off the
+# asphalt, and mirages lie in long sheens down the lanes, the sky's pale blue streaked across them over a wavering
+# glimpse of the street beyond. ground_x/ground_z/ground_o take a screen pixel to the street frame's (x, z).
+const HEAT_SHADER := """
+shader_type canvas_item;
+uniform vec2 view_size = vec2(1.0);
+uniform vec2 ground_x;
+uniform vec2 ground_z;
+uniform vec2 ground_o;
+uniform vec2 reach;
+uniform float day = 1.0;
+uniform vec3 sky : source_color = vec3(0.7, 0.84, 1.0);
+uniform vec4 sheens[6];
+
+void fragment() {
+	vec2 p = UV * view_size;
+	vec2 g = ground_x * p.x + ground_z * p.y + ground_o;
+	float road = smoothstep(4.2, 2.6, abs(g.y)) * smoothstep(reach.x, reach.x + 3.0, g.x) * smoothstep(reach.y, reach.y - 3.0, g.x);
+	float t = TIME;
+	float rows = sin(p.y * 0.26 - t * 3.8 + sin(p.x * 0.013 + t * 0.6) * 2.0) + 0.35 * sin(p.y * 0.53 + p.x * 0.021 - t * 5.1);
+	vec2 off = vec2(rows * 0.9, 0.3 * sin(p.x * 0.04 + t * 2.2)) * road * day / view_size;
+	vec4 c = texture(TEXTURE, UV + off);
+	float m = 0.0;
+	float far = 0.0;
+	for (int i = 0; i < 6; i++) {
+		vec4 s = sheens[i];
+		vec2 d = (g - s.xy) / vec2(s.z, 0.62);
+		float e = smoothstep(0.0, 0.55, 1.0 - dot(d, d)) * (0.8 + 0.2 * sin(t * 1.3 + s.w));
+		if (e > m) {
+			m = e;
+			far = clamp(d.x * 0.5 + 0.5, 0.0, 1.0);
+		}
+	}
+	m *= road * day * day;
+	if (m > 0.001) {
+		vec2 up = vec2(off.x * 4.0, -(14.0 + 10.0 * far + 3.0 * sin(p.x * 0.05 + t * 2.0)) / view_size.y);
+		vec3 beyond = texture(TEXTURE, UV + up).rgb;
+		float streak = 0.93 + 0.07 * sin(p.y * 0.3 + p.x * 0.012 - t * 1.8);
+		vec3 sheen = mix(sky, beyond, 0.3) * streak;
+		c.rgb = mix(c.rgb, sheen, m * 0.6);
+	}
+	COLOR = c;
+}
+"""
 # Open water on the map: the sea's blue, a paler turquoise over the shallows deepening to navy out from every shore, mottled in broad patches, with short wave crests over a darker trough
 # scattered across it at a steady size on screen at any zoom (two sizes crossfaded), slowly glinting in and out.
 # After dark the crests catch the moon, and off the built-up shore the water carries the city's lights: a warm haze
@@ -1133,6 +1177,8 @@ var yaw := PI / 4
 var yaw_drag := 0.0  # right-drag turned so far; yaw follows it in quarter turns
 
 var vp: SubViewport
+var screen_rect: TextureRect  # the 3D view's picture; a heatwave's air wavers it (HEAT_SHADER)
+var heat_mat: ShaderMaterial
 var vp_scale := 1.0  # real pixels per UI unit
 var cam: Camera3D
 var room: Node3D
@@ -1151,7 +1197,7 @@ func _ready() -> void:
 	vp.msaa_3d = Viewport.MSAA_4X
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(vp)
-	var screen_rect := TextureRect.new()
+	screen_rect = TextureRect.new()
 	screen_rect.texture = vp.get_texture()
 	screen_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	screen_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -9565,6 +9611,9 @@ func _process(delta: float) -> void:
 
 ## The street event's weather over the view: heatwave haze, cold-snap snow that stays out of the shop.
 func draw_weather() -> void:
+	var hot: bool = mode == "store" and not branch.is_empty() and branch.event != null and branch.event.id == "heatwave" and night < 0.99
+	if screen_rect.material != (heat_mat if hot else null):
+		screen_rect.material = heat_mat if hot else null
 	if branch.is_empty() or branch.event == null:
 		return
 	var look: Array = WEATHER_LOOK.get({"heatwave": "hot", "coldSnap": "cold"}.get(branch.event.id, ""), [])
@@ -9580,7 +9629,7 @@ func draw_weather() -> void:
 	r.seed = 11
 	var now := Time.get_ticks_msec() / 1000.0
 	if look.size() == 1:
-		draw_heat(look[0], inside, r, now)
+		draw_heat(look[0], r)
 		return
 	var snowing: bool = look[4] == 0.0
 	# snow goes with the light: its pale veil thins after dark and takes the hour's tint, the flakes too, except where
@@ -9622,8 +9671,9 @@ func draw_weather() -> void:
 
 
 ## A heatwave goes with the sun: a warm haze (eased off in the already amber golden hour), glare washing down from the
-## sky, and shimmer rising off the street but never inside your air-conditioned shop; after dark only a faint warmth is left.
-func draw_heat(tint: Color, inside: PackedVector2Array, r: RandomNumberGenerator, now: float) -> void:
+## sky, and over the street the air wavers and mirages shine (HEAT_SHADER), never inside your air-conditioned shop;
+## after dark only a faint warmth is left.
+func draw_heat(tint: Color, r: RandomNumberGenerator) -> void:
 	var day := 1.0 - night
 	overlay.draw_rect(Rect2(Vector2.ZERO, size), tint * Color(1, 1, 1, lerpf(0.25, 1.0, day) * (1.0 - 0.5 * golden_at(sim.hour()))))
 	if day <= 0.01:
@@ -9636,49 +9686,22 @@ func draw_heat(tint: Color, inside: PackedVector2Array, r: RandomNumberGenerator
 	var s0 := screen(Vector3.ZERO)
 	var step := screen(Vector3(10, 0, 0)) - s0
 	var xs := Vector2(maxf(street_x.x, -s0.x / step.x * 10.0), minf(street_x.y, minf((size.x - s0.x) / step.x, (size.y - s0.y) / step.y) * 10.0))
-	# mirages on the asphalt: the sky's pale blue lying in long sheens down the lanes, breathing in and out
-	var sky := Color(0.86, 0.93, 1.0) * light
+	if not heat_mat:
+		heat_mat = ShaderMaterial.new()
+		heat_mat.shader = Shader.new()
+		heat_mat.shader.code = HEAT_SHADER
+	var to_ground := Transform2D(step / 10.0, screen(Vector3(0, 0, 1)) - s0, s0).affine_inverse()
+	heat_mat.set_shader_parameter("view_size", size)
+	heat_mat.set_shader_parameter("ground_x", to_ground.x)
+	heat_mat.set_shader_parameter("ground_z", to_ground.y)
+	heat_mat.set_shader_parameter("ground_o", to_ground.origin)
+	heat_mat.set_shader_parameter("reach", Vector2(street_x.x, street_x.y))
+	heat_mat.set_shader_parameter("day", day)
+	heat_mat.set_shader_parameter("sky", Color(0.7, 0.84, 1.0) * light)
+	var sheens := PackedVector4Array()
 	for i in 6:
-		var cx := r.randf_range(xs.x + 3.0, xs.y - 3.0)
-		var cz := r.randf_range(-2.6, 2.6)
-		var reach := r.randf_range(3.0, 6.0)
-		var a := (0.42 + 0.12 * sin(now * 1.3 + i * 2.1)) * day * day
-		var mid := screen(Vector3(cx, 0.02, cz))
-		var core := PackedVector2Array()
-		var rim := PackedVector2Array()
-		for k in 16:
-			var t := k / 16.0 * TAU
-			var wob := 1.0 + 0.12 * sin(t * 3.0 + now * 2.0 + i)
-			core.append(screen(Vector3(cx + cos(t) * reach * 0.45 * wob, 0.02, cz + sin(t) * 0.22 * wob)))
-			rim.append(screen(Vector3(cx + cos(t) * reach * wob, 0.02, cz + sin(t) * 0.6 * wob)))
-		for k in 16:
-			var n := (k + 1) % 16
-			overlay.draw_polygon(PackedVector2Array([mid, core[k], core[n]]), PackedColorArray([Color(sky, a), Color(sky, a * 0.8), Color(sky, a * 0.8)]))
-			overlay.draw_polygon(PackedVector2Array([core[k], rim[k], rim[n], core[n]]), PackedColorArray([Color(sky, a * 0.8), Color(sky, 0.0), Color(sky, 0.0), Color(sky, a * 0.8)]))
-	# shimmer rising off the road: wavering threads along the lanes, broken into dashes that fade in, thin and drift
-	# away as they climb, so the air over the street wobbles rather than carrying lines
-	for i in 30:
-		var x := r.randf_range(xs.x, xs.y)
-		var z := r.randf_range(-3.3, 3.3)
-		var w := r.randf_range(1.6, 3.2)
-		var life := fposmod(now * r.randf_range(0.16, 0.24) + r.randf(), 1.0)
-		var h := 0.1 + life * 1.4
-		var c := screen(Vector3(x, h, z))
-		if c.x < -60.0 or c.x > size.x + 60.0 or c.y < -20.0 or c.y > size.y + 20.0:
-			continue
-		if inside.size() > 2 and Geometry2D.is_point_in_polygon(c, inside):
-			continue
-		var a := sin(life * PI) * day * day
-		var dashes := 3 + i % 3
-		for d in dashes:
-			var wave := PackedVector2Array()
-			var cols := PackedColorArray()
-			for k in 6:
-				var u := (d + 0.15 + 0.7 * k / 5.0) / dashes
-				var p := screen(Vector3(x + (u - 0.5) * w, h, z))
-				wave.append(p + Vector2(0, sin(u * TAU * 1.5 + now * 3.0 + i) * 2.0 * (1.0 + life)))
-				cols.append(Color(1.0, 0.97, 0.9, 0.6 * a * (1.0 - life * 0.5) * sin(PI * k / 5.0) * sin(u * PI)))
-			overlay.draw_polyline_colors(wave, cols, 2.0)
+		sheens.append(Vector4(r.randf_range(xs.x + 3.0, xs.y - 3.0), r.randf_range(-2.4, 2.4), r.randf_range(3.0, 6.0), i * 2.1))
+	heat_mat.set_shader_parameter("sheens", sheens)
 
 
 func text(at: Vector2, s: String, px: int, c: Color, w := 0.0, outline := Color(1, 1, 1, 0.9)) -> void:
