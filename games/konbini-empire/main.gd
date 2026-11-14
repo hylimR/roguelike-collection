@@ -1788,14 +1788,31 @@ func show_over() -> void:
 		tile.get_child(0).size_flags_vertical = Control.SIZE_SHRINK_BEGIN  # level with the note tile in its row
 		g.add_child(tile)
 	v.add_child(g)
-	var total := roll_line("Score", Sim.money(score), INK, 22)
-	var bl := label("New best!" if score > prev else "best %s" % Sim.money(prev), Color.WHITE if score > prev else MUTED, 12)
+	# the score as the run's headline: what it is made of on the left, the number large on the right beside the best
+	var total := HBoxContainer.new()
+	total.add_theme_constant_override("separation", 14)
+	var how := VBoxContainer.new()
+	how.add_theme_constant_override("separation", 0)
+	how.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	how.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var sw := label("SCORE", MUTED, 10)
+	sw.add_theme_font_override("font", bold)
+	how.add_child(sw)
+	how.add_child(label("%d day%s × %s\n+ %s revenue" % [rs.days, "" if rs.days == 1 else "s", Sim.money(5000), yen(rs.revenue)], MUTED, 11))
+	total.add_child(how)
+	var bl := label("New best!" if score > prev else "Best  %s" % Sim.money(prev), Color.WHITE if score > prev else INK, 12)
 	bl.add_theme_font_override("font", bold)
-	var bc: Control = chip([bl], GREEN) if score > prev else bl
+	var bc := chip([bl], GREEN if score > prev else LINE)
 	bc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	total.add_child(bc)
-	total.move_child(bc, 1)
-	v.add_child(sunken(total))
+	var sv := label(Sim.money(score), RED, 36)
+	sv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	total.add_child(sv)
+	var sp := sunken(total)
+	var sst: StyleBoxFlat = sp.get_theme_stylebox("panel")
+	sst.content_margin_top = 6
+	sst.content_margin_bottom = 6
+	v.add_child(sp)
 	v.add_child(label("Level %d  ·  Seed %s" % [sim.player.level, sim.seed_text], MUTED, 11))
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
