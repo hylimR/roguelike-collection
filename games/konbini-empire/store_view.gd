@@ -1165,6 +1165,7 @@ var fascia_glow_tex: ImageTexture
 var snow_tex: ImageTexture  # patchy settled snow, tiled 8 m
 var snow_walk_tex: ImageTexture  # a sidewalk's snow across its 3.5 m from wall to kerb, tiled 8 m along it
 var snow_lot_tex: ImageTexture  # the car park's ploughed snow
+var snow_road_tex: ImageTexture  # the road's slush across its 7.4 m from kerb to kerb, tiled 16 m along it
 var snow_cover: MeshInstance3D  # the set's snowy ground, shown on a cold snap
 var matsuri: Node3D  # the set's festival lanterns and yatai, shown on a Summer Matsuri
 var lantern_glow_mat: StandardMaterial3D
@@ -1319,6 +1320,10 @@ func _ready() -> void:
 	var walk := func(d: float) -> float:  # d metres out from the wall toward the kerb
 		return 0.2 * exp(-pow(d / 0.55, 2.0)) + 0.4 * smoothstep(2.5, 3.3, d) - 0.26 * exp(-pow((d - 1.7) / 0.8, 2.0))
 	snow_walk_tex = snow_patches(256, 112, func(_x: float, d: float) -> float: return walk.call(d))
+	snow_road_tex = snow_patches(256, 237, func(_x: float, d: float) -> float:  # d metres from the far kerb
+		var z := absf(d - 3.7)  # out from the centre line; the wheels run 1.1 and 2.6 m out
+		var tracks := exp(-pow((z - 1.1) / 0.3, 2.0)) + exp(-pow((z - 2.6) / 0.3, 2.0))
+		return -0.14 + 0.36 * smoothstep(3.0, 3.6, z) + 0.17 * exp(-pow((z - 1.85) / 0.32, 2.0)) + 0.14 * exp(-pow(z / 0.35, 2.0)) - 0.25 * tracks)
 	snow_lot_tex = snow_patches(227, 282, func(x: float, z: float) -> float:  # 7.1 x 8.8 m, the street at z 8.8
 		var edge := minf(x, 7.1 - x)
 		return -0.2 + 0.5 * smoothstep(1.6, 0.2, z) + 0.3 * smoothstep(0.9, 0.1, edge) * smoothstep(5.5, 3.0, z) + 0.25 * exp(-pow((x - 6.0) / 1.1, 2.0) - pow((z - 1.2) / 1.5, 2.0)))
@@ -5415,7 +5420,6 @@ func snow_patches(w := 256, h := 256, lie := Callable()) -> ImageTexture:
 ## along the kerbs and between the wheel tracks, which stay dark. Hidden until a cold snap.
 func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 	var deep := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
-	var thin := surface(mat(Color(1, 1, 1, 0.6), snow_tex))
 	var walk := surface(mat(Color(1, 1, 1, 0.999), snow_walk_tex))
 	for sd in [[far_gaps, -7.2, 0.0], [near_gaps, 3.7, 1.0]]:  # v runs from the wall (0) to the kerb (1)
 		for o in open_spans(sd[0]):
@@ -5429,9 +5433,12 @@ func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 	rect_quad(deep, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(-16.5, -20.2, 20.2, 3.95), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(span.x + 0.2, -16.0, span.y - span.x - 0.4, 8.6), 4.27, 0.0, false, 0.125)  # the rival's roof, round its kit
-	for band in [Vector2(-3.7, -3.05), Vector2(-2.25, -1.55), Vector2(-0.45, 0.45), Vector2(1.55, 2.25), Vector2(3.05, 3.7)]:
-		rect_quad(thin, Rect2(street_x.x, band.x, street_x.y - street_x.x, band.y - band.x), -0.034, 0.0, false, 0.125)
-	var mi := commit([deep, thin, walk, lot], set_node)
+	var road := surface(mat(Color(0.88, 0.9, 0.95, 0.999), snow_road_tex))  # trafficked slush, greyer than the sidewalk's
+	var r0 := street_x.x
+	var r1 := street_x.y
+	add_quad(road, [Vector3(r0, -0.034, -3.7), Vector3(r1, -0.034, -3.7), Vector3(r1, -0.034, 3.7), Vector3(r0, -0.034, 3.7)],
+			[Vector2(r0 / 16.0, 0), Vector2(r1 / 16.0, 0), Vector2(r1 / 16.0, 1), Vector2(r0 / 16.0, 1)])
+	var mi := commit([deep, road, walk, lot], set_node)
 	mi.visible = false
 	return mi
 
