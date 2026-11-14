@@ -6,7 +6,7 @@ The rival fights back. It warns a few seconds ahead, then launches an attack:
 
 - a flyer promoter in a happi coat in the chain's colors, or a parade by its costume mascot (Tanuki Mart's tanuki, Usagi Express's rabbit, Kitsune 24's fox, Oni Discount's ogre, MEGAMART's robot), that poaches your customers;
 - trash bags dumped at your door, tied-off sacks of rubbish showing through their film with litter strewn round them;
-- a price war;
+- a price war, which stands red and yellow SALE banners along the rival's front and puts SALE posters on its glass;
 - fake reviews, typed on the sidewalk at your door;
 - shoplifters in a hood and mask;
 - a blackout that stops the tills and puts your shop's lights, pole sign and floodlights out, dim in daylight and near dark at night, while the tripped board on the back wall flashes its red lamp;

@@ -1144,6 +1144,7 @@ var car_lamp_tex: ImageTexture  # the vehicles sheet's lamps lit, frame for fram
 var tv: Node3D  # the set's TV crew, shown on a TV Feature day
 var health: Node3D  # the health centre's wagon and a sanitiser stand, shown on a Health Inspection day
 var heat: Node3D  # a shaved-ice stand and a splashed sidewalk, shown on a Heatwave day
+var sale: Node3D  # the rival's sale flags along its front and posters on its glass, shown through a price war
 var wall_bikes: Node3D  # the bicycles along your shop's wall, wheeled off when an event's stall or van takes the bay
 var light_poles: Array = []  # the crossing lights' heads, in the street frame
 var shop_area := Rect2()  # your shop's floor in the world: full light inside
@@ -7832,6 +7833,7 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 			block(parent, Vector3(0.07, 2.6, 0.12), Vector3(rv.x + dx, 1.3, -7.03), Color("8b96a1"))
 	if parent == set_node:
 		rival_canopy(parent, rv, w, cx, c)
+		sale = null if rv.defeated else sale_display(rv, span)
 	else:
 		var awning := block(parent, Vector3(w, 0.12, 0.9), Vector3(cx, 2.85, -6.7), c.lightened(0.15))
 		if not rv.defeated:
@@ -7959,6 +7961,71 @@ func stair_house(parent: Node3D, at: Vector3, lit: bool) -> void:
 		light_up(lens, 1.0)
 		if parent == set_node:
 			plane(parent, Vector2(2.0, 2.0), at + Vector3(-0.1, 0.07, 1.4), pool_mat)
+
+
+## A price war's dressing on the rival's front: nobori, tall cloth banners on poles in weighted bases, in red and yellow
+## turn about with SALE down each, stood along the glass either side of the door, and a SALE poster on the glass
+## beside the door each way, lit from behind after dark.
+func sale_display(rv: Dictionary, span: Vector2) -> Node3D:
+	var node := Node3D.new()
+	node.visible = false
+	set_node.add_child(node)
+	var km := mat(Color.WHITE)
+	km.vertex_color_use_as_albedo = true
+	km.vertex_color_is_srgb = true
+	var st := surface(km)
+	var red := Color("dd3a2c")
+	var yellow := Color("f6cf3c")
+	var font: Font = bold if bold else get_theme_default_font()
+	var words := func(text: String, at: Vector3, ink: Color, px: float) -> void:
+		var l := Label3D.new()
+		l.text = text
+		l.font = font
+		l.font_size = 64
+		l.outline_size = 0
+		l.pixel_size = px
+		l.line_spacing = -14.0
+		l.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
+		l.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		l.position = at
+		l.modulate = ink * light
+		lit_mats.append([weakref(l), ink, 0.0])
+		node.add_child(l)
+	const Z := -6.45
+	var k := 0
+	var x := span.x + 1.1
+	while x < span.y - 0.8:
+		if absf(x - rv.x) > 1.4:
+			var cloth := red if k % 2 == 0 else yellow
+			var ink := yellow if k % 2 == 0 else red
+			box_into(st, Vector3(x - 0.2, 0, Z - 0.2), Vector3(x + 0.2, 0.16, Z + 0.2), Color("4a4b50"))  # the base, filled with water
+			box_into(st, Vector3(x - 0.14, 0.16, Z - 0.14), Vector3(x + 0.14, 0.2, Z + 0.14), Color("5c5d62"))
+			box_into(st, Vector3(x - 0.02, 0.2, Z - 0.02), Vector3(x + 0.02, 2.42, Z + 0.02), Color("d9d6cf"))
+			box_into(st, Vector3(x, 2.33, Z - 0.015), Vector3(x + 0.62, 2.36, Z + 0.015), Color("d9d6cf"))  # the bar it hangs from
+			box_into(st, Vector3(x + 0.03, 0.55, Z - 0.005), Vector3(x + 0.6, 2.33, Z + 0.005), cloth)
+			box_into(st, Vector3(x + 0.03, 0.55, Z + 0.005), Vector3(x + 0.08, 2.33, Z + 0.008), cloth.darkened(0.2))  # the loops round the pole
+			box_into(st, Vector3(x + 0.08, 2.14, Z + 0.005), Vector3(x + 0.6, 2.24, Z + 0.008), Color("fbfaf5"))
+			box_into(st, Vector3(x + 0.08, 0.62, Z + 0.005), Vector3(x + 0.6, 0.68, Z + 0.008), Color("fbfaf5"))
+			words.call("S\nA\nL\nE", Vector3(x + 0.34, 1.4, Z + 0.012), ink, 0.0052)
+			cast(node, Vector2(x + 0.3, Z), 0.55, 2.33, 0.57)
+			blob(node, Vector2(x, Z), 0.22)
+			k += 1
+		x += 2.1
+	commit([st], node)
+	# a poster on the glass either side of the door
+	for dx in [-1.75, 1.75]:
+		var px: float = rv.x + dx
+		if px - 0.5 < span.x + 0.3 or px + 0.5 > span.y - 0.3:
+			continue
+		var paper := Image.create(1, 12, false, Image.FORMAT_RGB8)
+		paper.fill(red)
+		for y in [0, 11]:
+			paper.set_pixel(0, y, yellow)
+		var pm := art_panel(node, paper, Vector2(1.0, 0.62), Vector3(px, 1.62, -6.985), Color.WHITE, 1.0, false)
+		light_up(pm, 0.9)
+		words.call("SALE", Vector3(px, 1.62, -6.98), Color.WHITE, 0.0058)
+		lit_mats[-1][2] = 1.0
+	return node
 
 
 ## The canopy over the rival's glass, 20 px a metre: standing-seam sheet in the chain's colour, each pan a shade off
@@ -9594,6 +9661,8 @@ func _process(delta: float) -> void:
 			health.visible = branch.event != null and branch.event.id == "inspector"
 		if heat:
 			heat.visible = branch.event != null and branch.event.id == "heatwave"
+		if sale:
+			sale.visible = branch.rival.price_war > 0.0
 		if wall_bikes:
 			wall_bikes.visible = branch.event == null or not branch.event.id in ["festival", "tv", "inspector", "heatwave"]
 		refresh_stock()
