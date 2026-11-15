@@ -184,6 +184,46 @@ void fragment() {
 }
 """
 const FOOT := Vector3(0.7, 0.35, 1.6)  # a person's shadow plane: width, behind the feet, and the height it casts
+# A vehicle's shadow in its own frame (x along its heading): a dark patch under its body where the tyres meet the road,
+# and while the sun is up the body's shadow swept away from the sun (away: metres per metre of height), softening as
+# it reaches out.
+const CAR_SHADE_SHADER := """
+shader_type spatial;
+render_mode unshaded, depth_draw_never, cull_disabled;
+uniform vec4 tint : source_color;
+uniform vec3 box;
+uniform float core;
+uniform float sun;
+uniform vec2 away;
+varying vec2 lp;
+varying vec2 reach;
+
+float rect(vec2 p, vec2 h, float r) {
+	vec2 q = abs(p) - h + r;
+	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+void vertex() {
+	lp = VERTEX.xz;
+	reach = (transpose(mat3(MODEL_MATRIX)) * vec3(away.x, 0.0, away.y)).xz * box.z;
+}
+
+void fragment() {
+	vec2 h = box.xy * 0.5;
+	float under = core * (1.0 - smoothstep(-0.2, 0.45, rect(lp, h * vec2(0.94, 0.9), 0.3)));
+	float body = 0.0;
+	for (int i = 0; i <= 8; i++) {
+		float t = float(i) / 8.0;
+		float d = rect(lp - reach * t, h * vec2(0.97, 0.9), 0.35);
+		body = max(body, (1.0 - smoothstep(-0.1 - 0.2 * t, 0.08 + 0.25 * t, d)) * (1.0 - 0.2 * t));
+	}
+	ALBEDO = tint.rgb;
+	ALPHA = 1.0 - (1.0 - under) * (1.0 - sun * body);
+}
+"""
+# per vehicle in art/vehicles.png: length, width and height (m) of the shadow, and how far behind the ground under its
+# sprite's centre (away from the camera) its art's footprint lies: kei car, taxi, kei truck, scooter
+const CAR_FOOT := [Vector4(2.85, 1.35, 1.6, 1.26), Vector4(3.0, 1.25, 1.45, 1.26), Vector4(3.0, 1.3, 1.75, 1.24), Vector4(1.9, 0.55, 1.4, 0.78)]
 # Daylight through your shop's glass front, laid over its floor: every point takes the light that came in over the
 # sill above it, so the panes fall as a band slanting away from the sun, barred by the mullions and brightest out of
 # the open door. `gate` holds what each pane lets through (u across the front, v the depth the light falls to).
@@ -1247,6 +1287,7 @@ var casts: Array = []  # those shadows, stretched as the sun goes down
 var foot_mat: ShaderMaterial  # people's shadows
 var sun_in_mat: ShaderMaterial  # daylight through your shop's glass front, over its floor
 var foot_mesh: PlaneMesh
+var car_shade_mats := []  # vehicles' shadows, one per CAR_FOOT
 var foot_lamps := []  # the lights people's shadows fall away from after dark, as last sent to foot_mat
 var sea_mat: StandardMaterial3D
 var shore_mat: StandardMaterial3D  # foam and shallows, dimmed after dark with the sea
@@ -1428,6 +1469,15 @@ func _ready() -> void:
 	foot_mat.set_shader_parameter("size", foot_mesh.size)
 	foot_mat.set_shader_parameter("back", FOOT.y)
 	foot_mat.render_priority = 1
+	var car_shader := Shader.new()
+	car_shader.code = CAR_SHADE_SHADER
+	for f in CAR_FOOT:
+		var m := ShaderMaterial.new()
+		m.shader = car_shader
+		m.set_shader_parameter("tint", Color(0.1, 0.08, 0.14))
+		m.set_shader_parameter("box", Vector3(f.x, f.y, f.z))
+		m.render_priority = 1
+		car_shade_mats.append(m)
 	sun_in_mat = ShaderMaterial.new()
 	sun_in_mat.shader = Shader.new()
 	sun_in_mat.shader.code = SUN_IN_SHADER
@@ -1650,6 +1700,10 @@ func update_light() -> void:
 	foot_mat.set_shader_parameter("glow", lamps)
 	foot_mat.set_shader_parameter("sun", 0.42 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
 	foot_mat.set_shader_parameter("reach", FOOT.z * Vector2(SUN.x, SUN.z).length() / SUN.y * (1.0 + 0.9 * golden_at(h)))
+	for m in car_shade_mats:
+		m.set_shader_parameter("core", 0.65 - 0.2 * night)
+		m.set_shader_parameter("sun", 0.55 * (1.0 - night) * (1.0 + 0.3 * golden_at(h)))
+		m.set_shader_parameter("away", Vector2(-SUN.x, -SUN.z) / SUN.y * (1.0 + 0.9 * golden_at(h)))
 	casts = casts.filter(func(s): return is_instance_valid(s))
 	for s in casts:
 		s.scale.z = 1.0 + 0.9 * golden_at(h)
@@ -5198,6 +5252,11 @@ func facing(node: Sprite3D, dir: Vector3, frame0: int, cell: Vector2i) -> void:
 	var sx := dir.dot(b.x)
 	node.region_rect = Rect2((frame0 + (0 if toward else 1)) * cell.x, node.region_rect.position.y, cell.x, cell.y)
 	node.flip_h = sx < 0.0 if toward else sx > 0.0
+	if node.has_meta("shade"):
+		var sh: MeshInstance3D = node.get_meta("shade")
+		sh.rotation.y = atan2(-dir.z, dir.x)
+		var back := Vector3(-b.z.x, 0, -b.z.z).normalized() * float(sh.get_meta("back"))
+		sh.position = Vector3(back.x, sh.position.y, back.z)
 
 
 func view_rect() -> Rect2:
@@ -5251,7 +5310,7 @@ func spawn_mover(is_car: bool, mid := false) -> void:
 		node = sprite("vehicles", Rect2(m.kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
 		m.v = dir * randf_range(5.0, 8.0) * (0.6 if m.kv == 3 else 1.0) * (1.6 if p.kind == "shuto" else 1.0)
 		m.y = VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
-		node.add_child(shadow(m.y, 1.5))
+		car_shade(m.kv, node, m.y)
 		cars.append(m)
 	else:
 		m.a = randi() % 7
@@ -5304,6 +5363,23 @@ func stride(p: Dictionary, speed: float, delta: float) -> void:
 		p.step += delta * minf(speed * STRIDE, MAX_FPS)
 		col = 1 + int(p.step) % 4
 	p.node.region_rect = Rect2(col * PERSON.x, p.a * PERSON.y, PERSON.x, PERSON.y)
+
+
+## Vehicle kv's shadow (CAR_FOOT), on the ground `lift` below a moving sprite's centre; facing() turns it to the
+## heading and slides it under the art's footprint.
+func car_shade(kv: int, node: Sprite3D = null, lift := 0.0) -> MeshInstance3D:
+	var f: Vector4 = CAR_FOOT[kv]
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(f.x, f.y) + Vector2.ONE * (f.z * 2.7 + 1.0)
+	mi.mesh = pm
+	mi.material_override = car_shade_mats[kv]
+	if node:
+		mi.position.y = 0.025 - lift
+		mi.set_meta("back", f.w)
+		node.add_child(mi)
+		node.set_meta("shade", mi)
+	return mi
 
 
 ## A soft round shadow at a sprite's feet, `drop` below its centre, r across.
@@ -5423,7 +5499,7 @@ func street_traffic(delta: float) -> void:
 			var kv := randi() % 4
 			var node := sprite("vehicles", Rect2(kv * 2 * VEHICLE_CELL.x, 0, VEHICLE_CELL.x, VEHICLE_CELL.y), VEHICLE_PX)
 			var y := VEHICLE_CELL.y / 2.0 * VEHICLE_PX - 0.1
-			node.add_child(shadow(y, 1.5))
+			car_shade(kv, node, y)
 			var beam := MeshInstance3D.new()
 			var pm := PlaneMesh.new()
 			pm.size = Vector2(7.0, 2.6 if kv != 3 else 1.6)
@@ -7107,7 +7183,10 @@ func build_set() -> void:
 	var foot := Vector2(1.46, -15.5 + long_ / 2.0)
 	var tilt := deg_to_rad(PITCH)
 	car.position = Vector3(foot.x, 0, foot.y) + Vector3(sin(PI / 4) * cos(tilt), sin(tilt), cos(PI / 4) * cos(tilt)) * ((u.size.x / 4.0 * VEHICLE_PX - 0.05) / sin(tilt))
-	blob(set_node, foot, 1.3)
+	var car_sh := car_shade(kv)
+	car_sh.position = Vector3(foot.x, 0.0, foot.y)
+	car_sh.rotation.y = PI / 2
+	set_node.add_child(car_sh)
 	lit_sprites.append(car)
 	pole_sign(set_node)
 	# where a city street runs in under the yard and leaves it unbuilt: the block's garbage station at the sidewalk, a
@@ -7449,7 +7528,11 @@ func build_set() -> void:
 		set_node.add_child(dv)
 		facing(dv, Vector3(0, 0, 1), 6, VEHICLE_CELL)
 		lit_sprites.append(dv)
-		blob(set_node, Vector2(-2.0, -8.2), 0.6)
+		var dv_sh := car_shade(3)
+		dv_sh.position = Vector3(-2.0, 0.0, -8.2)
+		dv_sh.rotation.y = -PI / 2
+		dv_sh.scale = Vector3.ONE * 0.64
+		set_node.add_child(dv_sh)
 	# the city gives way to everything built behind the street: your shop, the rival and the rows of neighbours
 	var o2 := Vector2(site.position.x, site.position.z)
 	set_feet = [Rect2(o2 + Vector2(-16.5, -20.2), Vector2(span.y + 16.5, 13.0))]
