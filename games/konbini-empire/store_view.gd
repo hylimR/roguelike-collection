@@ -2674,11 +2674,12 @@ func park_face() -> ImageTexture:
 
 ## The bills on the vacant unit's shutter at 64 px a metre, paper sun-faded and taped at the corners: 0 the agent's to-let
 ## notice (a red band reading テナント募集 over its terms, a phone number and the agent's mark), 1 a yellow matsuri flyer
-## peeling at a corner, 2 a lessons notice with tear-off tabs along its foot, two of them taken.
+## peeling at a corner, 2 a lessons notice with tear-off tabs along its foot, two of them taken, 3 a beaten chain's
+## closing notice, 閉店 in bold over a few lines of thanks, the date and the company's red seal.
 func shutter_bill(kind: int) -> ImageTexture:
-	var sz: Vector2i = [Vector2i(60, 42), Vector2i(28, 38), Vector2i(24, 33)][kind]
+	var sz: Vector2i = [Vector2i(60, 42), Vector2i(28, 38), Vector2i(24, 33), Vector2i(30, 42)][kind]
 	var img := Image.create(sz.x, sz.y, false, Image.FORMAT_RGBA8)
-	var paper: Color = [Color("f6f3ea"), Color("efd98a"), Color("f2c4cb")][kind]
+	var paper: Color = [Color("f6f3ea"), Color("efd98a"), Color("f2c4cb"), Color("fbfaf6")][kind]
 	var ink := Color("3d3a36")
 	var rr := RandomNumberGenerator.new()
 	rr.seed = 11 + kind
@@ -2724,6 +2725,19 @@ func shutter_bill(kind: int) -> ImageTexture:
 		img.fill_rect(Rect2i(2, 34, sz.x - 4, 1), Color("c9c3b6"))
 		img.fill_rect(Rect2i(5, 36, 4, 4), Color("2f8f5b"))  # the agent's mark and name
 		scrawl.call(11, 37, 22, 2, Color("2f8f5b"))
+	elif kind == 3:
+		var kanji := [["####.####", "#..#.#..#", "####.####", "#..#.#..#", "#.......#", "#...#...#", "#.#####.#", "#..###..#", "#.#.#.#.#"],
+			["....#....", "#########", "#........", "#...#....", "#...####.", "#...#....", "#.######.", "#.#....#.", "#.######."]]
+		for i in kanji.size():
+			glyphs.call(kanji[i], 5 + i * 11, 4, Color("1f1d1b"))
+		scrawl.call(8, 15, 14, 1, ink.lerp(paper, 0.2))  # のお知らせ
+		img.fill_rect(Rect2i(3, 18, sz.x - 6, 1), Color("c9c3b6"))
+		for k in 4:
+			scrawl.call(4, 21 + k * 3, sz.x - 8 - (k % 2) * 5, 1, ink)
+		scrawl.call(4, 34, 12, 1, ink.lerp(paper, 0.3))  # the date
+		scrawl.call(sz.x - 15, 37, 9, 1, ink)  # the company, its seal over the end of its name
+		img.fill_rect(Rect2i(sz.x - 8, 34, 5, 5), Color("c8392e"))
+		img.fill_rect(Rect2i(sz.x - 7, 35, 3, 3), paper.lerp(Color("c8392e"), 0.4))
 	elif kind == 1:
 		var head := Color("b8352a")
 		scrawl.call(3, 3, 22, 3, head)
@@ -2768,6 +2782,54 @@ func shutter_bill(kind: int) -> ImageTexture:
 		img.fill_rect(Rect2i(c.x, c.y + 2, 5, 1), tape.darkened(0.08))
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
+
+
+## A roll-down shutter at 32 px a metre, sw wide and sh px tall: slats 15 cm deep, each a lit lip over its face, a
+## shaded underside and a dark groove, a shade apart; two vented slats under the box, a few dents, road grime climbing
+## from the foot in blotches and rust run down from the box as far as `wear` (1 for years shut) has got, and a bottom
+## bar with a handle at each of `handles` (px).
+func shutter_slats(sw: float, sh: int, handles: Array, wear: float) -> Image:
+	var slats := Image.create(maxi(8, roundi(sw * 32.0)), sh, false, Image.FORMAT_RGB8)
+	var sx := slats.get_width()
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 7
+	var gn := FastNoiseLite.new()
+	gn.seed = 7
+	gn.frequency = 0.07
+	var runs := {}
+	for k in roundi(sw * 1.4 * wear):
+		runs[rr.randi_range(1, sx - 2)] = rr.randi_range(12, 44)
+	var tone := []
+	for k in sh / 5 + 1:
+		tone.append(rr.randf_range(0.96, 1.03))
+	var dents := []
+	for k in 3:
+		dents.append(Vector3i(rr.randi_range(4, sx - 14), rr.randi_range(6, 13) * 5, rr.randi_range(6, 11)))
+	var face := [Color("e8ebec"), Color("d3d7d9"), Color("cdd1d4"), Color("aeb3b7"), Color("7a8086")]
+	for px in sx:
+		var handle: bool = handles.any(func(h): return absi(px - h) <= 6)
+		for y in sh:
+			var c: Color
+			if y >= sh - 5:  # the bottom bar
+				c = [Color("cfd3d6"), Color("9aa0a6"), Color("969ca2"), Color("8f959b"), Color("575d64")][y - (sh - 5)]
+				if handle and y > sh - 5 and y < sh - 1:
+					c = Color("3d4248") if y > sh - 4 else Color("b5babe")
+			else:
+				var row := y % 5
+				c = face[row] * tone[y / 5]
+				if y / 5 in [1, 2] and row in [1, 2] and posmod(px, 10) in [2, 3, 4, 5, 6, 7]:
+					c = Color("3a3f45") if row == 1 else Color("50565c")
+				for d: Vector3i in dents:
+					if y - row == d.y and px >= d.x and px < d.x + d.z and row in [1, 2]:
+						c = c.darkened(0.14) if row == 1 else c.lightened(0.1)
+			var g := pow(clampf((y - sh + 48.0) / 48.0, 0.0, 1.0), 1.3) * (0.55 + 0.45 * (gn.get_noise_2d(px, y * 2.0) * 0.5 + 0.5))
+			c = c.lerp(Color("6f6658"), 0.85 * g * wear)
+			if y > sh - 16 and rr.randf() < 0.07 * wear:
+				c = c.darkened(0.18)
+			if runs.has(px) and y < runs[px]:
+				c = c.lerp(Color("8a5a3a"), 0.65 * (1.0 - float(y) / runs[px]))
+			slats.set_pixel(px, y, c)
+	return slats
 
 
 func tiled(tex_: Texture2D, reps: Vector2) -> StandardMaterial3D:
@@ -7458,50 +7520,8 @@ func build_set() -> void:
 		block(set_node, Vector3(vw - 0.5, 0.02, 0.01), Vector3(vx, 2.6, -6.885), Color("6e737a"))
 		for side in [-1, 1]:
 			block(set_node, Vector3(0.05, 0.33, 0.35), Vector3(vx + side * (vw - 0.5) / 2, 2.62, -7.05), Color("7d8389"))
-		# the shutter at 32 px a metre: slats 15 cm deep, each a lit lip over its face, a shaded underside and a dark
-		# groove, a shade apart; two vented slats under the box, a few dents, road grime climbing from the foot in
-		# blotches, rust run down from the box, and a bottom bar with its handle
 		var sw := vw - 0.8
-		var sh := 78
-		var slats := Image.create(maxi(8, roundi(sw * 32.0)), sh, false, Image.FORMAT_RGB8)
-		var sx := slats.get_width()
-		var rr := RandomNumberGenerator.new()
-		rr.seed = 7
-		var gn := FastNoiseLite.new()
-		gn.seed = 7
-		gn.frequency = 0.07
-		var runs := {}
-		for k in roundi(sw * 1.4):
-			runs[rr.randi_range(1, sx - 2)] = rr.randi_range(12, 44)
-		var tone := []
-		for k in sh / 5 + 1:
-			tone.append(rr.randf_range(0.96, 1.03))
-		var dents := []
-		for k in 3:
-			dents.append(Vector3i(rr.randi_range(4, sx - 14), rr.randi_range(6, 13) * 5, rr.randi_range(6, 11)))
-		var face := [Color("e8ebec"), Color("d3d7d9"), Color("cdd1d4"), Color("aeb3b7"), Color("7a8086")]
-		for px in sx:
-			for y in sh:
-				var c: Color
-				if y >= sh - 5:  # the bottom bar
-					c = [Color("cfd3d6"), Color("9aa0a6"), Color("969ca2"), Color("8f959b"), Color("575d64")][y - (sh - 5)]
-					if absi(px - sx / 2) <= 6 and y > sh - 5 and y < sh - 1:
-						c = Color("3d4248") if y > sh - 4 else Color("b5babe")
-				else:
-					var row := y % 5
-					c = face[row] * tone[y / 5]
-					if y / 5 in [1, 2] and row in [1, 2] and posmod(px, 10) in [2, 3, 4, 5, 6, 7]:
-						c = Color("3a3f45") if row == 1 else Color("50565c")
-					for d: Vector3i in dents:
-						if y - row == d.y and px >= d.x and px < d.x + d.z and row in [1, 2]:
-							c = c.darkened(0.14) if row == 1 else c.lightened(0.1)
-				var g := pow(clampf((y - 30.0) / 48.0, 0.0, 1.0), 1.3) * (0.55 + 0.45 * (gn.get_noise_2d(px, y * 2.0) * 0.5 + 0.5))
-				c = c.lerp(Color("6f6658"), 0.85 * g)
-				if y > sh - 16 and rr.randf() < 0.07:
-					c = c.darkened(0.18)
-				if runs.has(px) and y < runs[px]:
-					c = c.lerp(Color("8a5a3a"), 0.65 * (1.0 - float(y) / runs[px]))
-				slats.set_pixel(px, y, c)
+		var slats := shutter_slats(sw, 78, [roundi(sw * 32.0) / 2], 1.0)
 		var shutter := MeshInstance3D.new()
 		var q := QuadMesh.new()
 		q.size = Vector2(sw, 2.45)
@@ -8366,10 +8386,35 @@ func build_rival(parent: Node3D, rv: Dictionary, span: Vector2) -> void:
 	# the shop floor behind the glass (the chain's shelves, lit at night), mullions, the sliding door; a beaten chain's
 	# shop is shut behind roll-down shutters and stays dark
 	if rv.defeated:
-		var slats := Image.create(1, 16, false, Image.FORMAT_RGB8)
-		for y in 16:
-			slats.set_pixel(0, y, Color("b8b5ad") if y % 2 == 0 else Color("a29f97"))
-		art_panel(parent, slats, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color.WHITE, 1.0, false)
+		if parent == set_node:
+			# fresh shutters, a handle on each bay's bottom bar, the chain's closing notice taped over the door, the
+			# agent's to-let bill a couple of bays along and the post already heaping up at the foot
+			var bays := []
+			var bx := 1.0
+			while bx < w - 0.8:
+				bays.append(bx)
+				bx += 2.0
+			var sm := art_panel(parent, shutter_slats(w - 0.8, 83, bays.map(func(b): return roundi(b * 32.0)), 0.25), Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.9, 0.9, 0.9), 1.0, false)
+			sm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+			var let_x: float = bays.map(func(b): return span.x + 0.4 + b).filter(func(b): return absf(b - rv.x) > 1.2).reduce(func(a, b): return b if absf(b - rv.x - 3.2) < absf(a - rv.x - 3.2) else a)
+			for bl in [[shutter_bill(3), Vector2(0.6, 0.84), Vector3(rv.x, 1.5, -7.062)], [shutter_bill(0), Vector2(1.1, 0.77), Vector3(let_x, 1.52, -7.064)]]:
+				var bill := MeshInstance3D.new()
+				var sheet := QuadMesh.new()
+				sheet.size = bl[1]
+				bill.mesh = sheet
+				var bill_m := mat(Color(0.92, 0.92, 0.92), bl[0])
+				bill_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				bill_m.texture_repeat = false
+				bill.material_override = bill_m
+				bill.position = bl[2]
+				parent.add_child(bill)
+			for m in [[Vector3(0.36, 0.03, 0.22), Vector3(rv.x - 0.25, 0.015, -6.9), Color("f2efe6")], [Vector3(0.28, 0.03, 0.2), Vector3(rv.x + 0.1, 0.04, -6.88), Color("d9e4ee")]]:
+				block(parent, m[0], m[1], m[2])
+		else:
+			var slats := Image.create(1, 16, false, Image.FORMAT_RGB8)
+			for y in 16:
+				slats.set_pixel(0, y, Color("b8b5ad") if y % 2 == 0 else Color("a29f97"))
+			art_panel(parent, slats, Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color.WHITE, 1.0, false)
 		block(parent, Vector3(w - 0.6, 0.3, 0.3), Vector3(cx, 2.72, -7.0), Color("8f8c85"))  # the shutter boxes
 	else:
 		art_panel(parent, rival_floor(w - 0.8, rv.x - span.x - 0.4, c), Vector2(w - 0.8, 2.6), Vector3(cx, 1.3, -7.075), Color(0.86, 0.94, 1.0))
