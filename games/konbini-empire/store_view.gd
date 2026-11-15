@@ -389,7 +389,7 @@ void fragment() {
 # Open water on the map: the sea's blue, a paler turquoise over the shallows deepening to navy out from every shore, mottled in broad patches, with short wave crests over a darker trough
 # scattered across it at a steady size on screen at any zoom (two sizes crossfaded), slowly glinting in and out.
 # After dark the crests catch the moon, and off the built-up shore the water carries the city's lights: a warm haze
-# over each light's reflection broken into ripple bars down the view, lamp-gold, shop-white or neon, thinning out away from the land.
+# with each light's reflection a column of ripple bars down the view, lamp-gold, shop-white or neon, narrowing and fading away from the land.
 const SWELL_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled;
@@ -428,19 +428,24 @@ vec2 crests(vec2 p, float s, float aa) {
 	return vec2(crest, trough);
 }
 
-// x: a reflected light's ripple bars, y: which light, for columns s metres apart; each light's reflection runs a few
-// bars down the view, and shows where `g` (nearness to town) is
+// x: a reflected light's ripple bars, y: which light, for columns s metres apart; a light's reflection runs down the view
+// as a long column broken into ripple bars, broad and bright off the shore and narrowing as it fades with `g` (nearness
+// to town), over a faint streak, so it reads as one light's reflection and not a sprinkle
 vec2 dashes(vec2 p, float s, float g) {
-	vec2 q = p / vec2(s * 0.35, s * 0.2);
+	vec2 q = p / vec2(s * 0.6, s * 0.16);
 	float c = floor(q.x);
-	float run = floor(q.y / 7.0 + hash(vec2(c, 2.0)));
-	float r = hash(vec2(c, run) + 11.0);
+	float blk = floor(q.y / 40.0 + hash(vec2(c, 9.0)));
+	float r = hash(vec2(c, blk) + 11.0);
 	float fl = hash(vec2(c, floor(q.y)) + 3.0);
+	float k = sqrt(smoothstep(0.0, 0.7, g));
 	vec2 f = fract(q) - 0.5;
-	f.x += 0.16 * sin(TIME * 1.3 + fl * 30.0);
-	float hw = 0.1 + 0.22 * fl;
-	float d = (1.0 - smoothstep(hw, hw + 0.1, abs(f.x))) * (1.0 - smoothstep(0.14, 0.3, abs(f.y))) * step(1.0 - g * 0.8, r) * step(0.2, fl);
-	return vec2(d, hash(vec2(c, run) + 5.0));
+	f.x += (hash(vec2(c, blk) + 7.0) - 0.5) * 0.3;
+	float streak = (1.0 - smoothstep(0.0, 0.06 + 0.1 * k, abs(f.x))) * 0.22;
+	f.x += (0.06 + 0.1 * k) * sin(TIME * 1.3 + fl * 30.0);
+	float hw = (0.05 + 0.33 * k) * (0.6 + 0.6 * fl);
+	float bar = (1.0 - smoothstep(hw, hw + 0.06, abs(f.x))) * (1.0 - smoothstep(0.12, 0.3, abs(f.y))) * step(0.22, fl);
+	float d = max(bar, streak) * k * step(0.45, r);
+	return vec2(d, hash(vec2(c, blk) + 5.0));
 }
 
 void vertex() {
