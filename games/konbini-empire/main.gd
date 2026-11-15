@@ -27,10 +27,10 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"charm": ["perks", 0], "premium": ["perks", 8], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["walk", 21],
 	"bulk": ["perks", 7], "bow": ["walk", 3], "impulse": ["walk", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
 	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["perks", 6],
-	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["walk", 11], "spotless": ["drawn", 0],
+	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["walk", 11], "spotless": ["drawn", "wet_sign"],
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
 	"floor": ["decor", 7], "neon": ["perks", 8], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
-	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["decor", 1], "camera": ["perks", 6], "delivery": ["perks", 7],
+	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["perks", 7],
 	"r_franchise": ["perks", 8], "r_warchest": ["perks", 11], "r_killer": ["decor", 5], "r_express": ["perks", 10], "r_scholar": ["decor", 8],
 	"r_hq": ["walk", 13], "r_logistics": ["perks", 7], "r_brand": ["perks", 1], "r_academy": ["walk", 10],
 }
@@ -1386,9 +1386,9 @@ func card_picture(id: String, u: Dictionary) -> PanelContainer:
 		var ic: Array = CARD_ICON.get(id, ["perks", 11])
 		if ic[0] == "drawn":
 			pic = picture("perks", 0, 80, Vector2(60, 60))
-			if not tex.has("wet_sign"):
-				tex.wet_sign = wet_sign()
-			pic.texture = tex.wet_sign
+			if not tex.has(ic[1]):
+				tex[ic[1]] = call(ic[1])
+			pic.texture = tex[ic[1]]
 		elif ic[0] == "walk":
 			pic = picture("walk", 0, 80, Vector2(60, 60))
 			pic.texture.region = Rect2(Vector2(0, ic[1] * StoreView.PERSON.y), StoreView.PERSON)
@@ -1451,6 +1451,30 @@ func card_stage(rarity: String) -> Texture2D:
 			img.set_pixel(x, y, c)
 	tex[k] = ImageTexture.create_from_image(img)
 	return tex[k]
+
+
+## Bench & Planters' picture: the street's wooden bench standing just in front of a potted plant at each end, the
+## right one turned so the pair don't read as a copy.
+func bench_planters() -> ImageTexture:
+	var sheet: Image = tex.decor.get_image()
+	sheet.convert(Image.FORMAT_RGBA8)
+	var cut := func(i: int, k: float) -> Image:
+		var img := sheet.get_region(Rect2i(i * 96, 0, 96, 96))
+		img = img.get_region(img.get_used_rect())
+		img.resize(roundi(img.get_width() * k), roundi(img.get_height() * k), Image.INTERPOLATE_LANCZOS)
+		return img
+	var n := 128
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var plant: Image = cut.call(0, 0.74)
+	var bench: Image = cut.call(1, 1.0)
+	var flip := plant.duplicate()
+	flip.flip_x()
+	var foot := n - 9
+	img.blend_rect(plant, Rect2i(Vector2i.ZERO, plant.get_size()), Vector2i(0, foot - plant.get_height()))
+	img.blend_rect(flip, Rect2i(Vector2i.ZERO, flip.get_size()), Vector2i(n - flip.get_width(), foot - flip.get_height()))
+	img.blend_rect(bench, Rect2i(Vector2i.ZERO, bench.get_size()), Vector2i((n - bench.get_width()) / 2, n - 1 - bench.get_height()))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 ## Non-slip Floors' picture, in the sprites' chunky pixels: a yellow A-frame wet-floor sign, a warning triangle on its
