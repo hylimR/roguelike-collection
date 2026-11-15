@@ -8906,9 +8906,11 @@ func rival_floor(w: float, door: float, c: Color) -> Image:
 
 
 ## The rival's roof as the city's flat roofs are drawn, kept tidier than the vacant unit's: a coating in strips across its
-## depth, each a shade off with a grit speckle, faint grime and rain streaks running down to the drain in the front corner
-## with a damp stain round it, the parapets' shadow along its sunny sides, a walkway of concrete pads each a shade apart,
-## a dark seam round the hatch, skylights and AC units and each one's shadow away from the sun. 10 px a metre, street frame.
+## depth, laid in sheets butted end to end on a stagger, each sheet a shade off with its laps shaded below and lit above
+## broad enough to hold at a distance, a grit speckle, faint grime and rain streaks running down to the drain in the front
+## corner with a damp stain round it, two shallow tide-marked ponds, the parapets' shadow along its sunny sides, a walkway
+## of concrete pads each a shade apart, a dark seam round the hatch, skylights and AC units and each one's shadow away from
+## the sun. 10 px a metre, street frame.
 func rival_roof(span: Vector2) -> StandardMaterial3D:
 	var x0 := span.x + 0.2
 	var iw := roundi((span.y - span.x - 0.4) * 10.0)
@@ -8937,13 +8939,18 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 	for k in iw:
 		streaks.append(r.randf() if r.randf() < 0.3 else 0.0)
 	var drain := Vector2(span.y - 0.8, -7.95)
+	var sheets := []  # each strip's sheets, 3.2 m long, their ends staggered strip to strip
+	for k in 8 * (int(iw / 32.0) + 2):
+		sheets.append(r.randf_range(0.93, 1.06))
+	var ponds := [[Vector2(x0 + (iw / 10.0) * 0.78, -8.7), 0.75], [Vector2(x0 + (iw / 10.0) * 0.18, -11.9), 0.6]]
 	var base := Color(Sim.City.FLAT_ROOFS[4])  # a teal coating
 	var pad := Color("c9c6bd")
 	var img := Image.create(iw, ih, false, Image.FORMAT_RGB8)
 	for j in ih:
 		var z := -16.0 + (j + 0.5) / 10.0
 		var u := (j + 0.5) / 12.0
-		var lane: float = lanes[int(u) % lanes.size()] * (0.8 if j % 12 == 0 else (1.09 if j % 12 == 1 else 1.0))  # each lap's lip lit
+		var lane: float = lanes[int(u) % lanes.size()] * [0.78, 1.1, 1.05, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.96, 0.9][j % 12]  # each lap's lip lit, the strip shaded down to the next
+		var offs := fmod(int(u) * 1.9, 3.2)
 		for i in iw:
 			var x := x0 + (i + 0.5) / 10.0
 			var gx := x - x0
@@ -8954,7 +8961,21 @@ func rival_roof(span: Vector2) -> StandardMaterial3D:
 			var tz := smoothstep(0.0, 1.0, gz - cz)
 			var g := lerpf(lerpf(grime[(cz % 10) * gw + cx], grime[(cz % 10) * gw + cx + 1], tx),
 					lerpf(grime[((cz + 1) % 10) * gw + cx], grime[((cz + 1) % 10) * gw + cx + 1], tx), tz)
-			var f: float = lane * lerpf(0.93, 1.03, g) * (1.0 - streaks[i] * 0.12 * smoothstep(0.0, 8.6, gz))
+			var sx := gx + offs
+			var su := fmod(sx, 3.2)
+			var f: float = lane * sheets[(int(u) % 8) * (int(iw / 32.0) + 2) + int(sx / 3.2)] * lerpf(0.93, 1.03, g) * (1.0 - streaks[i] * 0.16 * smoothstep(0.0, 8.6, gz))
+			if su < 0.1:
+				f *= 0.8  # a sheet's end lapped over the last
+			elif su < 0.2:
+				f *= 1.07
+			for pd in ponds:
+				var pr: float = Vector2((x - pd[0].x) * 0.7, z - pd[0].y).length() / pd[1] * lerpf(0.88, 1.12, g)
+				if pr < 0.9:
+					f *= lerpf(0.9, 0.96, smoothstep(0.0, 0.9, pr))
+				elif pr < 1.0:
+					f *= 0.88  # its tide mark
+				elif pr < 1.12:
+					f *= 1.03
 			var h := r.randf()
 			if h < 0.04:
 				f *= 0.9
