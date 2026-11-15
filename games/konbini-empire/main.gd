@@ -214,6 +214,15 @@ func button(text: String, cb: Callable, tip := "") -> Button:
 	return b
 
 
+## A button filled in the given colour with white text, for the one action a modal leads to.
+func primary(b: Button, c := MINT) -> Button:
+	for k in ["normal", "hover", "pressed"]:
+		b.add_theme_stylebox_override(k, pill_box(c.lightened(0.12) if k == "hover" else c, 1 if k == "pressed" else 3, 1 if k == "pressed" else 2))
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(k, Color.WHITE)
+	return b
+
+
 func progress(color: Color, h := 8) -> ProgressBar:
 	var p := ProgressBar.new()
 	p.show_percentage = false
@@ -1945,13 +1954,20 @@ func show_over() -> void:
 	sst.content_margin_top = 6
 	sst.content_margin_bottom = 6
 	v.add_child(sp)
-	v.add_child(label("Level %d  ·  Seed %s" % [sim.player.level, sim.seed_text], MUTED, 11))
+	# a footer bar like the other modals' full-width action: the run's level and seed, then retry, then the way on
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
+	var meta := label("Level %d  ·  Seed %s" % [sim.player.level, sim.seed_text], MUTED, 11)
+	meta.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(meta)
 	var again := func(): new_run(sim.seed_text)
 	var fresh := func(): new_run("")
-	h.add_child(button("Retry seed", again))
-	h.add_child(button("New run  [Space]", fresh))
+	var retry := button("Retry seed", again)
+	retry.custom_minimum_size.x = 150
+	h.add_child(retry)
+	var on := primary(button("New run  [Space]", fresh))
+	on.custom_minimum_size.x = 300
+	h.add_child(on)
 	v.add_child(h)
 	open_modal("Bankrupt", v, {KEY_SPACE: fresh, KEY_ENTER: fresh}, "over", RED)
 
@@ -2012,11 +2028,7 @@ func show_new_run() -> void:
 	edit.add_theme_color_override("font_placeholder_color", LINE.darkened(0.12))
 	var start := func(): new_run(edit.text)
 	edit.text_submitted.connect(func(_t): start.call())
-	var go := button("Start  [Enter]", start)
-	for k in ["normal", "hover", "pressed"]:
-		go.add_theme_stylebox_override(k, pill_box(MINT.lightened(0.12) if k == "hover" else MINT, 1 if k == "pressed" else 3, 1 if k == "pressed" else 2))
-	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
-		go.add_theme_color_override(k, Color.WHITE)
+	var go := primary(button("Start  [Enter]", start))
 	var seed_now := label(sim.seed_text, INK, 22)
 	seed_now.custom_minimum_size.y = edit.get_minimum_size().y
 	seed_now.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
