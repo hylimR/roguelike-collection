@@ -6145,18 +6145,32 @@ func roadworks(near_gaps: Array) -> Node3D:
 	var lamp := mat(Color("e8392c"))
 	light_up(lamp, 1.0)
 	mm_node(lm, lamp, node)
-	# the board's face: a matrix of amber LEDs on black drawing an arrow that turns traffic away from the kerb, the dark
-	# LEDs left as dim dots, lit like a sign
+	# the board's face: a matrix of amber LEDs on black drawing a bold arrow that turns traffic away from the kerb, a
+	# shaft four LEDs thick into a head the board's full height, each lit LED haloed so the arrow reads as one shape
+	# when the board is seen edge-on, the dark LEDs left as faint dots, lit like a sign
 	var img := Image.create(96, 96, false, Image.FORMAT_RGB8)
-	img.fill(Color("141316"))
+	img.fill(Color("121114"))
+	var lit := func(i: int, j: int) -> bool:
+		if i < 0 or i > 11 or j < 0 or j > 11:
+			return false
+		return (j >= 4 and j <= 7 and i >= 1 and i <= 5) or (i >= 5 and absf(j - 5.5) <= (12 - i) * 0.9)
 	for j in 12:
 		for i in 12:
-			var on := (j >= 5 and j <= 6 and i >= 1 and i <= 6) or (i >= 6 and i <= 10 and absi(2 * j - 11) <= 2 * (10 - i) + 1)
+			var on: bool = lit.call(i, j)
+			var near := 0
+			for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				near += 1 if lit.call(i + o.x, j + o.y) else 0
 			for y in 8:
 				for x in 8:
 					var d := Vector2(x - 3.5, y - 3.5).length()
-					if d < 3.7:
-						img.set_pixel(i * 8 + x, j * 8 + y, Color("ffb52e").lerp(Color("fff0c0"), 0.6 * clampf(1.6 - d, 0.0, 1.0)) if on else Color("2c2622"))
+					var c := Color("121114")
+					if on:
+						c = Color("3a2208").lerp(Color("ffb52e"), clampf(4.4 - d, 0.0, 1.0)).lerp(Color("fff0c0"), 0.6 * clampf(1.6 - d, 0.0, 1.0))
+					elif near > 0:  # the glow of lit neighbours spilling into the gaps beside them
+						c = Color("121114").lerp(Color("3a2208"), 0.5 + 0.2 * near) if d >= 3.0 else Color("2a1d12")
+					elif d < 3.0:
+						c = Color("221e1b")
+					img.set_pixel(i * 8 + x, j * 8 + y, c)
 	img.generate_mipmaps()
 	var face := MeshInstance3D.new()
 	var fq := QuadMesh.new()
