@@ -1049,14 +1049,17 @@ void fragment() {
 			vec4 t = textureGrad(facades, uv, gx, gy);
 			vec4 m = textureGrad(accents, uv, gx, gy);
 			col = mix(mix(t.rgb, t.rgb * tint.rgb, t.a), ACCENT[pick] * t.r, m.r);
-			// after dark about half the windows light up, each its own, switching on one by one through dusk (shops and
+			// after dark the windows light up, each its own, switching on one by one through dusk (shops and
 			// signs first) and off again at first light; every shop lights up and signs keep shining
 			vec2 cell = floor(cont) + vec2(lnrm.x * 7.0 + lnrm.z * 3.0, seed * 91.0);
 			float r = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
 			vec3 lamp = r > 0.85 ? vec3(0.78, 0.86, 1.0) : vec3(1.0, 0.8, 0.48);
-			float lit = step(0.6, r);
+			// homes and low blocks are lived in: two windows in three light up, coming on with the street lamps at dusk
+			float lit = step(0.35, r);
 			float sw = fract(r * 29.0);
+			float dark = min(1.0, night * 1.8);
 			if (info.y > 24.0 && row > 0.5) {
+				dark = night;
 				// a tower's offices light floor by floor, the same floor all the way round: a working floor's bays nearly all
 				// on in office white, a floor half gone home, a few lit at random on the dark ones, a warmer floor here and there
 				float fl = fract(sin(dot(vec2(floor(cont.y), seed * 53.0), vec2(12.9898, 78.233))) * 43758.5453);
@@ -1080,7 +1083,7 @@ void fragment() {
 			lit *= mix(1.0, band / 0.6 * 0.8, smoothstep(0.12, 0.35, w));
 			// a lit pane is the room behind it, not white glass: brightest up under its ceiling light, warming and dimming
 			// toward the sill, each room a little brighter or dimmer than its neighbours, the glass's own sheen dropping out
-			float pane = m.g * (1.0 - m.b) * lit * switched(sw, night);
+			float pane = m.g * (1.0 - m.b) * lit * switched(sw, dark);
 			// (a storey under a few pixels, as on the city map, keeps its plain glow so the lit floors still read)
 			float tiny = smoothstep(0.12, 0.35, fwidth(cont.y));
 			vec3 room = lamp * mix(mix(lamp.b > lamp.r ? vec3(0.58, 0.6, 0.64) : vec3(0.6, 0.47, 0.36), vec3(1.0), smoothstep(0.2, 0.85, fract(cont.y))) * (0.8 + 0.2 * fract(r * 5.3)), vec3(1.0), tiny);
