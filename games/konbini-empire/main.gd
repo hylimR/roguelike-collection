@@ -1626,6 +1626,7 @@ func role_plate(role: String) -> PanelContainer:
 			c = under.lerp(Color(c.r, c.g, c.b), c.a)
 			c.a = clampf((1.0 - d) * n / 2.0, 0.0, 1.0)  # cut round, edge smoothed over a pixel
 			img.set_pixel(x, y, c)
+	img.generate_mipmaps()  # shown smaller than its 56 px in most windows: without them the head fades to its disc
 	var r := TextureRect.new()
 	r.texture = ImageTexture.create_from_image(img)
 	r.custom_minimum_size = Vector2(30, 30)
