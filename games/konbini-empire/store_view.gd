@@ -7391,7 +7391,9 @@ func build_set() -> void:
 	for seg in [[SET.position.x, -27.75], [-26.25, -16.5], [span.y, 29.75], [31.25, SET.end.x]]:
 		set_row(seg[0], seg[1], -7.2, 13.0, mix, r, boxes, roofs, 0.7, roads + overhead)
 	var low := boxes.size()
-	set_row(5.35, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 0.9, roads + overhead)  # one floor, so it hides neither your till nor the car park
+	# one floor, so it hides neither your till nor the rival, standing off the car park by as far as the view sees
+	# behind a storey, so its far bays and the car parked in them stay in sight
+	set_row(8.0, span.x, -7.2, 9.0, [[1, Sim.City.SHOPS, 1, 1, 6, 9, 9, 9]], r, boxes, roofs, 0.9, roads + overhead)
 	var low_roofs := boxes.slice(low).filter(func(e): return not roofs.any(func(rf): return is_equal_approx(rf[1].x, e[1].x)))
 	back_row(SET.position.x, SET.end.x, -20.5, [11.0, 8.0, 5.0], mix, r, boxes, roofs, roads + overhead)
 	shop_roofs(low_roofs)
