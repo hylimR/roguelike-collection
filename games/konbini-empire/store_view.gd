@@ -7292,7 +7292,7 @@ func build_set() -> void:
 			rm.set_instance_color(k, e[2])
 			rm.set_instance_custom_data(k, Color(0, 0, 0, -1))
 		mm_node(rm, building_mat, set_node)
-	# the part of your unit you haven't knocked through yet: a vacant shopfront, shutter down, its sign taken off
+	# the part of your unit you haven't knocked through yet: a vacant shopfront, shutter down, its sign's letters taken off
 	if mine > -16.5:
 		var vw := mine + 16.2  # stops short of your left wall, so the two faces don't fight
 		var vx := (mine - 16.8) / 2
@@ -7349,23 +7349,44 @@ func build_set() -> void:
 		commit([kit, faces], set_node)
 		block(set_node, Vector3(vw - 0.3, 0.55, 0.12), Vector3(vx, 3.1, -7.16), Color("cfc7b6"))
 		block(set_node, Vector3(vw - 1.1, 0.4, 0.06), Vector3(vx, 3.1, -7.08), Color("e9e4d8"))  # where the old sign hung
-		# its ghost: paint unfaded where the board sat, grime caught round its edge and rust bled from its screw holes
-		var gw := maxi(8, roundi((vw - 1.1) * 32.0))
+		# its ghost: the old liquor shop's name (サカヤ) peeled off the board, each letter's paint unfaded where it sat,
+		# grime caught round its edge and rust bled from its screw holes, over a weathered board in a grimy rim
+		var glyphs := [["..#..#..", "..#..#..", "########", "..#..#..", "..#..#..", ".....#..", "....#...", "..##...."],
+			["...#....", "...#....", "#######.", "...#..#.", "..#...#.", "..#...#.", ".#..#.#.", "#....#.."],
+			["..#.....", "..#.....", "########", "..#...#.", "...#.#..", "...#....", "....#...", "....#..."]]
+		var gw := maxi(40, roundi((vw - 1.1) * 32.0))
+		var ink := {}
+		var pitch := 18 if gw >= 100 else 12  # spaced out along the board like a fascia's letters
+		var x0 := gw / 2 - pitch - 4
+		for i in 3:
+			for gy in 8:
+				for gx in 8:
+					if glyphs[i][gy][gx] == "#":
+						ink[Vector2i(x0 + i * pitch + gx, 2 + gy)] = true
 		var ghost := Image.create(gw, 13, false, Image.FORMAT_RGB8)
+		var wn := FastNoiseLite.new()
+		wn.seed = 11
+		wn.frequency = 0.18
 		for px in gw:
 			for y in 13:
-				var c := Color("e9e4d8")
+				var c := Color("d3cbb9").lerp(Color("b6ad98"), 0.5 + 0.5 * wn.get_noise_2d(px, y * 1.6))
 				var edge := mini(mini(px, gw - 1 - px), mini(y, 12 - y))
-				if edge == 1:
-					c = Color("b9b1a1")
-				elif edge >= 2:
-					c = Color("f1ede3")
+				if edge == 0:
+					c = Color("e9e4d8")
+				elif edge == 1:
+					c = Color("aca390")
+				elif ink.has(Vector2i(px, y)):
+					c = Color("f6f3ea")
+				elif ink.has(Vector2i(px, y - 1)) or ink.has(Vector2i(px - 1, y)) or ink.has(Vector2i(px + 1, y)):
+					c = c.darkened(0.24)  # grime banked along the letter's lower and side edges
+				elif ink.has(Vector2i(px, y + 1)):
+					c = c.darkened(0.1)
 				ghost.set_pixel(px, y, c)
-		for hx in [3, gw / 2, gw - 4]:
-			for hy in [3, 9]:
-				ghost.set_pixel(hx, hy, Color("4a443c"))
-				for k in (hx + hy) % 3 + 1:
-					ghost.set_pixel(hx, hy + 1 + k, Color("e9e4d8").lerp(Color("94603e"), 0.6 - k * 0.2))
+		for hp in [Vector2i(x0 + 2, 3), Vector2i(x0 + 5, 6), Vector2i(x0 + pitch + 3, 3), Vector2i(x0 + pitch + 6, 6), Vector2i(x0 + pitch * 2 + 2, 4), Vector2i(x0 + pitch * 2 + 4, 8)]:
+			ghost.set_pixel(hp.x, hp.y, Color("4a443c"))
+			for k in (hp.x + hp.y) % 2 + 2:
+				if hp.y + 1 + k < 11:
+					ghost.set_pixel(hp.x, hp.y + 1 + k, ghost.get_pixel(hp.x, hp.y + 1 + k).lerp(Color("94603e"), 0.6 - k * 0.15))
 		var gq := MeshInstance3D.new()
 		var gm := QuadMesh.new()
 		gm.size = Vector2(vw - 1.1, 0.4)
