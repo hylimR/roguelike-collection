@@ -5730,21 +5730,21 @@ func snow_patches(w := 256, h := 256, lie := Callable()) -> ImageTexture:
 ## side of a trodden path of wet paving, the car park ploughed into heaps round its edges, and on the road a dusting
 ## along the kerbs and between the wheel tracks, which stay dark. Hidden until a cold snap.
 func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
-	var deep := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
-	var walk := surface(mat(Color(1, 1, 1, 0.999), snow_walk_tex))
+	var deep := surface(snow_mat(Color.WHITE, snow_tex))
+	var walk := surface(snow_mat(Color.WHITE, snow_walk_tex))
 	for sd in [[far_gaps, -7.2, 0.0], [near_gaps, 3.7, 1.0]]:  # v runs from the wall (0) to the kerb (1)
 		for o in open_spans(sd[0]):
 			var z0: float = sd[1]
 			add_quad(walk, [Vector3(o.x, -0.034, z0), Vector3(o.y, -0.034, z0), Vector3(o.y, -0.034, z0 + 3.5), Vector3(o.x, -0.034, z0 + 3.5)],
 					[Vector2(o.x / 8.0, sd[2]), Vector2(o.y / 8.0, sd[2]), Vector2(o.y / 8.0, 1.0 - sd[2]), Vector2(o.x / 8.0, 1.0 - sd[2])])
-	var lot := surface(mat(Color(1, 1, 1, 0.999), snow_lot_tex))
+	var lot := surface(snow_mat(Color.WHITE, snow_lot_tex))
 	add_quad(lot, [Vector3(-3.4, -0.034, -16.0), Vector3(3.7, -0.034, -16.0), Vector3(3.7, -0.034, -7.2), Vector3(-3.4, -0.034, -7.2)],
 			[Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
 	var span := rival_span(branch.rival)
 	rect_quad(deep, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(-16.5, -20.2, 20.2, 3.95), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(span.x + 0.2, -16.0, span.y - span.x - 0.4, 8.6), 4.27, 0.0, false, 0.125)  # the rival's roof, round its kit
-	var road := surface(mat(Color(0.88, 0.9, 0.95, 0.999), snow_road_tex))  # trafficked slush, greyer than the sidewalk's
+	var road := surface(snow_mat(Color(0.88, 0.9, 0.95), snow_road_tex))  # trafficked slush, greyer than the sidewalk's
 	var r0 := street_x.x
 	var r1 := street_x.y
 	add_quad(road, [Vector3(r0, -0.034, -3.7), Vector3(r1, -0.034, -3.7), Vector3(r1, -0.034, 3.7), Vector3(r0, -0.034, 3.7)],
@@ -5752,6 +5752,14 @@ func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 	var mi := commit([deep, road, walk, lot], set_node)
 	mi.visible = false
 	return mi
+
+
+## Lying snow, drawn under everything else laid on the ground, so lamp pools, shop light, headlights and shadows fall
+## across it instead of being buried under its drifts.
+func snow_mat(tint: Color, tex: Texture2D) -> StandardMaterial3D:
+	var m := mat(Color(tint.r, tint.g, tint.b, 0.999), tex)
+	m.render_priority = -1
+	return m
 
 
 ## A unit step toward the store camera along its line of sight: a glow slid this way clears the body it lights.
@@ -7352,7 +7360,7 @@ func build_set() -> void:
 		var xl := vx - vw / 2
 		plane(set_node, Vector2(vw - 0.4, 8.4), Vector3(vx, 3.63, -11.75), vacant_roof(xl, vw))
 		block(set_node, Vector3(0.3, 0.05, 0.3), Vector3(xl + 0.45, 3.63, -7.95), Color("4d4a44"))
-		var drift := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
+		var drift := surface(snow_mat(Color.WHITE, snow_tex))
 		rect_quad(drift, Rect2(xl + 0.2, -15.95, vw - 0.4, 8.4), 3.665, 0.0, false, 0.125)
 		commit([drift], snow_cover)
 		var kit := surface(km)
@@ -7854,7 +7862,7 @@ func shop_roofs(list: Array) -> void:
 	km.vertex_color_is_srgb = true
 	var kit := surface(km)
 	var faces := surface(condenser())
-	var drift := surface(mat(Color(1, 1, 1, 0.999), snow_tex))
+	var drift := surface(snow_mat(Color.WHITE, snow_tex))
 	var r := RandomNumberGenerator.new()
 	r.seed = branch.lot * 131 + 7
 	for e in list:
