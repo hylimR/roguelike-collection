@@ -23,11 +23,11 @@ const RARITY_COLOR := {"common": Color("a08c69"), "rare": Color("3a9bd9"), "epic
 const DISTRICT_COLOR := {"sakura": Color("d9708f"), "campus": Color("3a9bd9"), "onsen": Color("e0903a"), "ekimae": Color("1f9e8e"), "neon": Color("8a5cc8")}
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
 const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
-const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: that person off the street); product lines use their product, abilities their key
+const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: that person off the street, "drawn" one drawn in code); product lines use their product, abilities their key
 	"charm": ["perks", 0], "premium": ["perks", 8], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["walk", 21],
 	"bulk": ["perks", 7], "bow": ["walk", 3], "impulse": ["walk", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
 	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["perks", 6],
-	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["walk", 11], "spotless": ["decor", 0],
+	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["walk", 11], "spotless": ["drawn", 0],
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
 	"floor": ["decor", 7], "neon": ["perks", 8], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
 	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["decor", 1], "camera": ["perks", 6], "delivery": ["perks", 7],
@@ -1356,7 +1356,12 @@ func card_picture(id: String, u: Dictionary) -> PanelContainer:
 		pic = picture("perks", ABILITY_ICON[u.ability], 80, Vector2(60, 60))
 	else:
 		var ic: Array = CARD_ICON.get(id, ["perks", 11])
-		if ic[0] == "walk":
+		if ic[0] == "drawn":
+			pic = picture("perks", 0, 80, Vector2(60, 60))
+			if not tex.has("wet_sign"):
+				tex.wet_sign = wet_sign()
+			pic.texture = tex.wet_sign
+		elif ic[0] == "walk":
 			pic = picture("walk", 0, 80, Vector2(60, 60))
 			pic.texture.region = Rect2(Vector2(0, ic[1] * StoreView.PERSON.y), StoreView.PERSON)
 		else:
@@ -1418,6 +1423,44 @@ func card_stage(rarity: String) -> Texture2D:
 			img.set_pixel(x, y, c)
 	tex[k] = ImageTexture.create_from_image(img)
 	return tex[k]
+
+
+## Non-slip Floors' picture, in the sprites' chunky pixels: a yellow A-frame wet-floor sign, a warning triangle on its
+## face, standing in a puddle with a glint on it.
+func wet_sign() -> ImageTexture:
+	var n := 40
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var line := Color("3a2f28")
+	var leg := func(p: Vector2, top: float, bot: float, l0: float, r0: float, l1: float, r1: float) -> float:
+		var t := (p.y - top) / (bot - top)
+		return minf(minf(p.y - top, bot - p.y), minf(p.x - lerpf(l0, l1, t), lerpf(r0, r1, t) - p.x))  # >0 inside, in px
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var c := Color(0, 0, 0, 0)
+			var e := Vector2((p.x - 20) / 19.0, (p.y - 36.0) / 3.6).length()
+			if e < 1.0:
+				c = Color("5aa9d6") if e > 0.78 else Color("a4dcf2")
+				if y == 37 and x >= 5 and x <= 9 or y == 36 and x >= 32 and x <= 34:
+					c = Color.WHITE
+			var back: float = leg.call(p, 4, 34, 24, 27, 30, 36)
+			if back > 0:
+				c = line if back < 1 else Color("c98f17")
+			var front: float = leg.call(p, 2, 36, 13, 27, 7, 32)
+			if front > 0:
+				var side := lerpf(27, 32, (p.y - 2) / 34.0) - p.x < 3.0
+				c = line if front < 1 else (Color("e3a91d") if side else Color("ffcf3a"))
+				if y == 5 and x >= 18 and x <= 21 or y >= 30 and y <= 31 and front >= 1:
+					c = line
+				var tri := minf(27.0 - p.y, ((p.y - 9.0) / 18.0 * 10.0 - absf(p.x - 19.5)) * 0.87)  # the warning triangle
+				if tri > 0 and p.y > 9:
+					c = line if tri < 1.3 else Color.WHITE
+					if x >= 19 and x <= 20 and (y >= 15 and y <= 21 or y >= 23 and y <= 24):
+						c = line
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 ## A soft oval of `c`, densest at its centre: a shadow to stand art on.
