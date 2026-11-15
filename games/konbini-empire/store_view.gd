@@ -343,8 +343,8 @@ void fragment() {
 }
 """
 # A heatwave's air over the street, on the 3D view's own picture: rows of it waver sideways as the heat climbs off the
-# asphalt, and mirages lie in long sheens down the lanes, the sky's pale blue streaked across them over a wavering
-# glimpse of the street beyond. ground_x/ground_z/ground_o take a screen pixel to the street frame's (x, z).
+# asphalt, and mirages lie in long glassy sheens down the lanes, the sky's blue mirrored in them over a faint glimpse
+# of the street beyond, breaking into quivering slips toward their rims. ground_x/ground_z/ground_o take a screen pixel to the street frame's (x, z).
 const HEAT_SHADER := """
 shader_type canvas_item;
 uniform vec2 view_size = vec2(1.0);
@@ -365,23 +365,29 @@ void fragment() {
 	vec2 off = vec2(rows * 0.9, 0.3 * sin(p.x * 0.04 + t * 2.2)) * road * day / view_size;
 	vec4 c = texture(TEXTURE, UV + off);
 	float m = 0.0;
+	float body = 0.0;
 	float far = 0.0;
+	float ph = 0.0;
 	for (int i = 0; i < 6; i++) {
 		vec4 s = sheens[i];
 		vec2 d = (g - s.xy) / vec2(s.z, 0.62);
-		float e = smoothstep(0.0, 0.55, 1.0 - dot(d, d)) * (0.8 + 0.2 * sin(t * 1.3 + s.w));
+		float k = 1.0 - dot(d, d);
+		float e = smoothstep(0.0, 0.22, k) * (0.85 + 0.15 * sin(t * 1.3 + s.w));
 		if (e > m) {
 			m = e;
+			body = smoothstep(0.08, 0.45, k);
 			far = clamp(d.x * 0.5 + 0.5, 0.0, 1.0);
+			ph = s.w;
 		}
 	}
-	m *= road * day * day;
+	// toward its rim the sheen breaks into slips along the screen's rows, quivering as the air climbs
+	float slip = sin(p.y * 0.5 + 2.6 * sin(p.x * 0.023 + t * 2.4 + ph) - t * 1.6) + 0.5 * sin(p.y * 1.1 - p.x * 0.017 + t * 2.9 + ph * 1.7);
+	m *= mix(smoothstep(-0.7, 0.7, slip), 1.0, body) * (0.75 + 0.25 * far) * road * day * day;
 	if (m > 0.001) {
-		vec2 up = vec2(off.x * 4.0, -(14.0 + 10.0 * far + 3.0 * sin(p.x * 0.05 + t * 2.0)) / view_size.y);
+		vec2 up = vec2(off.x * 3.0, -(9.0 + 7.0 * far + 2.0 * sin(p.x * 0.05 + t * 2.0)) / view_size.y);
 		vec3 beyond = texture(TEXTURE, UV + up).rgb;
-		float streak = 0.93 + 0.07 * sin(p.y * 0.3 + p.x * 0.012 - t * 1.8);
-		vec3 sheen = mix(sky, beyond, 0.3) * streak;
-		c.rgb = mix(c.rgb, sheen, m * 0.6);
+		vec3 sheen = mix(sky * 1.1, beyond, 0.18) + vec3(0.1, 0.1, 0.08) * smoothstep(0.9, 1.4, slip) * body;
+		c.rgb = mix(c.rgb, sheen, m * 0.8);
 	}
 	COLOR = c;
 }
