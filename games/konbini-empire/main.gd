@@ -1302,17 +1302,16 @@ func lot_picture(L: Dictionary) -> PanelContainer:
 	var h := HBoxContainer.new()
 	h.alignment = BoxContainer.ALIGNMENT_CENTER
 	h.add_theme_constant_override("separation", 14)
-	h.add_child(ours)
+	h.add_child(shop_on_shade(ours, 54.0))
 	var vs := label("vs", tint.darkened(0.25), 13)
 	vs.add_theme_font_override("font", bold)
+	vs.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(vs)
 	# the chain's mascot roundel breaks the corner of its shop, so a red chain's front never reads as a second konbini of yours
-	var rival := Control.new()
-	rival.custom_minimum_size = theirs.custom_minimum_size
-	theirs.set_anchors_preset(Control.PRESET_FULL_RECT)
-	rival.add_child(theirs)
 	var reg: Rect2 = theirs.texture.region
-	var right := 48.0 + minf(96.0, 56.0 * reg.size.x / reg.size.y) / 2.0
+	var wide := minf(96.0, 56.0 * reg.size.x / reg.size.y)
+	var rival := shop_on_shade(theirs, wide * 0.9)
+	var right := 48.0 + wide / 2.0
 	var face := TextureRect.new()
 	face.texture = view.rival_face(L.rival)
 	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -1322,12 +1321,41 @@ func lot_picture(L: Dictionary) -> PanelContainer:
 	rival.add_child(face)
 	h.add_child(rival)
 	var plate := PanelContainer.new()
-	var s := box(tint.lerp(PAPER, 0.8), 14, 8)
+	var s := box(tint.lerp(PAPER, 0.8), 14, 4)
 	s.border_width_bottom = 2
 	s.border_color = tint.lerp(PAPER, 0.55)
 	plate.add_theme_stylebox_override("panel", s)
-	plate.add_child(h)
+	var stage := TextureRect.new()  # the cards' soft spot of light behind the two shops
+	stage.texture = card_stage("common")
+	stage.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	stage.stretch_mode = TextureRect.STRETCH_SCALE
+	stage.custom_minimum_size = Vector2(0, 76)
+	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	h.offset_bottom = -9
+	stage.add_child(h)
+	plate.add_child(stage)
 	return plate
+
+
+## A shop's art standing on its soft shadow, `w` px wide, on the ground line at the bottom of its box.
+func shop_on_shade(art: Control, w: float) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = art.custom_minimum_size
+	c.size_flags_vertical = Control.SIZE_SHRINK_END
+	if not tex.has("card_shade"):
+		tex.card_shade = soft_oval(Color(INK.darkened(0.3), 0.3))
+	var shade := TextureRect.new()
+	shade.texture = tex.card_shade
+	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	shade.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	shade.offset_left = -w / 2.0
+	shade.offset_right = w / 2.0
+	shade.offset_top = -9
+	shade.offset_bottom = 3
+	c.add_child(shade)
+	art.set_anchors_preset(Control.PRESET_FULL_RECT)
+	c.add_child(art)
+	return c
 
 
 ## A pick card's face, edged all round in its rarity's colour (a listing's in its district's) over a deeper lip,
