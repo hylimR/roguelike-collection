@@ -1160,6 +1160,7 @@ var rail_sig := Rect2(1, 1, -1, -1)
 var lm_trees: Array = []  # [world position, scale, outdoor frame]: trees planted by landmark models
 var lot_feet: Array = []  # their world footprints (your shop's and the rival's), where the city gives way
 var hover_lot := -1
+var lot_tags := {}  # city mode: each offered lot's pin pill on screen, by lot, so a click on it picks the lot
 var pick := ""  # city mode: "" | listing
 var site: Node3D
 var city: Node3D
@@ -10045,6 +10046,9 @@ func ground_at(pos: Vector2) -> Vector3:
 
 ## Lot under the pointer, its sidewalk included.
 func lot_at(pos: Vector2) -> int:
+	for li in lot_tags:
+		if lot_tags[li].grow(3.0).has_point(pos):
+			return li
 	var p := ground_at(pos)
 	for li in sim.lots.size():
 		var L: Dictionary = sim.lots[li]
@@ -10687,10 +10691,28 @@ func draw_city_marks(font: Font) -> void:
 		taken.append(Rect2(ground + Vector2(-40, -52), Vector2(80, 56)))
 		if not b.rival.defeated:
 			taken.append(Rect2(screen_world(frame_origin(b.lot) + Vector3(rival_span(b.rival).x + 4.0, 0.0, -7.2)) + Vector2(-13, -29), Vector2(26, 34)))
+	var bf: Font = bold if bold else font
+	var offered := {}
+	if pick == "listing" and sim.choice != null and sim.choice.source == "listing":
+		for k in sim.choice.options.size():
+			offered[sim.choice.options[k].lot] = k
+	# each lot on offer as a pin like a branch's, in green: its number, the area and what it costs to open on the pill
+	lot_tags = {}
+	var lot_text := {}
+	for li in offered:
+		var p2: Vector2 = Sim.lot_pos(sim.lots[li])
+		var ground := screen_world(Vector3(p2.x + 2.0, 0.0, p2.y + 3.0))
+		var nm: String = sim.districts[sim.lots[li].block].name
+		var cost := "¥" + Sim.money(sim.choice.options[offered[li]].cost)
+		var h := bf.get_ascent(11) + bf.get_descent(11) + 6
+		var w := h + 3 + bf.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 6 + font.get_string_size(cost, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x + 9
+		var r := Rect2(ground.x - w / 2, ground.y - 30 - h, w, h)
+		lot_tags[li] = r
+		lot_text[li] = [ground, nm, cost]
+		taken.append(Rect2(r.position, Vector2(w, ground.y + 4 - r.position.y)))
 	var order := []
 	for rank in 3:
 		order += sim.districts.filter(func(d): return (0 if d.type == "hub" else (1 if d.lm[1] >= 0 else 2)) == rank)
-	var bf: Font = bold if bold else font
 	for d in order:
 		var at := screen_world(Vector3(d.center.x, 0, d.center.y - 4.0))
 		var nm: String = d.name.to_upper()
@@ -10738,10 +10760,6 @@ func draw_city_marks(font: Font) -> void:
 			overlay.draw_style_box(round_box(Color("f4f6f0"), 3), r.grow(-1.5))
 			overlay.draw_style_box(round_box(Color("23794a"), 2), r.grow(-2.5))
 			overlay.draw_string(bf, Vector2(r.position.x, at.y + (bf.get_ascent(10) - bf.get_descent(10)) / 2 - 0.5), sh.name, HORIZONTAL_ALIGNMENT_CENTER, w, 10, Color.WHITE)
-	var offered := {}
-	if pick == "listing" and sim.choice != null and sim.choice.source == "listing":
-		for k in sim.choice.options.size():
-			offered[sim.choice.options[k].lot] = k
 	for li in sim.lots.size():
 		var mark := Color(0, 0, 0, 0)
 		if offered.has(li):
@@ -10752,11 +10770,6 @@ func draw_city_marks(font: Font) -> void:
 			mark = Color.WHITE
 		if mark.a > 0.0:
 			overlay.draw_polyline(lot_poly(li), mark, 2.0)
-		if offered.has(li):
-			var p2: Vector2 = Sim.lot_pos(sim.lots[li])
-			var at := screen_world(Vector3(p2.x, 3.0, p2.y))
-			overlay.draw_circle(at, 10.0, Color("3fae49"))
-			overlay.draw_string(font, at + Vector2(-10, 5), str(offered[li] + 1), HORIZONTAL_ALIGNMENT_CENTER, 20, 13, Color.WHITE)
 	# each branch as a map pin: its number and name on a pill whose tail drops a stem to a disc on the lot, and the
 	# rival's mascot in a roundel beside it, its ring a gauge of the rival's takings
 	var font_b: Font = bold if bold else font
@@ -10794,6 +10807,28 @@ func draw_city_marks(font: Font) -> void:
 		overlay.draw_circle(bc, h / 2 - 2.5, cream)
 		overlay.draw_string(font_b, Vector2(bc.x - h / 2, bc.y + (font_b.get_ascent(10) - font_b.get_descent(10)) / 2), str(sim.branches.find(b) + 1), HORIZONTAL_ALIGNMENT_CENTER, h, 10, c.darkened(0.25))
 		overlay.draw_string(font_b, Vector2(r.position.x + h + 3, r.position.y + 3 + asc), b.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+	for li in lot_tags:
+		var r: Rect2 = lot_tags[li]
+		var ground: Vector2 = lot_text[li][0]
+		var c := Color("3fae49").lightened(0.15) if li == hover_lot else Color("2f9a3d")
+		var h := r.size.y
+		var asc := font_b.get_ascent(11)
+		var tip := Vector2(ground.x, r.end.y + 5)
+		overlay.draw_line(ground + Vector2(1, 0), tip + Vector2(1, 0), shade, 3.0)
+		overlay.draw_line(ground, tip, Color.WHITE, 2.0)
+		ground_disc(ground, 5.0, c, shade)
+		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), h / 2), Rect2(r.position + Vector2(0, 2), r.size))
+		overlay.draw_colored_polygon(PackedVector2Array([tip + Vector2(-5, -6), tip + Vector2(5, -6), tip]), c)
+		if li == hover_lot:
+			overlay.draw_style_box(round_box(Color.WHITE, h / 2 + 1.5), r.grow(1.5))
+		overlay.draw_style_box(round_box(c, h / 2), r)
+		var bc := r.position + Vector2(h / 2, h / 2)
+		overlay.draw_circle(bc, h / 2 - 2.5, cream)
+		overlay.draw_string(font_b, Vector2(bc.x - h / 2, bc.y + (font_b.get_ascent(10) - font_b.get_descent(10)) / 2), str(offered[li] + 1), HORIZONTAL_ALIGNMENT_CENTER, h, 10, c.darkened(0.3))
+		var x := r.position.x + h + 3
+		overlay.draw_string(font_b, Vector2(x, r.position.y + 3 + asc), lot_text[li][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+		x += font_b.get_string_size(lot_text[li][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 6
+		overlay.draw_string(font, Vector2(x, r.position.y + 3 + asc), lot_text[li][2], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.98, 0.92, 0.85))
 
 
 ## A map pin's foot: a disc in c, ringed white, laid flat on the ground at p over its soft shadow.
