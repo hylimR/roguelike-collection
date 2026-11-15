@@ -279,6 +279,29 @@ void fragment() {
 	ALBEDO = glow * (mix(tint, vec3(1.0, 0.66, 0.34), 0.5) * wash * (0.8 + 0.8 * edge) + lit + vec3(1.0, 0.7, 0.4) * kerb * 0.16);
 }
 """
+# Your car park's tarmac, bay lines and bicycle hatch: the hour's light like any outdoor surface, and after dark the
+# floodlight multiplying their own colours, brightest where the pole's two floods aim (as flood_tex), so the grime, tyre
+# tracks, tar seals and paint still read under it instead of washing out to one pale sheet.
+const FLOODLIT_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+uniform sampler2D tex : source_color, hint_default_white, filter_nearest_mipmap, repeat_enable;
+uniform vec3 base = vec3(1.0);
+uniform vec3 light = vec3(1.0);
+uniform vec3 flood = vec3(0.0);
+varying vec2 p;
+
+void vertex() {
+	p = VERTEX.xz;
+}
+
+void fragment() {
+	vec2 a = p - vec2(-0.6, -14.4);
+	vec2 b = p - vec2(1.9, -11.2);
+	float aim = max(exp(-dot(a, a) / 9.0), exp(-dot(b, b) / 11.0));
+	ALBEDO = texture(tex, UV).rgb * base * min(light + flood * (0.62 + 0.68 * aim), vec3(1.3));
+}
+"""
 # A heatwave's air over the street, on the 3D view's own picture: rows of it waver sideways as the heat climbs off the
 # asphalt, and mirages lie in long sheens down the lanes, the sky's pale blue streaked across them over a wavering
 # glimpse of the street beyond. ground_x/ground_z/ground_o take a screen pixel to the street frame's (x, z).
@@ -1093,7 +1116,10 @@ var tarmac_m: StandardMaterial3D
 var slabs_m: StandardMaterial3D
 var plot_m: StandardMaterial3D  # a vacant lot on the city map
 var tactile_m: StandardMaterial3D
-var car_park_m: StandardMaterial3D
+var car_park_m: ShaderMaterial
+var lot_paint_m: ShaderMaterial
+var lot_hatch_m: ShaderMaterial
+var floodlit_mats: Array = []  # the car park's tarmac and paint, lit by its floodlight after dark
 var road_paint_m: StandardMaterial3D
 var side_tar_m: StandardMaterial3D
 var manhole_m: StandardMaterial3D
@@ -1553,7 +1579,8 @@ func art_panel(parent: Node3D, img: Image, size_: Vector2, pos: Vector3, tint :=
 
 ## Your car park's floodlight, 8 px a metre over FLOOD (street frame): the bays lit evenly out to the kerb, brighter
 ## where the pole's two floods aim, back along the bays and out toward the street, and fading over the kerb and
-## the sidewalk past it rather than a round pool that left most of the lot dark.
+## the sidewalk past it rather than a round pool that left most of the lot dark. Over the bays it is only a faint haze:
+## their tarmac and paint take the floodlight in their own colours (FLOODLIT_SHADER).
 func flood_tex() -> ImageTexture:
 	var w := int(FLOOD.size.x * 8.0)
 	var h := int(FLOOD.size.y * 8.0)
@@ -1564,7 +1591,7 @@ func flood_tex() -> ImageTexture:
 			var p := FLOOD.position + Vector2(x + 0.5, y + 0.5) / 8.0
 			var out := Vector2(maxf(maxf(bays.position.x - p.x, p.x - bays.end.x), 0.0), maxf(maxf(bays.position.y - p.y, p.y - bays.end.y), 0.0)).length()
 			var aim := maxf(exp(-(p - Vector2(-0.6, -14.4)).length_squared() / 9.0), exp(-(p - Vector2(1.9, -11.2)).length_squared() / 11.0))
-			img.set_pixel(x, y, Color(1, 1, 1, (0.42 + 0.58 * aim) * smoothstep(2.2, 0.0, out)))
+			img.set_pixel(x, y, Color(1, 1, 1, (0.42 + 0.58 * aim) * smoothstep(2.2, 0.0, out) * lerpf(0.12, 1.0, smoothstep(0.0, 0.5, out))))
 	return ImageTexture.create_from_image(img)
 
 
@@ -1654,6 +1681,9 @@ func update_light() -> void:
 	shop_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * lamps * on)
 	rival_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * lamps)
 	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * lamps * on)
+	for m in floodlit_mats:
+		m.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
+		m.set_shader_parameter("flood", Vector3(SHOP_LIGHT.r, SHOP_LIGHT.g, SHOP_LIGHT.b) * lamps * on)
 	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * lamps * on)
 	var lit := maxf(night, smoothstep(17.6, 19.0, h))  # a matsuri's lanterns are lit by sunset, not at full dark
 	festive_mats = festive_mats.filter(func(e): return e[0].get_ref() != null)
@@ -2130,7 +2160,7 @@ func tree_pit() -> StandardMaterial3D:
 ## coarse grain a shade paler, mottled with grime in long smears down the bays, tyre tracks polished darker into each
 ## bay and curving in to it from the entrance, an oil stain where each car's engine stands, a few cracks sealed in
 ## glossy black tar and dust along the kerbs and the shop's wall. Its bay lines and arrow are laid over it in road paint.
-func car_park() -> StandardMaterial3D:
+func car_park() -> ShaderMaterial:
 	if car_park_m:
 		return car_park_m
 	const PX := 16.0
@@ -2193,10 +2223,19 @@ func car_park() -> StandardMaterial3D:
 			dir = dir.rotated(r.randf_range(-0.22, 0.22))
 			at += dir
 	img.generate_mipmaps()
-	var mt := mat(Color.WHITE, ImageTexture.create_from_image(img))
-	mt.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	car_park_m = mt
-	return mt
+	car_park_m = floodlit(Color.WHITE, ImageTexture.create_from_image(img))
+	return car_park_m
+
+
+func floodlit(color: Color, texture: Texture2D = null) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = Shader.new()
+	m.shader.code = FLOODLIT_SHADER
+	m.set_shader_parameter("tex", texture)
+	m.set_shader_parameter("base", Vector3(color.r, color.g, color.b))
+	m.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
+	floodlit_mats.append(m)
+	return m
 
 
 ## The set's road markings for an 8 m repeat (uv x/8, z/8), 16 px a metre: the paint a shade apart and dulled with
@@ -7009,15 +7048,19 @@ func build_set() -> void:
 	rect_quad(bay, Rect2(-3.4, -16.0, 7.1, 8.8), -0.042, 1.0)
 	# its bay lines and the arrow leading drivers in off the street, laid in the street's paint as geometry so they
 	# stay whole at every zoom; uv runs along each line through a band of the paint clear of the lanes' wheel paths
+	if not lot_paint_m:
+		lot_paint_m = floodlit(Color.WHITE, road_paint().albedo_texture)
+		lot_hatch_m = floodlit(Color("e2c048"))
+	var lines := surface(lot_paint_m)
 	for bx in [-2.2, 0.2, 2.6]:
-		add_quad(paint, [Vector3(bx, -0.04, -15.6), Vector3(bx + 0.13, -0.04, -15.6), Vector3(bx + 0.13, -0.04, -11.0), Vector3(bx, -0.04, -11.0)],
+		add_quad(lines, [Vector3(bx, -0.04, -15.6), Vector3(bx + 0.13, -0.04, -15.6), Vector3(bx + 0.13, -0.04, -11.0), Vector3(bx, -0.04, -11.0)],
 			[Vector2(-1.95, 0.03), Vector2(-1.95, 0.046), Vector2(-1.375, 0.046), Vector2(-1.375, 0.03)])
-	add_quad(paint, [Vector3(-2.2, -0.04, -15.6), Vector3(2.73, -0.04, -15.6), Vector3(2.73, -0.04, -15.47), Vector3(-2.2, -0.04, -15.47)],
+	add_quad(lines, [Vector3(-2.2, -0.04, -15.6), Vector3(2.73, -0.04, -15.6), Vector3(2.73, -0.04, -15.47), Vector3(-2.2, -0.04, -15.47)],
 		[Vector2(-0.275, 0.06), Vector2(0.341, 0.06), Vector2(0.341, 0.076), Vector2(-0.275, 0.076)])
-	poly_fill(paint, PackedVector2Array([Vector2(0.95, -8.1), Vector2(0.95, -9.55), Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55), Vector2(1.19, -9.55), Vector2(1.19, -8.1)]), -0.04)
+	poly_fill(lines, PackedVector2Array([Vector2(0.95, -8.1), Vector2(0.95, -9.55), Vector2(0.55, -9.55), Vector2(1.07, -10.35), Vector2(1.59, -9.55), Vector2(1.19, -9.55), Vector2(1.19, -8.1)]), -0.04)
 	for kb in [Rect2(-3.4, -16.25, 7.1, 0.25), Rect2(3.45, -16.25, 0.25, 9.05)]:  # kerb round the back and side
 		rect_quad(kerb, kb, -0.036)
-	var hatch := surface(mat(Color("e2c048")))
+	var hatch := surface(lot_hatch_m)
 	# the strip along your wall kept clear for bicycles: a yellow box, closed all round, hatched at 45 degrees inside
 	var hb := Rect2(-3.22, -15.52, 0.76, 4.34)
 	for hr in [Rect2(-3.3, -15.6, 0.92, 0.08), Rect2(-3.3, -11.18, 0.92, 0.08), Rect2(-3.3, -15.6, 0.08, 4.5), Rect2(-2.46, -15.6, 0.08, 4.5)]:
@@ -7040,7 +7083,7 @@ func build_set() -> void:
 	rect_quad(yard, Rect2(-16.5, -20.2, 20.2, 3.95), -0.043, 0.0, false, 1.0 / 7.2)
 	var grate := surface(mat(Color("6c6a66")))
 	rect_quad(grate, Rect2(3.75, -7.75, span.x - 3.8, 0.28), -0.04)
-	commit([made, walk, road, tar, kerb, bay, paint, hatch, tactile, kerbs, yard, grate], set_node)
+	commit([made, walk, road, tar, kerb, bay, paint, lines, hatch, tactile, kerbs, yard, grate], set_node)
 	quay(made_runs, side_roads)
 	snow_cover = settled_snow(far_gaps, near_gaps)
 	matsuri = matsuri_lanterns(far_gaps + under[0], near_gaps + under[1])
