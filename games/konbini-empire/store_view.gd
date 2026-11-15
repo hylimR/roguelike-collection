@@ -3382,7 +3382,35 @@ func build_shore() -> void:
 			inward.append(n if Geometry2D.is_point_in_polygon(ring[i] + n * 2.0, isl) else -n)
 			all.append(1.0)
 		seawall(cope, lap, ring, inward, all)
+	moat_walls(cope, lap, C.parks[0])
 	commit([sand, surf, cope, lap], city)
+
+
+## The palace moat's stone walls, both banks on the lawn's 40-point ellipse and the moat's: a granite coping laid out
+## over the water's edge, its lip darker, then the wall's wet foot, a lap of foam and paler water fading toward the
+## middle, the coast's seawall in a narrower channel.
+func moat_walls(cope: SurfaceTool, lap: SurfaceTool, pk: Dictionary) -> void:
+	var stone := Color("cfcabd")
+	var lip := Color("7f7b72")
+	var bands := [[0.0, 0.55, stone, 1.0, 1.0], [0.55, 0.75, lip, 1.0, 1.0]]
+	var water := [[0.75, 0.95, Color("3e5a66"), 0.7, 0.7], [0.95, 1.3, Color("f4fbfb"), 0.55, 0.1], [1.3, 2.2, Color("8fd6d4"), 0.25, 0.0]]
+	for bank in [[pk.radii, 1.0], [pk.radii + Vector2(Sim.City.MOAT, Sim.City.MOAT), -1.0]]:
+		var ring := Sim.City.ellipse(pk.center, bank[0], 40)
+		for i in ring.size():
+			var a: Vector2 = ring[i]
+			var b: Vector2 = ring[(i + 1) % ring.size()]
+			# toward the water: out of the lawn's edge, in from the moat's outer bank
+			var na: Vector2 = ((a - pk.center) / (bank[0] * bank[0])).normalized() * bank[1]
+			var nb: Vector2 = ((b - pk.center) / (bank[0] * bank[0])).normalized() * bank[1]
+			for c in bands + water:
+				var v := [a + na * c[0], b + nb * c[0], b + nb * c[1], a + na * c[1]]
+				var al := [c[3], c[3], c[4], c[4]]
+				var st: SurfaceTool = cope if c in bands else lap
+				for j in [0, 1, 2, 0, 2, 3]:
+					st.set_color(Color(c[2], al[j]))
+					if st == cope:
+						st.set_uv(v[j] * 0.25)
+					st.add_vertex(Vector3(v[j].x, -0.13 if st == cope else -0.125, v[j].y))
 
 
 ## A seawall along pts (n: unit normals toward the land, w: 0..1 how much of one stands there): a stone coping along the
