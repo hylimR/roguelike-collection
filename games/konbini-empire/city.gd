@@ -1479,7 +1479,43 @@ static func buildings() -> Array:
 	for b in C.blocks:
 		_fill_block(C, b, rng, _buildings)
 	_line_avenues(C, rng, _buildings)
+	_fill_islands(C, rng, _buildings)
 	return _buildings
+
+
+## The landfill islands' land between their roads, built up in rows of the nearest district's mix like the blocks
+## ashore (warehouses on Toyosu, shops and offices on Odaiba), kept off the seawall's coping, the lots and landmarks.
+static func _fill_islands(C: Dictionary, rng: RandomNumberGenerator, out: Array) -> void:
+	var placed := {}
+	for bd in out:
+		_add_poly(placed, _corners(bd.center, bd.size, bd.angle))
+	for isl in C.islands:
+		var box := _bounds(isl)
+		var z := box.position.y + 2.0
+		while z < box.end.y - 4.0:
+			var x := box.position.x + 2.0
+			while x < box.end.x - 4.0:
+				var n := nearest(C, Vector2(x, z))
+				var d: Dictionary = C.districts[n[0]]
+				var mix: Array = MIX[d.type]
+				var m: Array = mix[rng.rand_weighted(PackedFloat32Array(mix.map(func(q): return float(q[0]))))]
+				var fit := false
+				for f in [1.0, 0.6, 0.4]:
+					var size: Vector2 = Vector2(rng.randf_range(m[4], m[5]), rng.randf_range(m[6], m[7])) * f
+					size = size.max(Vector2(4.0, 4.0))
+					var c: Vector2 = Vector2(x, z) + size / 2
+					var poly := _corners(c, size, 0.0)
+					if _obb_blocked(C, placed, poly, c, 0.0, size) or Array(_corners(c, size + Vector2(3.6, 3.6), 0.0)).any(func(q): return is_water(C, q)):
+						continue
+					var floors := maxi(1, roundi(rng.randf_range(m[2], m[3] + 0.99) * lerpf(1.0, 0.55, clampf(n[1] / 90.0, 0.0, 1.0))))
+					out.append(_building(rng, m[1], Rect2(c - size / 2, size), floors))
+					_add_poly(placed, poly)
+					x += size.x + 0.8
+					fit = true
+					break
+				if not fit:
+					x += 2.0
+			z += 2.0
 
 
 ## Buildings turned to face the curved avenues, filling what the square blocks leave beside them.
