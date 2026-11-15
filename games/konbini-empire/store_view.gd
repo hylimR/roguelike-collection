@@ -950,7 +950,10 @@ void fragment() {
 				float on = step(0.5, fract(r * 13.0)) * switched(fract(r * 29.0), night);
 				vec2 rm = (fract(rc) - 0.5) * 2.0;
 				float pool = 0.2 + exp(-2.2 * dot(rm, rm));
-				col = wall < 0.0 ? tint.rgb * 1.08 : fl * (1.0 - 0.4 * night * (1.0 - on));
+				// the walls' cut: a dark solid core inside the plaster skin each face wears, lit along its lip
+				float skin = min(-wall, min(e.x, e.y));
+				vec3 core = mix(tint.rgb, vec3(0.24, 0.22, 0.22), 0.72);
+				col = wall < 0.0 ? (skin < 0.04 ? tint.rgb * 1.12 : core * (skin < 0.06 ? 0.8 : 1.0)) : fl * (1.0 - 0.4 * night * (1.0 - on));
 				// windows cut through the outer walls below the cut: the reveal down to the sill, the glass's section across it
 				bool along_x = e.y < e.x;
 				float win = window_in(along_x ? lpos.x : lpos.z, along_x ? bay.x : bay.y, along_x ? step(info.z * 0.5, lpos.z) : 2.0 + step(info.x * 0.5, lpos.x), seed);
