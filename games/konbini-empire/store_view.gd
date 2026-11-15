@@ -10314,17 +10314,29 @@ func draw_clock() -> void:
 	var hh := int(h) % 24
 	var t := "%d:%02d" % [12 if hh % 12 == 0 else hh % 12, int(fmod(h, 1.0) * 60.0)]
 	var shade := Color(0.33, 0.23, 0.1, 0.55)
+	var band := Sim.band(h)
 	var big := 34
 	var w := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, big).x
 	for part in [[Vector2(16, 46), t, big], [Vector2(22 + w, 46), "AM" if hh < 12 else "PM", 16]]:
 		overlay.draw_string_outline(font, part[0] + Vector2(1, 2), part[1], HORIZONTAL_ALIGNMENT_LEFT, -1, part[2], 4, shade)
 		overlay.draw_string(font, part[0], part[1], HORIZONTAL_ALIGNMENT_LEFT, -1, part[2], Color.WHITE)
-	overlay.draw_style_box(round_box(shade, 2), Rect2(16, 55, 176, 3))
-	overlay.draw_style_box(round_box(Color.WHITE, 2), Rect2(16, 53, 176, 3))
+	# the rule is the day from 06:00 to midnight: the rushes still ahead in amber, the hours gone in white up to a knob at now
+	var rule := Rect2(16, 52, 176, 5)
+	var at := rule.position.x + rule.size.x * clampf((h - 6.0) / 18.0, 0.0, 1.0)
+	overlay.draw_style_box(round_box(shade, 3), Rect2(rule.position + Vector2(0, 2), rule.size))
+	overlay.draw_style_box(round_box(Color(1, 1, 1, 0.4), 3), rule)
+	for b in Sim.SCHEDULE:
+		if b.rush:
+			var x0: float = rule.position.x + rule.size.x * (b.from - 6.0) / 18.0
+			var x1: float = rule.position.x + rule.size.x * (b.to - 6.0) / 18.0
+			overlay.draw_style_box(round_box(Color("ffc94a"), 3), Rect2(x0 + 1, rule.position.y, x1 - x0 - 2, rule.size.y))
+	overlay.draw_style_box(round_box(Color.WHITE, 3), Rect2(rule.position, Vector2(maxf(rule.size.y, at - rule.position.x), rule.size.y)))
+	overlay.draw_circle(Vector2(at, rule.get_center().y + 2), 6.0, shade)
+	overlay.draw_circle(Vector2(at, rule.get_center().y), 6.0, Color.WHITE)
+	overlay.draw_circle(Vector2(at, rule.get_center().y), 3.0, Color("ffc94a") if band.rush else Color("7a5c3a"))
 	var day := "Day %d" % sim.day
 	var dw := font.get_string_size(day, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
 	pill(Vector2(16 + 7 + dw / 2, 78), day, 13, Color.WHITE, Color("6b5236"))
-	var band := Sim.band(h)
 	var bw := font.get_string_size(band.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
 	pill(Vector2(16 + dw + 14 + 8 + 7 + bw / 2, 78), band.name, 13, Color("ffc94a") if band.rush else Color("7a5c3a"), Color("6b4512") if band.rush else Color.WHITE)
 
