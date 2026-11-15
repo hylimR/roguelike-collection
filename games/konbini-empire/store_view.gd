@@ -992,18 +992,26 @@ void fragment() {
 			float sw = fract(r * 29.0);
 			if (info.y > 24.0 && row > 0.5) {
 				// a tower's offices light floor by floor, the same floor all the way round: a working floor's bays nearly all
-				// on in office white, a few lit at random on the dark ones, a warmer floor here and there
+				// on in office white, a floor half gone home, a few lit at random on the dark ones, a warmer floor here and there
 				float fl = fract(sin(dot(vec2(floor(cont.y), seed * 53.0), vec2(12.9898, 78.233))) * 43758.5453);
-				float on = fl < 0.42 ? 1.0 : 0.0;
-				lit = mix(step(0.88, fract(r * 7.13)), step(0.1, fract(r * 7.13)), on);
+				float on = fl < 0.3 ? 1.0 : 0.0;
+				float share = fl < 0.3 ? 0.9 : (fl < 0.55 ? 0.5 : 0.12);
+				lit = step(1.0 - share, fract(r * 7.13));
 				lamp = fl < 0.34 ? vec3(0.86, 0.92, 1.0) : vec3(1.0, 0.84, 0.56);
 				sw = mix(sw, fract(fl * 37.0), on);
 				// a cell under two pixels blurs to its floor's share of light, a floor under two to the tower's
 				float fx = smoothstep(0.5, 1.0, fwidth(cont.x));
 				float fy = smoothstep(0.5, 1.0, fwidth(cont.y));
-				lit = mix(mix(lit, mix(0.12, 0.9, on), fx), 0.45, fy);
+				lit = mix(mix(lit, share, fx), 0.45, fy);
 				lamp *= 0.88 + 0.12 * fract(r * 3.7);
 			}
+			// a storey of a few pixels keeps a dark spandrel under its windows, box-filtered over the pixel, so lit
+			// floors read as lines of windows instead of merging into blotches
+			float w = max(fwidth(cont.y), 0.001);
+			float y0 = cont.y - w / 2.0;
+			float y1 = cont.y + w / 2.0;
+			float band = (floor(y1) * 0.6 + clamp(fract(y1) - 0.28, 0.0, 0.6) - floor(y0) * 0.6 - clamp(fract(y0) - 0.28, 0.0, 0.6)) / w;
+			lit *= mix(1.0, band / 0.6 * 0.8, smoothstep(0.12, 0.35, w));
 			// a lit pane is the room behind it, not white glass: brightest up under its ceiling light, warming and dimming
 			// toward the sill, each room a little brighter or dimmer than its neighbours, the glass's own sheen dropping out
 			float pane = m.g * (1.0 - m.b) * lit * switched(sw, night);
