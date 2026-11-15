@@ -1164,7 +1164,7 @@ var run_off_shadow_mat: StandardMaterial3D  # the shadows the expressway lays ou
 var env: Environment
 var light := Color.WHITE  # the hour's tint (DAYLIGHT)
 var night := 0.0  # 0 by day, 1 from 22:00, fading out at first light: lit windows and lamp pools
-var lamps := 0.0  # the street lamps, which switch on at dusk as the light fails rather than with the night
+var lamps := 0.0  # the street lamps, shop lights and lit signs, which switch on at dusk as the light fails rather than with the night
 var lit_mats: Array = []  # [weakref to an outdoor material (or a sign's Label3D), its own colour, how far it lights up after dark (lightboxes)]
 var lit_sprites: Array = []  # outdoor sprites that stand still, relit when the light changes
 var pools: Array = []  # Vector3(x, z, radius) in the world: lamp light on the street after dark
@@ -1599,10 +1599,10 @@ func update_light() -> void:
 	lit_mats = lit_mats.filter(func(e): return e[0].get_ref() != null)
 	for e in lit_mats:
 		var o: Object = e[0].get_ref()
-		o.set("modulate" if o is Label3D else "albedo_color", e[1] * light.lerp(Color.WHITE, e[2] * night))
+		o.set("modulate" if o is Label3D else "albedo_color", e[1] * light.lerp(Color.WHITE, e[2] * lamps))
 	fascia_glows = fascia_glows.filter(func(e): return e[0].get_ref() != null)
 	for e in fascia_glows:
-		e[0].get_ref().albedo_color = e[1] * Color(1, 1, 1, 0.85 * night)
+		e[0].get_ref().albedo_color = e[1] * Color(1, 1, 1, 0.85 * lamps)
 	if building_mat:
 		building_mat.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
 		building_mat.set_shader_parameter("night", night)
@@ -1644,17 +1644,17 @@ func update_light() -> void:
 	glare_mat.albedo_color = Color(1.0, 0.94, 0.8, 0.95 * lamps)
 	headlight_mat.albedo_color = Color(1.0, 0.9, 0.7, 0.6 * night)
 	tail_glow_mat.albedo_color = Color(1.0, 0.12, 0.06, 0.6 * night)
-	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * night)
+	spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.55 * lamps)
 	var low := maxf(golden_at(h), dawn_at(h))  # the lower the sun, the deeper daylight reaches into your shop
 	sun_in_mat.set_shader_parameter("reach", 5.2 * SUN.z / SUN.y * (1.0 + 0.9 * low))
 	var sun_c := Color(1.0, 0.95, 0.84).lerp(Color(1.0, 0.82, 0.52), golden_at(h)).lerp(Color(1.0, 0.76, 0.66), dawn_at(h))
 	sun_in_mat.set_shader_parameter("tint", sun_c * Color(1, 1, 1, (1.0 - night) * (0.14 + 0.2 * low)))
 	sun_in_mat.set_shader_parameter("shade", Color(0.38, 0.44, 0.62) * Color(1, 1, 1, (1.0 - night) * 0.28))
 	var on := 1.0 if room_dim == Color.WHITE or mode != "store" else 0.0
-	shop_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * night * on)
-	rival_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * night)
-	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night * on)
-	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * night * on)
+	shop_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * lamps * on)
+	rival_spill_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.9 * lamps)
+	flood_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * lamps * on)
+	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * lamps * on)
 	var lit := maxf(night, smoothstep(17.6, 19.0, h))  # a matsuri's lanterns are lit by sunset, not at full dark
 	festive_mats = festive_mats.filter(func(e): return e[0].get_ref() != null)
 	for e in festive_mats:
@@ -8609,7 +8609,7 @@ func skylight_mats() -> Array:
 	var lm: StandardMaterial3D = sign_glow_mat.duplicate()
 	lm.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
 	lm.albedo_texture = ImageTexture.create_from_image(mask)
-	lm.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * night)
+	lm.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.85 * lamps)
 	fascia_glows.append([weakref(lm), SHOP_LIGHT])
 	skylight_pair = [weakref(gms[0]), weakref(lm), weakref(gms[1])]
 	return [gms[0], lm, gms[1]]
