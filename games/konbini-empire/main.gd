@@ -29,7 +29,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["perks", 6],
 	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["walk", 11], "spotless": ["drawn", "wet_sign"],
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
-	"floor": ["decor", 7], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
+	"floor": ["drawn", "wall_through"], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
 	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["perks", 7],
 	"r_franchise": ["perks", 8], "r_warchest": ["perks", 11], "r_killer": ["decor", 5], "r_express": ["perks", 10], "r_scholar": ["decor", 8],
 	"r_hq": ["walk", 13], "r_logistics": ["perks", 7], "r_brand": ["perks", 1], "r_academy": ["walk", 10],
@@ -1584,6 +1584,76 @@ func neon_board() -> ImageTexture:
 						c = c.lerp(glow, 0.6)
 					elif near < 2.9:
 						c = c.lerp(glow, 0.2)
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Knock Through a Wall's picture, in the sprites' chunky pixels: a length of the shop's striped wall broken through
+## to the floor, the breach's rim showing the blockwork and the room beyond, rubble heaped at its foot and a
+## sledgehammer leant against it.
+func wall_through() -> ImageTexture:
+	var n := 40
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var line := Color("3a2f28")
+	var stripe := func(y: float) -> Color:  # the wall's orange and green band, or clear
+		return Color("f08a24") if y >= 15 and y < 17 else (Color("2f9e5a") if y >= 17 and y < 19 else Color(0, 0, 0, 0))
+	var breach := func(p: Vector2) -> float:  # >0 inside the opening, in px
+		var q := p - Vector2(16.5, 24.0)
+		var jag := 0.9 * sin(p.y * 1.9 + p.x * 0.4) + 0.6 * sin(p.x * 2.7 - p.y * 1.3)
+		return 8.0 + jag - Vector2(q.x, minf(q.y, 0.0) * 1.15).length()
+	var foot := Vector2(30.5, 38.5)
+	var top := Vector2(26.0, 18.0)
+	var along := (top - foot).normalized()
+	var across := Vector2(-along.y, along.x)
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var c := Color(0, 0, 0, 0)
+			var s := (12.0 - p.y) * 1.25
+			var td := minf(minf(12.0 - p.y, p.y - 7.0), minf(p.x - 3.0 - s, 31.0 + s - p.x))
+			if td > 0:
+				c = line if td < 1 else Color("f8f0de")
+			s = (p.x - 31.0) * 0.8
+			var sd := minf(minf(p.x - 31.0, 36.0 - p.x), minf(p.y - 12.0 + s, 38.0 - s - p.y))
+			if sd > 0:
+				var band: Color = stripe.call(p.y + s)
+				c = line if sd < 1 else (band.darkened(0.3) if band.a > 0 else (Color("6f604f") if p.y + s > 35 else Color("cbbd9d")))
+			var fd := minf(minf(p.x - 3.0, 31.0 - p.x), minf(p.y - 12.0, 38.0 - p.y))
+			if fd > 0:
+				var band: Color = stripe.call(p.y)
+				c = band if band.a > 0 else (Color("8c7a66") if p.y > 35 else Color("efe3c8"))
+				if fd < 1:
+					c = line
+				var h: float = breach.call(p)
+				if h > 1.6:
+					c = Color("dcecee")  # the room beyond, in cool shop light, a fridge against its far wall
+					if x >= 13 and x <= 20 and y >= 19 and y <= 30:
+						c = Color("4a4f5a") if x == 13 or x == 20 or y == 19 or y == 30 or x == 16 or x == 17 else (Color("cfeefa") if (x + y) % 6 == 0 else Color("6fb6e0"))
+					if p.y > 31:
+						c = Color("e9e2d2") if (x + 1) % 4 != 0 and y != 34 else Color("c9bfa9")  # its floor tiles
+					if h < 3.0:
+						c = c.darkened(0.3)  # in the shade of the wall's thickness
+				elif h > 0.5:
+					c = Color("958b80") if y % 3 == 0 or (x + (y / 3) * 2) % 5 == 0 else Color("c4bcb0")  # the blockwork
+				elif h > -0.4 and fd >= 1:
+					c = line
+			var heap := 37.5 - 6.0 * (1.0 - pow((p.x - 16.5) / 10.0, 2))
+			if p.y > heap and p.y < 39.0 and absf(p.x - 16.5) < 10.0:
+				var k := (x * 7 + (y / 2) * 13) % 5
+				c = line if p.y - heap < 1.0 else [Color("efe3c8"), Color("c4bcb0"), Color("958b80"), Color("e0d2b3"), Color("f08a24")][k if k < 4 or x % 3 == 0 else 1]
+				if (x + y * 3) % 7 == 0:
+					c = c.darkened(0.35)
+			var u := (p - foot).dot(along)
+			var w := absf((p - foot).dot(across))
+			if u > 0 and u < (top - foot).length() and w < 1.7:
+				c = line if w > 0.9 else (Color("d79a55") if (p - foot).dot(across) > 0 else Color("b07a3a"))
+			var hq := p - top
+			var ha := absf(hq.dot(across))
+			var hb := absf(hq.dot(along))
+			if ha < 6.0 and hb < 2.8:
+				c = line if ha > 5.0 or hb > 1.9 else (Color("aab5c2") if hq.dot(along) > 0.2 else Color("66707c"))
 			img.set_pixel(x, y, c)
 	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
 	img.generate_mipmaps()
