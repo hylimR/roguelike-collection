@@ -6037,16 +6037,18 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 				var pts := PackedVector3Array()
 				for i in 9:
 					pts.append(Vector3(px - step + step * i / 8.0, sag.call(i / 8.0), side[1]))
-				wall(rope, pts, 0.0, -0.014, 0.014)
+				wall(rope, pts, 0.0, -0.028, 0.028)
 				var m := maxi(2, roundi(step / 1.2))
 				for j in m:
 					var t: float = (j + 0.5) / m
-					spots.append(Vector3(px - step + step * t, sag.call(t) - 0.36, side[1]))
+					var x: float = px - step + step * t
+					wall(rope, PackedVector3Array([Vector3(x - 0.014, sag.call(t), side[1]), Vector3(x + 0.014, sag.call(t), side[1])]), 0.0, -0.24, 0.0)
+					spots.append(Vector3(x, sag.call(t) - 0.48, side[1]))
 	commit([rope], node)
 	var ribs := Image.create(1, 16, false, Image.FORMAT_RGB8)
-	for y in 16:  # bamboo ribs round the paper, darker toward the caps
+	for y in 16:  # bamboo ribs round the paper, darker toward the caps, under a black band by each cap
 		var v := absf(y - 7.5) / 7.5
-		ribs.set_pixel(0, y, Color.WHITE * (lerpf(1.0, 0.72, v * v) * (0.8 if y % 3 == 1 else 1.0)))
+		ribs.set_pixel(0, y, Color.WHITE * (0.16 if y in [3, 12] else lerpf(1.0, 0.72, v * v) * (0.8 if y % 3 == 1 else 1.0)))
 	var body := SphereMesh.new()
 	body.radius = 0.19
 	body.height = 0.48
