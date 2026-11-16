@@ -1327,6 +1327,7 @@ var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
 var tone_flip := false  # box_into and turned_box_into shade for a mesh that will stand turned half round
 var car_lamp_tex: ImageTexture  # the vehicles sheet's lamps lit, frame for frame, over a clear ground
+var car_snow_tex: ImageTexture  # the vehicles sheet's parked cars with snow on their tops, over a clear ground
 var tv: Node3D  # the set's TV crew, shown on a TV Feature day
 var health: Node3D  # the health centre's wagon and a sanitiser stand, shown on a Health Inspection day
 var heat: Node3D  # a shaved-ice stand and a splashed sidewalk, shown on a Heatwave day
@@ -5829,6 +5830,78 @@ func lamps_on(node: Sprite3D) -> void:
 		m.albedo_color = Color(1, 1, 1, minf(night * 2.0, 1.0))
 
 
+## The top faces snow settles on, by vehicles.png frame of the cars nosed into your bay, seen from behind: roof, the
+## taxi's boot and its bonnet beyond, and the kei truck's cab roof and its load of boxes, traced in the cell's pixels.
+const CAR_SNOW := {
+	1: [[Vector2(37, 19), Vector2(64, 7), Vector2(80, 7), Vector2(101, 21), Vector2(78, 30), Vector2(73, 29), Vector2(38, 21)]],
+	3: [[Vector2(31, 31), Vector2(50, 22), Vector2(73, 17), Vector2(96, 30), Vector2(68, 39), Vector2(33, 33)],
+		[Vector2(73, 58), Vector2(104, 49), Vector2(116, 56), Vector2(80, 69)], [Vector2(9, 33), Vector2(25, 29), Vector2(30, 33), Vector2(14, 37)]],
+	5: [[Vector2(23, 19), Vector2(33, 13), Vector2(60, 7), Vector2(68, 10), Vector2(69, 16), Vector2(46, 19), Vector2(26, 22)],
+		[Vector2(47, 35), Vector2(72, 25), Vector2(84, 28), Vector2(103, 37), Vector2(90, 41), Vector2(76, 45), Vector2(65, 41), Vector2(52, 39)]],
+}
+
+
+## The vehicles sheet with a cold snap's snow on each traced top, over a clear ground: a slab with a ragged edge, lit
+## on top and cooling toward its near edge, a lip of shade 2 or 3 px deep hanging under that edge and a dark line round
+## it all where it sits on the body, opaque like the sheet's own pixels. The taxi's roof sign stands up out of it.
+static func car_snow(sheet: Image) -> Image:
+	var img := Image.create(sheet.get_width(), sheet.get_height(), false, Image.FORMAT_RGBA8)
+	var r := RandomNumberGenerator.new()
+	r.seed = 41
+	for f: int in CAR_SNOW:
+		var o := Vector2i(f * VEHICLE_CELL.x, 0)
+		var top := {}  # cell px of the slab's top
+		var bare := {}  # the taxi's sign, left clear
+		for poly in CAR_SNOW[f]:
+			var pv := PackedVector2Array(poly)
+			var lo := pv[0].y
+			var hi := pv[0].y
+			for p in pv:
+				lo = minf(lo, p.y)
+				hi = maxf(hi, p.y)
+			for y in range(int(lo), int(hi) + 1):
+				for x in VEHICLE_CELL.x:
+					var p := Vector2(x + 0.5, y + 0.5)
+					if not Geometry2D.is_point_in_polygon(p, pv):
+						continue
+					var d := INF
+					for i in pv.size():
+						d = minf(d, p.distance_to(Geometry2D.get_closest_point_to_segment(p, pv[i], pv[(i + 1) % pv.size()])))
+					var c := sheet.get_pixelv(o + Vector2i(x, y))
+					var on_sign := f == 3 and y < 29 and x > 55 and x < 73 and (c.r > c.g or c.get_luminance() < 0.1)
+					if on_sign:
+						bare[Vector2i(x, y)] = true
+					if d < 1.0 and r.randf() < 0.3 or c.a < 0.5 or on_sign:
+						continue
+					top[Vector2i(x, y)] = true
+		var lip := {}  # cell px -> how far under the slab's near edge, 1 to 3
+		var hang := PackedInt32Array()
+		for x in VEHICLE_CELL.x:
+			hang.append(3 if r.randf() < 0.3 else 2)
+		for q: Vector2i in top:
+			if top.has(q + Vector2i(0, 1)):
+				continue
+			for k in range(1, hang[q.x] + 1):
+				var u: Vector2i = q + Vector2i(0, k)
+				if top.has(u) or bare.has(u) or sheet.get_pixelv(o + u).a < 0.5:
+					break
+				lip[u] = k
+		for q: Vector2i in top:
+			var under := top.has(q + Vector2i(0, 1)) and top.has(q + Vector2i(0, 2))
+			var c := Color(0.97, 0.98, 1.0).lerp(Color(0.8, 0.85, 0.95), 0.0 if under else 0.45)
+			if r.randf() < 0.04:
+				c = Color.WHITE
+			img.set_pixelv(o + q, c)
+		for q: Vector2i in lip:
+			img.set_pixelv(o + q, [Color(0.7, 0.76, 0.89), Color(0.56, 0.63, 0.78), Color(0.46, 0.52, 0.68)][lip[q] - 1])
+		for q: Vector2i in top.keys() + lip.keys():
+			for n in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+				var u: Vector2i = q + n
+				if u.x >= 0 and u.y >= 0 and u.x < VEHICLE_CELL.x and u.y < VEHICLE_CELL.y and not top.has(u) and not lip.has(u) and not bare.has(u) and sheet.get_pixelv(o + u).a > 0.5:
+					img.set_pixelv(o + u, sheet.get_pixelv(o + u).lerp(Color(0.24, 0.27, 0.38), 0.55))
+	return img
+
+
 ## Settled snow for an 8 m repeat at 32 px a metre: drifts on seamless noise, each mounded up from a thin rim to a
 ## rounded body, lit on the slopes that face the sun and cool blue on those turned away, thinning to a translucent rim
 ## with the ground showing through, round it a margin of wet, darkened ground flecked with powder, and the odd glint.
@@ -7427,6 +7500,20 @@ func build_set() -> void:
 	car_sh.rotation.y = PI / 2
 	set_node.add_child(car_sh)
 	lit_sprites.append(car)
+	if not car_snow_tex:
+		var sheet: Image = tex["vehicles"].get_image()
+		sheet.decompress()
+		sheet.convert(Image.FORMAT_RGBA8)
+		var snowed := car_snow(sheet)
+		snowed.generate_mipmaps()
+		car_snow_tex = ImageTexture.create_from_image(snowed)
+	var cap := sprite("vehicles", car.region_rect, VEHICLE_PX)  # its snow on a cold snap, a hair nearer the camera
+	cap.texture = car_snow_tex
+	cap.flip_h = car.flip_h
+	cap.offset = car.offset
+	cap.position = car.position + to_eye() * 0.05
+	snow_cover.add_child(cap)
+	lit_sprites.append(cap)
 	pole_sign(set_node)
 	# where a city street runs in under the yard and leaves it unbuilt: the block's garbage station at the sidewalk, a
 	# couple of bicycles along the car park's kerb and a tree at the back, all on the side the rival doesn't hide
