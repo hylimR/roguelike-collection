@@ -1749,6 +1749,12 @@ func show_staff() -> void:
 		var cap := sim.role_cap(st, role)
 		var first := true
 		for a in st.applicants.filter(func(x): return x.role == role):
+			if first and apps.get_child_count() > 0:
+				for k in apps.columns:  # a rule between roles, run on over the grid's gutters so it reads as one line
+					var rule := Control.new()
+					rule.custom_minimum_size.y = 7
+					rule.draw.connect(func(): rule.draw_line(Vector2(0.0 if k == 0 else -5.0, 3.5), Vector2(rule.size.x + (0.0 if k == apps.columns - 1 else 5.0), 3.5), LINE.darkened(0.08), 1.0))
+					apps.add_child(rule)
 			var lead := HBoxContainer.new()
 			lead.add_theme_constant_override("separation", 6)
 			if first:
