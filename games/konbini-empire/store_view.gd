@@ -1331,6 +1331,7 @@ var tone_flip := false  # box_into and turned_box_into shade for a mesh that wil
 var car_lamp_tex: ImageTexture  # the vehicles sheet's lamps lit, frame for frame, over a clear ground
 var car_snow_tex: ImageTexture  # the vehicles sheet's parked cars with snow on their tops, over a clear ground
 var tv: Node3D  # the set's TV crew, shown on a TV Feature day
+var crew_tex: Array = []  # the TV crew's reporter and camera operator, painted once over walk.png frames
 var health: Node3D  # the health centre's wagon and a sanitiser stand, shown on a Health Inspection day
 var heat: Node3D  # a shaved-ice stand and a splashed sidewalk, shown on a Heatwave day
 var sale: Node3D  # the rival's sale flags along its front and posters on its glass, shown through a price war
@@ -6734,7 +6735,71 @@ func tv_crew() -> Node3D:
 	cast(node, Vector2(lt_at.x, lt_at.z), 1.55, 2.12, 0.84)
 	cast(node, Vector2(lt_at.x, lt_at.z), 0.0, 1.55, 0.06)
 	blob(node, Vector2(cam_at.x, cam_at.z), 0.5)
+	# the crew: the reporter at your door turned to the lens, the operator behind the camera at its pan bar
+	for k in 2:
+		var p := sprite("walk", Rect2(0, 0, PERSON.x, PERSON.y), PERSON_PX)
+		p.texture = crew_art()[k]
+		p.position = cam_at + (Vector3(0.3, 0.82, -1.5) if k == 0 else Vector3(-0.2, 0.82, 0.75))
+		p.flip_h = k == 0
+		p.add_child(foot())
+		node.add_child(p)
+		lit_sprites.append(p)
 	return node
+
+
+## The TV crew on standing frames of art/walk.png: the office worker as the reporter, in the station's blue blazer with
+## a hand mic flagged in it held up to her chin, and the backpacker as the operator, in headphones, his pack dyed a black
+## kit bag.
+func crew_art() -> Array:
+	if not crew_tex.is_empty():
+		return crew_tex
+	var sheet: Image = (load("res://art/walk.png") as Texture2D).get_image()
+	for row in [1, 5]:
+		var img := sheet.get_region(Rect2i(0, row * PERSON.y, PERSON.x, PERSON.y))
+		img.convert(Image.FORMAT_RGBA8)
+		var disc := func(cx: float, cy: float, r: float, c: Color) -> void:
+			for y in range(maxi(floori(cy - r), 0), mini(ceili(cy + r) + 1, PERSON.y)):
+				for x in range(maxi(floori(cx - r), 0), mini(ceili(cx + r) + 1, PERSON.x)):
+					if Vector2(x - cx, y - cy).length() <= r:
+						img.set_pixel(x, y, c)
+		var limb := func(a: Vector2, b: Vector2, r: float, c: Color) -> void:
+			for i in 17:
+				var p := a.lerp(b, i / 16.0)
+				disc.call(p.x, p.y, r, c)
+		var ink := Color("1d1d22")
+		if row == 1:
+			var skin := img.get_pixel(37, 57)
+			for y in range(40, 62):  # her blouse made the station's blue blazer
+				for x in PERSON.x:
+					var c := img.get_pixel(x, y)
+					if c.a > 0.5 and c.get_luminance() > 0.55 and c.s < 0.2:
+						var v := c.get_luminance()
+						img.set_pixel(x, y, Color(0.1 + 0.2 * v, 0.24 + 0.3 * v, 0.5 + 0.4 * v, c.a))
+			limb.call(Vector2(38, 56), Vector2(48, 44), 2.4, ink)
+			limb.call(Vector2(38, 56), Vector2(48, 44), 1.0, Color("55575e"))
+			disc.call(50.5, 41.0, 4.8, ink)  # the mic's head
+			disc.call(50.5, 41.0, 3.6, Color("7a7f88"))
+			disc.call(49.4, 39.9, 1.5, Color("d4d7dc"))
+			img.fill_rect(Rect2i(39, 45, 10, 9), ink)  # its flag in the station's blue, a white badge on it
+			img.fill_rect(Rect2i(40, 46, 8, 7), Color("2f6fd0"))
+			img.fill_rect(Rect2i(42, 48, 4, 3), Color.WHITE)
+			disc.call(37.5, 56.5, 2.6, ink)  # her hand closed round the handle
+			disc.call(37.5, 56.5, 1.7, skin)
+		else:
+			for y in PERSON.y:
+				for x in 30:
+					var c := img.get_pixel(x, y)
+					if c.a > 0.5 and c.g > c.r + 0.08 and c.g > c.b:
+						var v := c.get_luminance()
+						img.set_pixel(x, y, Color(v * 0.5 + 0.04, v * 0.52 + 0.04, v * 0.58 + 0.05, c.a))
+			limb.call(Vector2(36, 26), Vector2(41.5, 5), 1.9, ink)  # the headband over his crown to a cup on his ear
+			limb.call(Vector2(36, 26), Vector2(41.5, 5), 0.7, Color("55575e"))
+			disc.call(35.5, 28.5, 5.0, ink)
+			disc.call(35.5, 28.5, 3.8, Color("3e4047"))
+			disc.call(34.5, 27.5, 1.4, Color("7a7f88"))
+		img.generate_mipmaps()
+		crew_tex.append(ImageTexture.create_from_image(img))
+	return crew_tex
 
 
 ## A satellite dish on a post rising from `foot`, its bowl aimed along d: the inside shaded by how each ring faces the
