@@ -6463,7 +6463,17 @@ func roadworks(near_gaps: Array, far_gaps: Array) -> Node3D:
 	box_into(st, Vector3(ab - 0.08, 2.18, 3.08), Vector3(ab - 0.04, 2.34, 3.16), Color("9aa0a6"))
 	turned_box_into(st, Transform3D(Basis(Vector3.BACK, 0.5) * Basis.from_scale(Vector3(0.62, 0.035, 0.84)), Vector3(ab - 0.06, 2.4, 3.12)), Color("2e4f86"))
 	turned_box_into(st, Transform3D(Basis(Vector3.BACK, 0.5) * Basis.from_scale(Vector3(0.66, 0.025, 0.88)), Vector3(ab - 0.065, 2.39, 3.12)), Color("c9cdd1"))
+	# the apology board inside the near barricade, turned to the sidewalk: a steel back on two white legs, each on a
+	# rubber foot weighed down with a sandbag
+	var obx := x0 + 0.98
+	box_into(st, Vector3(obx - 0.32, 0.22, 3.27), Vector3(obx + 0.32, 1.37, 3.3), Color("9aa0a6"))
+	for lx: float in [-0.22, 0.22]:
+		box_into(st, Vector3(obx + lx - 0.025, -0.04, 3.24), Vector3(obx + lx + 0.025, 0.3, 3.27), Color("eceae4"))
+		box_into(st, Vector3(obx + lx - 0.08, -0.045, 3.14), Vector3(obx + lx + 0.08, 0.0, 3.36), Color("2b2a2c"))
+		box_into(st, Vector3(obx + lx - 0.1, -0.045, 3.16), Vector3(obx + lx + 0.1, 0.07, 3.24), Color("b39a6c"))
+		box_into(st, Vector3(obx + lx - 0.09, 0.07, 3.17), Vector3(obx + lx + 0.09, 0.09, 3.23), Color("c9b183"))
 	commit([st], body)
+	art_panel(body, apology_board(), Vector2(0.62, 1.13), Vector3(obx, 0.795, 3.302), Color(0.95, 0.95, 0.95), 1.0, false)
 	tone_flip = false
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.03
@@ -6547,7 +6557,66 @@ func roadworks(near_gaps: Array, far_gaps: Array) -> Node3D:
 	for c in cones:
 		cast(node, spot.call(Vector2(c.x, c.z)), 0.0, 0.7, 0.22)
 	cast(node, spot.call(Vector2(heap.x, heap.z)), 0.0, 0.3, 0.6)
+	cast(node, spot.call(Vector2(obx, 3.28)), 0.0, 1.37, 0.64)
 	return node
+
+
+## The roadworks' apology board at 80 px a metre: 工事中 in white on a red head over a worker in a yellow helmet and
+## safety vest bowed low, gloved hands at the knees, and the apology lettered small beneath, all inside a blue rim.
+func apology_board() -> Image:
+	var img := Image.create(96, 176, false, Image.FORMAT_RGB8)
+	var dot := func(x: int, y: int, c: Color) -> void:  # board pixels are 2x2
+		if x >= 0 and x < 48 and y >= 0 and y < 88:
+			img.fill_rect(Rect2i(x * 2, y * 2, 2, 2), c)
+	var disc := func(cx: float, cy: float, r: float, c: Color) -> void:
+		for y in range(floori(cy - r), ceili(cy + r) + 1):
+			for x in range(floori(cx - r), ceili(cx + r) + 1):
+				if Vector2(x - cx, y - cy).length() <= r:
+					dot.call(x, y, c)
+	var limb := func(a: Vector2, b: Vector2, r: float, c: Color) -> void:
+		for i in 17:
+			var p := a.lerp(b, i / 16.0)
+			disc.call(p.x, p.y, r, c)
+	img.fill(Color("2457a8"))
+	img.fill_rect(Rect2i(4, 4, 88, 168), Color("f6f4ee"))
+	img.fill_rect(Rect2i(4, 4, 88, 26), Color("d6362c"))
+	var glyphs := [[".#######.", "....#....", "....#....", "....#....", "....#....", "....#....", "....#....", "....#....", "#########"],
+		["....#....", "#########", "..#####..", "..#.#.#..", "..#####..", ".#######.", "....#..#.", "#########", "....#..#.", ".#######.", "...##...."],
+		["....#....", "#########", "#...#...#", "#...#...#", "#...#...#", "#########", "....#....", "....#....", "....#...."]]
+	for i in 3:
+		var g: Array = glyphs[i]
+		var top := 3 + (11 - g.size()) / 2
+		for gy in g.size():
+			for gx in 9:
+				if g[gy][gx] == "#":
+					dot.call(8 + i * 11 + gx, top + gy, Color.WHITE)
+	# the worker in profile facing left, bowed from the hips
+	var navy := Color("2f4373")
+	limb.call(Vector2(31, 51), Vector2(31.5, 66), 3.2, navy)  # legs
+	for x in range(24, 36):
+		dot.call(x, 68, Color("26262a"))
+		dot.call(x, 67, Color("26262a") if x < 28 or x > 34 else navy)
+	limb.call(Vector2(31, 50), Vector2(16, 36), 5.5, navy)  # the bent back
+	limb.call(Vector2(29.5, 48), Vector2(17, 38.5), 1.6, Color("c9e04a"))  # the vest's reflective band
+	limb.call(Vector2(17, 38), Vector2(23, 54), 2.2, navy.lightened(0.15))  # an arm down to the knee
+	disc.call(23.5, 55.5, 2.3, Color.WHITE)
+	disc.call(10.5, 38, 4.3, Color("f0c8a0"))  # the head, bowed
+	disc.call(11.5, 33.5, 5.6, Color("c99a1c"))  # the helmet seen from its crown, its brim shaded below
+	disc.call(12.1, 32.9, 5.0, Color("f2c230"))
+	disc.call(13, 32, 1.6, Color.WHITE)  # the green safety cross on its front
+	for o: Vector2i in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		dot.call(13 + o.x, 32 + o.y, Color("2f9a48"))
+	# ご迷惑をおかけします, lettered small in two lines
+	for ln in 2:
+		var n := 6 if ln == 0 else 5
+		var x0 := 24 - (n * 6 - 1) / 2
+		for c in n:
+			for gy in 5:
+				for gx in 5:
+					var h := fposmod(sin((c * 31.0 + gx * 7.0 + gy * 13.0 + ln * 101.0) * 12.9898) * 43758.5453, 1.0)
+					if h < 0.42 or (gy == 2 and gx > 0 and gx < 4):
+						dot.call(x0 + c * 6 + gx, 73 + ln * 7 + gy, Color("2a2f45"))
+	return img
 
 
 ## TV Feature: an outside-broadcast van in the station's livery backed into your free bay with a dish on its roof, a
