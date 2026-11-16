@@ -402,7 +402,7 @@ uniform vec4 sheens[6];
 void fragment() {
 	vec2 p = UV * view_size;
 	vec2 g = ground_x * p.x + ground_z * p.y + ground_o;
-	float road = smoothstep(4.2, 2.6, abs(g.y)) * smoothstep(reach.x, reach.x + 3.0, g.x) * smoothstep(reach.y, reach.y - 3.0, g.x);
+	float road = smoothstep(3.6, 3.15, abs(g.y)) * smoothstep(reach.x, reach.x + 3.0, g.x) * smoothstep(reach.y, reach.y - 3.0, g.x);
 	float t = TIME;
 	float rows = sin(p.y * 0.26 - t * 3.8 + sin(p.x * 0.013 + t * 0.6) * 2.0) + 0.35 * sin(p.y * 0.53 + p.x * 0.021 - t * 5.1);
 	vec2 off = vec2(rows * 0.9, 0.3 * sin(p.x * 0.04 + t * 2.2)) * road * day / view_size;
@@ -413,7 +413,7 @@ void fragment() {
 	float ph = 0.0;
 	for (int i = 0; i < 6; i++) {
 		vec4 s = sheens[i];
-		vec2 d = (g - s.xy) / vec2(s.z, 0.62);
+		vec2 d = (g - s.xy) / vec2(s.z, 0.5);
 		float k = 1.0 - dot(d, d);
 		float e = smoothstep(0.0, 0.22, k) * (0.85 + 0.15 * sin(t * 1.3 + s.w));
 		if (e > m) {
@@ -429,8 +429,9 @@ void fragment() {
 	if (m > 0.001) {
 		vec2 up = vec2(off.x * 3.0, -(9.0 + 7.0 * far + 2.0 * sin(p.x * 0.05 + t * 2.0)) / view_size.y);
 		vec3 beyond = texture(TEXTURE, UV + up).rgb;
-		vec3 sheen = mix(sky * 1.1, beyond, 0.18) + vec3(0.1, 0.1, 0.08) * smoothstep(0.9, 1.4, slip) * body;
-		c.rgb = mix(c.rgb, sheen, m * 0.8);
+		// glassy, not painted: the lane's own paint and grain stay faintly under the mirrored sky, brightest at its far end
+		vec3 sheen = mix(sky * 1.05, beyond, 0.3) + c.rgb * 0.18 + vec3(0.12, 0.12, 0.1) * smoothstep(0.9, 1.4, slip) * body;
+		c.rgb = mix(c.rgb, sheen, m * mix(0.38, 0.62, far));
 	}
 	COLOR = c;
 }
@@ -10779,8 +10780,12 @@ func draw_heat(tint: Color, r: RandomNumberGenerator) -> void:
 	heat_mat.set_shader_parameter("day", day)
 	heat_mat.set_shader_parameter("sky", Color(0.7, 0.84, 1.0) * light)
 	var sheens := PackedVector4Array()
-	for i in 6:
-		sheens.append(Vector4(r.randf_range(xs.x + 3.0, xs.y - 3.0), r.randf_range(-2.4, 2.4), r.randf_range(3.0, 6.0), i * 2.1))
+	for i in 6:  # each down the middle of a lane, clear of the crossing's stripes
+		var ln := r.randf_range(3.0, 6.0)
+		var sx := r.randf_range(xs.x + 3.0, xs.y - 3.0)
+		if absf(sx - Sim.CROSS_X) < ln + 1.8:
+			sx = Sim.CROSS_X + (ln + 1.8) * (1.0 if sx > Sim.CROSS_X else -1.0)
+		sheens.append(Vector4(sx, (1.0 if i % 2 else -1.0) * r.randf_range(1.4, 2.0), ln, i * 2.1))
 	heat_mat.set_shader_parameter("sheens", sheens)
 
 
