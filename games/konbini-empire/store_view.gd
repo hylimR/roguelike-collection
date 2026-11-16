@@ -10699,12 +10699,15 @@ func draw_street() -> void:
 			overlay.draw_rect(Rect2(gauge.position + Vector2(roundf(gauge.size.x * q) - 0.5, 1), Vector2(1, gauge.size.y - 2)), Color(0.3, 0.2, 0.1, 0.35))
 	else:
 		pill(sign_at, def.name + "  (closed)", 13, Color("a99f8c"))
-	if not rv.defeated:
-		if rv.price_war > 0.0:
-			pill(sign_at + Vector2(0, 44), "Price war %ds" % ceili(rv.price_war), 12, Color("e05a4e"))
-		elif rv.telegraph != "":
-			var blink := floori(Time.get_ticks_msec() / 250.0) % 2 == 0
-			pill(sign_at + Vector2(0, 44), "! %s in %ds" % [Sim.ATTACKS[rv.telegraph].name, ceili(maxf(0.0, rv.attack_timer))], 12, Color("e05a4e") if blink else Color("b8372d"))
+	var warn_box := Rect2()  # the price war or attack warning under the plate, which threat tags keep clear of too
+	if not rv.defeated and (rv.price_war > 0.0 or rv.telegraph != ""):
+		var s := "Price war %ds" % ceili(rv.price_war)
+		var blink: bool = rv.price_war > 0.0 or floori(Time.get_ticks_msec() / 250.0) % 2 == 0
+		if rv.price_war <= 0.0:
+			s = "! %s in %ds" % [Sim.ATTACKS[rv.telegraph].name, ceili(maxf(0.0, rv.attack_timer))]
+		pill(sign_at + Vector2(0, 44), s, 12, Color("e05a4e") if blink else Color("b8372d"))
+		var cw := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+		warn_box = Rect2(sign_at.x - cw / 2 - 7, sign_at.y + 42 - font.get_ascent(12), cw + 14, font.get_ascent(12) + font.get_descent(12) + 6)
 	# shelves once they've sold some: a shelf tag with the product and its stock bar, red when low
 	for pid in st.products:
 		var p: Dictionary = st.products[pid]
@@ -10774,6 +10777,8 @@ func draw_street() -> void:
 	var over: Array = hud_top + [Rect2(8, 8, 196, 82), Rect2(sign_at + Vector2(-(bw + 50) / 2 - 20, 12 - ph), Vector2(bw + 76, ph + 6))]
 	if hud_card.has_area():
 		over.append(hud_card.grow(3.0))
+	if warn_box.has_area():
+		over.append(warn_box.grow(3.0))
 	for g in tags:
 		var box: Rect2 = g.box
 		box.position.x = clampf(box.position.x, 4.0, overlay.size.x - box.size.x - 4.0)
@@ -10793,14 +10798,21 @@ func draw_street() -> void:
 		if hud.has_area():
 			var down := Vector2(box.position.x, maxf(hud.end.y, g.foot) + 4.0)
 			var side := Vector2(hud.end.x + 4.0 if box.get_center().x > hud.get_center().x or hud.position.x < box.size.x + 8.0 else hud.position.x - box.size.x - 4.0, box.position.y)
-			box.position = side if side.distance_to(g.box.position) < down.distance_to(g.box.position) and side.x + box.size.x < overlay.size.x - 4.0 else down
-			moved = true
-			while moved:
-				moved = false
-				for o in placed + over:
-					if box.grow(2.0).intersects(o):
-						box.position.y = o.end.y + 3.0
-						moved = true
+			# each spot settles down past whatever it lands on; the nearer one that stays on screen wins
+			var best := Rect2()
+			for at in ([side, down] if side.x + box.size.x < overlay.size.x - 4.0 else [down]):
+				var cand := Rect2(at, box.size)
+				moved = true
+				while moved:
+					moved = false
+					for o in placed + over:
+						if cand.grow(2.0).intersects(o):
+							cand.position.y = o.end.y + 3.0
+							moved = true
+				var fits := cand.end.y < overlay.size.y - 4.0
+				if not best.has_area() or (fits and (best.end.y >= overlay.size.y - 4.0 or cand.position.distance_to(g.box.position) < best.position.distance_to(g.box.position))):
+					best = cand
+			box = best
 		placed.append(box)
 		g.top = g.home + box.position - g.box.position
 		var hung: bool = box.position.y >= g.home.y  # a tag hung below takes its stem up to the feet
