@@ -11095,7 +11095,7 @@ func draw_street() -> void:
 				top.y = minf(top.y, p.y + g.lift.y - 16.0)
 			top.x = sx / n
 		var w := maxf(font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 14, t.max_clicks * 9.0 + 2 if t.max_clicks > 1 else 0.0)
-		var below := 13.0 if t.max_clicks > 1 or t.type == "review" else font.get_descent(11) + 2
+		var below := 16.0 if t.max_clicks > 1 or t.type == "review" else font.get_descent(11) + 2
 		g.label = label
 		g.home = top
 		g.box = Rect2(top.x - w / 2, top.y - font.get_ascent(11) - 2, w, font.get_ascent(11) + 2 + below)
@@ -11176,12 +11176,14 @@ func draw_street() -> void:
 	for g in tags:
 		var t: Dictionary = g.t
 		var top: Vector2 = g.top
-		pill(top, g.label, 11, Color("e05a4e") if t.type != "spill" else Color("3a9bd9"))
-		if t.max_clicks > 1:
+		var c := Color("e05a4e") if t.type != "spill" else Color("3a9bd9")
+		pill(top, g.label, 11, c)
+		if t.max_clicks > 1:  # hits left as pips in a cream tray tucked under the tag, spent ones sunk into it
+			var tray := Rect2(top + Vector2(-t.max_clicks * 4.5 - 1.0, 4), Vector2(t.max_clicks * 9 + 2, 10))
+			overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 5), Rect2(tray.position + Vector2(0, 2), tray.size))
+			overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92), 5), tray)
 			for k in t.max_clicks:
-				var dot := top + Vector2((k - (t.max_clicks - 1) / 2.0) * 9, 9)
-				overlay.draw_circle(dot, 4.0, Color(1.0, 0.98, 0.92))
-				overlay.draw_circle(dot, 2.8, Color("e05a4e") if k < t.clicks else Color("dccca4"))
+				overlay.draw_circle(Vector2(tray.position.x + 5.5 + k * 9, tray.get_center().y), 3.0, c if k < t.clicks else Color("dccca4"))
 		if t.type == "review":
 			bar(Rect2(top + Vector2(-16, 7), Vector2(32, 4)), t.ttl / (7.0 + 3.0 * sim.mods().thick_skin), Color("e05a4e"))
 	# pedestrians: angry ones and what they carry
