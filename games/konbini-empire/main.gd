@@ -27,7 +27,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"charm": ["perks", 0], "premium": ["perks", 8], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["walk", 21],
 	"bulk": ["perks", 7], "bow": ["walk", 3], "impulse": ["walk", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
 	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["drawn", "shield"],
-	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["drawn", "team_trio"], "spotless": ["drawn", "wet_sign"],
+	"hotStreak": ["perks", 5], "negotiator": ["drawn", "lease_deal"], "hr": ["walk", 7], "teamSpirit": ["drawn", "team_trio"], "spotless": ["drawn", "wet_sign"],
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
 	"floor": ["drawn", "wall_through"], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
 	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["perks", 7],
@@ -1756,6 +1756,77 @@ func shield() -> ImageTexture:
 					c = Color("9a948a")  # its print
 				if e >= 1 and q.x + q.y > 5.4:
 					c = Color("d8d0bf")  # a dog-eared corner
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Rent Negotiator's picture, in the sprites' chunky pixels: a dog-eared lease, its rent struck through in red over the
+## lower figure in green, sealed with a red hanko beside a fountain pen.
+func lease_deal() -> ImageTexture:
+	var n := 40
+	var glyphs := {
+		"Y": ["#.#", "#.#", ".#.", "###", ".#."],
+		"0": ["###", "#.#", "#.#", "#.#", "###"],
+		"1": [".#.", "##.", ".#.", ".#.", "###"],
+		"3": ["###", "..#", ".##", "..#", "###"],
+		"5": ["###", "#..", "###", "..#", "###"],
+	}
+	var ink := {}
+	for row in [["Y1300", 14, Color("7a6d60")], ["Y1105", 21, Color("2f9e5a")]]:
+		for k in row[0].length():
+			var g: Array = glyphs[row[0][k]]
+			for r in 5:
+				for col in 3:
+					if g[r][col] == "#":
+						ink[Vector2i(8 + k * 4 + col, row[1] + r)] = row[2]
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var line := Color("3a2f28")
+	var nib := Vector2(33.0, 35.5)
+	var cap := Vector2(37.5, 7.0)
+	var along := (cap - nib).normalized()
+	var across := Vector2(-along.y, along.x)
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var c := Color(0, 0, 0, 0)
+			var d := minf(minf(p.x - 4.0, 31.0 - p.x), minf(p.y - 2.0, 37.0 - p.y))  # >0 on the sheet, in px
+			var ear := (31.0 - p.x) + (p.y - 2.0)  # <5 where the corner is folded away
+			if d > 0 and ear > 5.0:
+				c = line if d < 1 or ear < 6.0 else (Color("fbf7ee") if p.x < 29 else Color("ece4d3"))
+				if d >= 1 and ear >= 6.0:
+					if y >= 5 and y <= 6 and x >= 8 and x <= 19:
+						c = Color("5a4a3c")  # the heading
+					elif (y == 9 and x >= 8 and x <= 26) or (y == 11 and x >= 8 and x <= 22) or (y == 28 and x >= 8 and x <= 17):
+						c = Color("c9bfa9")
+					if ink.has(Vector2i(x, y)):
+						c = ink[Vector2i(x, y)]
+					if y == 16 and x >= 7 and x <= 27:
+						c = Color("d94b3c")  # the old rent struck through
+					if y >= 31 and y <= 33 and x >= 8 and x <= 17 and y == 32 + roundi(sin(x * 1.3)):
+						c = Color("3b5ca8")  # a signature
+				if p.x > 26.0 and p.y < 7.0:
+					c = line if ear < 6.0 or p.x < 27.0 or p.y > 6.0 else Color("ddd3bf")  # the dog-ear folded down
+			var h := Vector2(p.x - 25.0, p.y - 31.5)
+			var r := h.length()
+			if r < 4.9:
+				var glyph := absf(absf(h.x) - 1.5) < 0.6 and absf(h.y) < 2.6 or absf(h.x) < 1.5 and (absf(h.y) < 0.5 or absf(absf(h.y) - 2.1) < 0.5)
+				c = Color("fbf0e6") if glyph and r < 3.9 else (Color("d23c3c") if r > 4.4 or r < 3.4 else Color("bd2f2f"))  # 日 left uninked
+			var u := (p - nib).dot(along)
+			var w := absf((p - nib).dot(across))
+			var reach := (cap - nib).length()
+			if u > 0 and u < reach and w < 1.8 - (1.0 - clampf(u / 3.5, 0.0, 1.0)) * 1.2:
+				if w > 1.0 and u > 3.5:
+					c = line
+				elif u < 3.5:
+					c = Color("e8b33a") if u < 2.5 else Color("aab5c2")  # the nib
+				elif u > reach - 9.0 and u < reach - 8.0:
+					c = Color("e8b33a")  # the cap's band
+				else:
+					c = Color("4a5f9e") if (p - nib).dot(across) < 0 else Color("2b3a67")
+				if u > reach - 7.0 and u < reach - 1.5 and (p - nib).dot(across) > 0.7:
+					c = Color("e8b33a")  # the clip
 			img.set_pixel(x, y, c)
 	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
 	img.generate_mipmaps()
