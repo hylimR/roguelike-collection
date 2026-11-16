@@ -319,6 +319,46 @@ void fragment() {
 	ALBEDO = glow * (mix(tint, vec3(1.0, 0.66, 0.34), 0.5) * wash * (0.8 + 0.8 * edge) + lit + vec3(1.0, 0.7, 0.4) * kerb * 0.16);
 }
 """
+# The decks overhead, their pillars and the viaduct in the shop view: where one stands between the camera and the
+# rival next door (the box cut_lo..cut_hi, the shop and the sidewalk at its door) it is cut away, so the rival shows
+# through, its cut edge a rim of its own colour in shadow, as the city's cut-down buildings show their core.
+const DECK_CUT_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+uniform sampler2D tex : source_color, hint_default_white, filter_nearest_mipmap, repeat_enable;
+uniform vec4 albedo_color : source_color = vec4(1.0);
+uniform vec2 uv_scale = vec2(1.0);
+uniform bool vertex_tint = false;
+uniform float cut = 0.0;
+uniform vec3 cut_lo;
+uniform vec3 cut_hi;
+varying vec3 wp;
+varying vec3 eye;
+varying vec3 tint;
+
+void vertex() {
+	tint = vertex_tint ? COLOR.rgb : vec3(1.0);
+	wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	eye = normalize(INV_VIEW_MATRIX[2].xyz);
+	UV *= uv_scale;
+}
+
+bool behind(vec3 lo, vec3 hi) {
+	vec3 t0 = (lo - wp) / -eye;
+	vec3 t1 = (hi - wp) / -eye;
+	vec3 a = min(t0, t1);
+	vec3 b = max(t0, t1);
+	return max(max(a.x, a.y), max(a.z, 0.0)) <= min(min(b.x, b.y), b.z);
+}
+
+void fragment() {
+	vec3 c = texture(tex, UV).rgb * albedo_color.rgb * tint;
+	if (cut > 0.5 && behind(cut_lo, cut_hi)) {
+		discard;
+	}
+	ALBEDO = cut > 0.5 && behind(cut_lo - vec3(0.45), cut_hi + vec3(0.45)) ? c * 0.3 : c;
+}
+"""
 # Your car park's tarmac, bay lines and bicycle hatch: the hour's light like any outdoor surface, and after dark the
 # floodlight multiplying their own colours, brightest where the pole's two floods aim (as flood_tex), so the grime, tyre
 # tracks, tar seals and paint still read under it instead of washing out to one pale sheet.
@@ -1229,6 +1269,7 @@ var car_glass: StandardMaterial3D  # train windows: dark by day, lit after dark
 var paths: Array = []  # every road as a path for movers: {pts, cum, w, kind, closed, box}
 var set_feet: Array = []  # world footprints of what the street set builds behind its street, where the city gives way
 var elevated: Array = []  # deck pieces (MeshInstance3D), drawn again into the shadow mask
+var deck_cuts: Dictionary = {}  # each deck material -> its DECK_CUT_SHADER copy, the cut set on them all by update_fade
 var brecs: Array = []  # per building: {foot, h, box: [instance], roof: instance or -1, hidden}
 var farms: Array = []  # farmsteads out in the fields past the built-up edge: buildings like the city's
 var farm_grounds: Array = []  # [rect, gravel yard or greenhouse soil]
@@ -1694,7 +1735,11 @@ func update_light() -> void:
 	lit_mats = lit_mats.filter(func(e): return e[0].get_ref() != null)
 	for e in lit_mats:
 		var o: Object = e[0].get_ref()
-		o.set("modulate" if o is Label3D else "albedo_color", e[1] * light.lerp(Color.WHITE, e[2] * lamps))
+		var lit: Color = e[1] * light.lerp(Color.WHITE, e[2] * lamps)
+		if o is ShaderMaterial:
+			o.set_shader_parameter("albedo_color", lit)
+		else:
+			o.set("modulate" if o is Label3D else "albedo_color", lit)
 	fascia_glows = fascia_glows.filter(func(e): return e[0].get_ref() != null)
 	for e in fascia_glows:
 		e[0].get_ref().albedo_color = e[1] * Color(1, 1, 1, 0.85 * lamps)
@@ -1767,6 +1812,7 @@ func update_light() -> void:
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), lamps)
 	if car_glass:
 		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
+		deck_cuts[car_glass].set_shader_parameter("albedo_color", car_glass.albedo_color)
 	soft_mat.albedo_color.a = 0.34 - 0.14 * night
 	ao_mat.albedo_color.a = 0.3 - 0.1 * night
 	lit_sprites = lit_sprites.filter(func(s): return is_instance_valid(s))
@@ -3721,7 +3767,32 @@ func build_elevated() -> void:
 	pillar_mm = multimesh(BoxMesh.new(), pillars.size())
 	for k in pillars.size():
 		pillar_mm.set_instance_transform(k, pillars[k])
-	mm_node(pillar_mm, mat(Color("aaa59b")), city)
+	mm_node(pillar_mm, cut_mat(mat(Color("aaa59b"))), city)
+	for part in elevated:
+		for k in part.mesh.get_surface_count():
+			part.mesh.surface_set_material(k, cut_mat(part.mesh.surface_get_material(k)))
+
+
+## Deck material m as a DECK_CUT_SHADER copy, lit as m was.
+func cut_mat(m: StandardMaterial3D) -> ShaderMaterial:
+	if deck_cuts.has(m):
+		return deck_cuts[m]
+	var sm := ShaderMaterial.new()
+	if deck_cuts.is_empty():
+		sm.shader = Shader.new()
+		sm.shader.code = DECK_CUT_SHADER
+	else:
+		sm.shader = deck_cuts.values()[0].shader
+	sm.set_shader_parameter("tex", m.albedo_texture)
+	sm.set_shader_parameter("uv_scale", Vector2(m.uv1_scale.x, m.uv1_scale.y))
+	sm.set_shader_parameter("vertex_tint", m.vertex_color_use_as_albedo)
+	sm.set_shader_parameter("albedo_color", m.albedo_color)
+	for e in lit_mats:
+		if e[0].get_ref() == m:
+			lit_mats.append([weakref(sm), e[1], e[2]])
+			break
+	deck_cuts[m] = sm
+	return sm
 
 
 ## An elevated carriageway's surface: 0.3 over its points on the deck, down to the road's own where a ramp lands.
@@ -5052,6 +5123,12 @@ func update_fade() -> void:
 		scr = foot_rect(Rect2(o.x - 24.0, o.z - 18.0, 54.0, 26.0), 5.0)
 		depth = o.x + o.z
 	var taken := func(f: Rect2) -> bool: return on and (f.intersects(front) or set_feet.any(func(q): return f.intersects(q)))
+	var rv: Rect2 = Sim.City.SET_PARTS[4][0]
+	var lo := site.position + Vector3(rv.position.x - Sim.City.LOT_W / 2 - 10.5, 0.0, rv.position.y - 7.7)
+	for sm in deck_cuts.values():
+		sm.set_shader_parameter("cut", 1.0 if on else 0.0)
+		sm.set_shader_parameter("cut_lo", lo)
+		sm.set_shader_parameter("cut_hi", lo + Vector3(rv.size.x + 1.0, Sim.City.SET_PARTS[4][1] + 0.6, rv.size.y + 4.0))
 	if rail_node and front != rail_sig:
 		rail_sig = front
 		build_rails([front] + set_feet if on else [])
@@ -5160,8 +5237,9 @@ func update_fade() -> void:
 				tm[3].set_instance_transform(k, away if cut else tm[1][k])
 				dirty[tm[0]] = true
 				dirty[tm[3]] = true
-	# the decks overhead, their pillars and the trains always stay: the city keeps them off the set (City.under_deck)
-	# and the set's own buildings and street furniture keep out from under them (decks_near)
+	# the decks overhead, their pillars and the trains stay (only cut open over the rival, DECK_CUT_SHADER): the city
+	# keeps them off the set (City.under_deck) and the set's own buildings and street furniture keep out from under them
+	# (decks_near)
 	# the Compatibility renderer can keep drawing a MultiMesh's old instances after it has been drawn and then edited
 	# in place, so an edited one is swapped for a fresh copy, which uploads whole
 	for mm in dirty:
@@ -5241,6 +5319,8 @@ func build_paths() -> void:
 			car.queue_free()
 	trains.clear()
 	var mesh := car_mesh()
+	for k in mesh.get_surface_count():
+		mesh.surface_set_material(k, cut_mat(mesh.surface_get_material(k)))
 	for dir in [1, -1]:
 		for k in Sim.City.TRAINS:
 			var set_ := []
