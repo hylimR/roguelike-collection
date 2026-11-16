@@ -96,6 +96,7 @@ const BLACKOUT := [Color(0.62, 0.65, 0.74), Color(0.17, 0.2, 0.32)]  # your shop
 const SEA := Color("3a8cc8")
 const SEA_DEEP := Color("1d5a98")  # open water far off any shore, and the sky-less background past the map
 const SEA_NIGHT := Color(0.5, 0.48, 0.46)  # water goes darker than the land after dark instead of glowing blue under the night tint
+const GRASS_NIGHT := Color(0.74, 0.6, 0.72)  # unlit lawns and countryside go a dim moonlit grey-green after dark, not vivid green
 const ROOF_TINT := 0.3  # how much of its walls' tint a flat roof takes over its membrane
 const ASPHALT := Color("576074")  # a cool slate rather than flat grey
 const PITCH := 30.0
@@ -1353,6 +1354,7 @@ var car_shade_mats := []  # vehicles' shadows, one per CAR_FOOT
 var foot_lamps := []  # the lights people's shadows fall away from after dark, as last sent to foot_mat
 var sea_mat: StandardMaterial3D
 var shore_mat: StandardMaterial3D  # foam and shallows, dimmed after dark with the sea
+var grass_mats: Array = []  # the map's grass and park lawns
 var field_mat: ShaderMaterial
 var road_lights: MeshInstance3D  # the map's streetlights on its roads and the expressway, only on the map
 var road_light_mats: Array = []
@@ -1778,6 +1780,8 @@ func update_light() -> void:
 	if sea_mat:
 		sea_mat.albedo_color = dusk_sea
 		shore_mat.albedo_color = dusk_sea
+	for m in grass_mats:
+		m.albedo_color = light * Color.WHITE.lerp(GRASS_NIGHT, night)
 		swell_mat.set_shader_parameter("light", Vector3(dusk_sea.r, dusk_sea.g, dusk_sea.b))
 		swell_mat.set_shader_parameter("night", night)
 	if field_mat:
@@ -3154,6 +3158,7 @@ func build_static() -> void:
 	# well under the farmland: across this one quad 6 km wide, software WebGL lost the 5 mm the fields once stood above
 	# it and tore them into wedges and slivers
 	plane(city, Vector2(6000, 6000), Vector3(mid.x, -0.4, mid.y), grass)
+	grass_mats = [grass]
 	# farmland round the city: a patchwork of furrowed fields with grass between, kept off the roads and the shore
 	var furrows := Image.create(4, 4, false, Image.FORMAT_RGB8)
 	furrows.fill(Color.WHITE)
@@ -3277,6 +3282,9 @@ func build_static() -> void:
 	for isl in C.islands:
 		poly_fill(land, isl, -0.135, 0.25)
 	var park_tex := lawn()
+	grass_mats.append(park_tex)
+	for m in grass_mats:
+		m.albedo_color = light * Color.WHITE.lerp(GRASS_NIGHT, night)
 	var ps := surface(park_tex)
 	lm_ground = {"water": [sea, 0.125], "grass": [park_tex, 0.25]}
 	for pk in C.parks:
