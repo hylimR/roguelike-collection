@@ -27,7 +27,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"charm": ["perks", 0], "premium": ["perks", 8], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["walk", 21],
 	"bulk": ["perks", 7], "bow": ["walk", 3], "impulse": ["walk", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
 	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["drawn", "shield"],
-	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["walk", 11], "spotless": ["drawn", "wet_sign"],
+	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["drawn", "team_trio"], "spotless": ["drawn", "wet_sign"],
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
 	"floor": ["drawn", "wall_through"], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
 	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["perks", 7],
@@ -1419,9 +1419,12 @@ func card_picture(id: String, u: Dictionary) -> PanelContainer:
 	shade.offset_top = -13
 	shade.offset_bottom = -3
 	stage.add_child(shade)
+	var half := 31.0 * maxf(1.0, pic.texture.get_width() / float(pic.texture.get_height()))  # a group stands wider
+	shade.offset_left = -half + 4
+	shade.offset_right = half - 4
 	pic.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	pic.offset_left = -31
-	pic.offset_right = 31
+	pic.offset_left = -half
+	pic.offset_right = half
 	pic.offset_top = -35
 	pic.offset_bottom = 27
 	stage.add_child(pic)
@@ -1482,6 +1485,32 @@ func bench_planters() -> ImageTexture:
 	img.blend_rect(plant, Rect2i(Vector2i.ZERO, plant.get_size()), Vector2i(0, foot - plant.get_height()))
 	img.blend_rect(flip, Rect2i(Vector2i.ZERO, flip.get_size()), Vector2i(n - flip.get_width(), foot - flip.get_height()))
 	img.blend_rect(bench, Rect2i(Vector2i.ZERO, bench.get_size()), Vector2i((n - bench.get_width()) / 2, n - 1 - bench.get_height()))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Team Spirit's picture: three of your staff off the street as a crew, the stocker in front with the cleaner and the
+## cashier a step behind on either side, both turned in toward the middle.
+func team_trio() -> ImageTexture:
+	var sheet: Image = tex.walk.get_image()
+	sheet.convert(Image.FORMAT_RGBA8)
+	var cut := func(role: String, k: float, flip: bool) -> Image:
+		var img := sheet.get_region(Rect2i(0, StoreView.WALK_ROW[role] * StoreView.PERSON.y, StoreView.PERSON.x, StoreView.PERSON.y))
+		img = img.get_region(img.get_used_rect())
+		img.resize(roundi(img.get_width() * k), roundi(img.get_height() * k), Image.INTERPOLATE_LANCZOS)
+		if flip:
+			img.flip_x()
+		return img
+	var front: Image = cut.call("stocker", 1.0, false)
+	var left: Image = cut.call("cleaner", 0.9, false)
+	var right: Image = cut.call("cashier", 0.9, true)
+	var w := front.get_width() + roundi((left.get_width() + right.get_width()) * 0.9)  # each just behind the front one's shoulder
+	var h := front.get_height() + 2
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var foot := h - 6  # the back pair stand a step up the plate
+	img.blend_rect(left, Rect2i(Vector2i.ZERO, left.get_size()), Vector2i(0, foot - left.get_height()))
+	img.blend_rect(right, Rect2i(Vector2i.ZERO, right.get_size()), Vector2i(w - right.get_width(), foot - right.get_height()))
+	img.blend_rect(front, Rect2i(Vector2i.ZERO, front.get_size()), Vector2i((w - front.get_width()) / 2, h - front.get_height()))
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
