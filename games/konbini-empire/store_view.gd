@@ -1323,6 +1323,7 @@ var stall_glow_mat: StandardMaterial3D  # the yatai's lamplight on the bay after
 var festive_mats: Array = []  # [weakref to a matsuri lantern's or the yatai's material, its colour, how far it lights up]
 var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
+var tone_flip := false  # box_into and turned_box_into shade for a mesh that will stand turned half round
 var car_lamp_tex: ImageTexture  # the vehicles sheet's lamps lit, frame for frame, over a clear ground
 var tv: Node3D  # the set's TV crew, shown on a TV Feature day
 var health: Node3D  # the health centre's wagon and a sanitiser stand, shown on a Health Inspection day
@@ -4112,7 +4113,9 @@ func sleepers() -> ImageTexture:
 func box_into(st: SurfaceTool, p0: Vector3, p1: Vector3, col: Color, world_uv := 0.0) -> void:
 	var c := (p0 + p1) / 2
 	var h := (p1 - p0).abs() / 2
-	for fc in [[Vector3.UP, 1.0], [Vector3.BACK, 0.9], [Vector3.LEFT, 0.9], [Vector3.RIGHT, 0.75], [Vector3.FORWARD, 0.75]]:
+	var lit := 0.75 if tone_flip else 0.9
+	var shade := 0.9 if tone_flip else 0.75
+	for fc in [[Vector3.UP, 1.0], [Vector3.BACK, lit], [Vector3.LEFT, lit], [Vector3.RIGHT, shade], [Vector3.FORWARD, shade]]:
 		var fn: Vector3 = fc[0]
 		var u := Vector3.UP if absf(fn.y) < 0.5 else Vector3.RIGHT
 		var v := fn.cross(u)
@@ -4183,7 +4186,7 @@ func turned_box_into(st: SurfaceTool, xf: Transform3D, col: Color) -> void:
 		var u := Vector3.UP if absf(n.y) < 0.5 else Vector3.RIGHT
 		var v := n.cross(u)
 		var wn := (xf.basis.orthonormalized() * n)
-		var side := 0.9 if wn.z - wn.x > 0.0 else 0.75
+		var side := 0.9 if (wn.z - wn.x > 0.0) != tone_flip else 0.75
 		var t := lerpf(side, 1.0, wn.y) if wn.y > 0.0 else lerpf(side, 0.7, -wn.y)
 		st.set_color(Color(col.r * t, col.g * t, col.b * t))
 		add_quad(st, [n - u - v, n + u - v, n + u + v, n - u + v].map(func(o): return xf * (o * 0.5)), [Vector2.ZERO, Vector2.RIGHT, Vector2.ONE, Vector2.DOWN])
@@ -6138,23 +6141,39 @@ func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 
 
 ## Roadworks: a stretch of the near kerb lane fenced off with striped barricades, cones on a striped bar, steel plates
-## over a trench, and an arrow board turning traffic out; their red lamps and the arrow flash after dark. Built hidden.
-func roadworks(near_gaps: Array) -> Node3D:
+## over a trench, and an arrow board turning traffic out; their red lamps and the arrow flash after dark. Where wide
+## mouths leave no clear kerb near the middle of the view, they take the far kerb lane by your shop instead, turned
+## half round to face that lane's traffic. Built hidden.
+func roadworks(near_gaps: Array, far_gaps: Array) -> Node3D:
 	var node := Node3D.new()
 	node.visible = false
 	set_node.add_child(node)
-	var gaps: Array = near_gaps.duplicate()
-	gaps.sort_custom(func(a, b2): return a.x < b2.x)
 	const L := 7.6
-	var x0 := INF
-	for o in open_spans(gaps):  # the clear kerb nearest the middle of the view, off the crossing
-		for run in [Vector2(o.x + 1.4, minf(o.y - 2.4, Sim.CROSS_X - 4.8)), Vector2(maxf(o.x + 1.4, Sim.CROSS_X + 3.2), o.y - 2.4)]:
-			if run.y - run.x >= L:
-				var at := clampf(-7.0 - L / 2, run.x, run.y - L)
-				if x0 == INF or absf(at + L / 2 + 7.0) < absf(x0 + L / 2 + 7.0):
-					x0 = at
+	var pick := func(gaps: Array, lo: float, hi: float, ends: Vector2) -> float:  # the run nearest the middle of the view
+		var g2: Array = gaps.duplicate()
+		g2.sort_custom(func(a, b2): return a.x < b2.x)
+		var best := INF
+		for o in open_spans(g2):
+			for run in [Vector2(o.x + ends.x, minf(o.y - ends.y, lo)), Vector2(maxf(o.x + ends.x, hi), o.y - ends.y)]:
+				if run.y - run.x >= L:
+					var at := clampf(-7.0 - L / 2, run.x, run.y - L)
+					if best == INF or absf(at + L / 2 + 7.0) < absf(best + L / 2 + 7.0):
+						best = at
+		return best
+	var x0: float = pick.call(near_gaps, Sim.CROSS_X - 4.8, Sim.CROSS_X + 3.2, Vector2(1.4, 2.4))
+	var far := x0 == INF or absf(x0 + L / 2 + 7.0) > 9.0
+	if far:
+		var fx: float = pick.call(far_gaps + [Vector2(maxf(Sim.CROSS_X - 3.0, -16.5), INF)], INF, INF, Vector2(2.4, 0.0))
+		if fx != INF and fx > -16.5:
+			x0 = fx
+		else:
+			far = false
 	if x0 == INF:
 		return node
+	var body := Node3D.new()  # built along the near lane, then turned round onto the far one
+	node.add_child(body)
+	var spot := func(p: Vector2) -> Vector2: return Vector2(2.0 * x0 + L - p.x, -p.y) if far else p
+	tone_flip = far
 	var x1 := x0 + L
 	var kit := mat(Color.WHITE)
 	kit.vertex_color_use_as_albedo = true
@@ -6211,7 +6230,7 @@ func roadworks(near_gaps: Array) -> Node3D:
 			var n: Vector3 = (q[2] - q[0]).cross(q[1] - q[3]).normalized()
 			if n.y < 0.0:
 				n = -n
-			var side := 0.9 if n.z - n.x > 0.0 else 0.75
+			var side := 0.9 if (n.z - n.x > 0.0) != tone_flip else 0.75
 			var t := lerpf(side, 1.0, n.y)
 			var col := Color("5a402c").lerp(Color("9c7a52"), clampf(hy / 0.3, 0.0, 1.0)).lightened(hr.randf_range(0.0, 0.05))
 			st.set_color(Color(col.r * t, col.g * t, col.b * t))
@@ -6305,7 +6324,8 @@ func roadworks(near_gaps: Array) -> Node3D:
 	box_into(st, Vector3(ab - 0.08, 2.18, 3.08), Vector3(ab - 0.04, 2.34, 3.16), Color("9aa0a6"))
 	turned_box_into(st, Transform3D(Basis(Vector3.BACK, 0.5) * Basis.from_scale(Vector3(0.62, 0.035, 0.84)), Vector3(ab - 0.06, 2.4, 3.12)), Color("2e4f86"))
 	turned_box_into(st, Transform3D(Basis(Vector3.BACK, 0.5) * Basis.from_scale(Vector3(0.66, 0.025, 0.88)), Vector3(ab - 0.065, 2.39, 3.12)), Color("c9cdd1"))
-	commit([st], node)
+	commit([st], body)
+	tone_flip = false
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.03
 	cone.bottom_radius = 0.16
@@ -6329,14 +6349,14 @@ func roadworks(near_gaps: Array) -> Node3D:
 	var paint := mat(Color.WHITE)
 	paint.vertex_color_use_as_albedo = true
 	paint.vertex_color_is_srgb = true
-	mm_node(cm, paint, node)
-	mm_node(bm, paint, node)
+	mm_node(cm, paint, body)
+	mm_node(bm, paint, body)
 	var lm := multimesh(shaded_box(), lamps.size())
 	for i in lamps.size():
 		lm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(0.12, 0.1, 0.12)), lamps[i]))
 	var lamp := mat(Color("e8392c"))
 	light_up(lamp, 1.0)
-	mm_node(lm, lamp, node)
+	mm_node(lm, lamp, body)
 	# the board's face: a matrix of amber LEDs on black drawing a bold arrow that turns traffic away from the kerb, a
 	# shaft four LEDs thick into a head the board's full height, each lit LED haloed so the arrow reads as one shape
 	# when the board is seen edge-on, the dark LEDs left as faint dots, lit like a sign
@@ -6373,19 +6393,21 @@ func roadworks(near_gaps: Array) -> Node3D:
 	face.material_override = fm
 	face.rotation.y = PI / 2
 	face.position = Vector3(ab + 0.065, 1.64, 3.12)
-	node.add_child(face)
+	body.add_child(face)
 	var gm := multimesh(QuadMesh.new(), lamps.size() + 1)
 	for i in lamps.size():
 		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.2, 1.2, 1.2)), lamps[i]))
 	gm.set_instance_transform(lamps.size(), Transform3D(Basis().scaled(Vector3(2.2, 2.2, 2.2)), Vector3(ab + 0.2, 1.64, 3.12)))
-	mm_node(gm, works_glow_mat, node)
-	cast(node, Vector2(ab, 3.12), 0.0, 0.44, 0.6)
-	cast(node, Vector2(ab - 0.1, 3.12), 1.06, 2.18, 1.0)
+	mm_node(gm, works_glow_mat, body)
+	if far:
+		body.transform = Transform3D(Basis(Vector3.UP, PI), Vector3(2.0 * x0 + L, 0, 0))
+	cast(node, spot.call(Vector2(ab, 3.12)), 0.0, 0.44, 0.6)
+	cast(node, spot.call(Vector2(ab - 0.1, 3.12)), 1.06, 2.18, 1.0)
 	for b in [x0 + 0.35, x1 - 0.35]:
-		cast(node, Vector2(b, 3.05), 0.3, 0.9, 0.9)
+		cast(node, spot.call(Vector2(b, 3.05)), 0.3, 0.9, 0.9)
 	for c in cones:
-		cast(node, Vector2(c.x, c.z), 0.0, 0.7, 0.22)
-	cast(node, Vector2(heap.x, heap.z), 0.0, 0.3, 0.6)
+		cast(node, spot.call(Vector2(c.x, c.z)), 0.0, 0.7, 0.22)
+	cast(node, spot.call(Vector2(heap.x, heap.z)), 0.0, 0.3, 0.6)
 	return node
 
 
@@ -7373,7 +7395,7 @@ func build_set() -> void:
 	quay(made_runs, side_roads)
 	snow_cover = settled_snow(far_gaps, near_gaps)
 	matsuri = matsuri_lanterns(far_gaps + under[0], near_gaps + under[1])
-	works = roadworks(near_gaps + under[1])
+	works = roadworks(near_gaps + under[1], far_gaps + under[0])
 	tv = tv_crew()
 	health = health_check()
 	heat = ice_stand()
