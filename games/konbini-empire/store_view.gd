@@ -6074,7 +6074,7 @@ func matsuri_lanterns(far_gaps: Array, near_gaps: Array) -> Node3D:
 
 
 ## A yakisoba yatai in your free bay, its counter to the street: a wooden frame under a red and white canvas pitched over a ridge, a
-## noren of three cream panels, a red and white skirt round the counter, noodles on the griddle, red lanterns at the
+## noren dyed やきそば, a red and white skirt round the counter, noodles on the griddle, red lanterns at the
 ## front corners and a bare bulb, lit after dark with their warm light thrown on the bay.
 func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 	var kit := mat(Color.WHITE)
@@ -6183,11 +6183,7 @@ func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 			scallop.call(st, a, b, EAVE - VAL, c)
 	box_into(st, Vector3(CX0 - 0.02, RIDGE - 0.01, cz - 0.03), Vector3(CX1 + 0.02, RIDGE + 0.03, cz + 0.03), Color("e8dcc4"))  # the ridge seam
 	box_into(st, Vector3(X0 - 0.04, EAVE - 0.06, ZF - 0.04), Vector3(X1 + 0.04, EAVE - 0.02, ZF + 0.04), wood.darkened(0.2))  # the beam the canopy sits on
-	for k in 3:
-		var x := lerpf(X0 + 0.02, X1 - 0.02, float(k) / 3)
-		box_into(lt, Vector3(x + 0.02, 1.72, ZF + 0.22), Vector3(x + (X1 - X0 - 0.04) / 3 - 0.02, 2.18, ZF + 0.25), cream)
-		box_into(lt, Vector3(x + 0.02, 2.06, ZF + 0.25), Vector3(x + (X1 - X0 - 0.04) / 3 - 0.02, 2.12, ZF + 0.26), red)
-		box_into(lt, Vector3(x + 0.2, 1.84, ZF + 0.25), Vector3(x + (X1 - X0 - 0.04) / 3 - 0.2, 1.98, ZF + 0.26), Color("8f2a22"))
+	noren(node, Vector3((X0 + X1) / 2, 1.9, ZF + 0.25), X1 - X0 - 0.04)
 	box_into(st, Vector3((X0 + X1) / 2 - 0.01, 1.98, ZF - 0.6), Vector3((X0 + X1) / 2 + 0.01, 2.5, ZF - 0.58), Color("3b2f2b"))
 	for c in [X0, X1]:  # a lantern's cord at each front corner
 		box_into(st, Vector3(c - 0.01, 1.8, ZF + 0.33), Vector3(c + 0.01, 2.3, ZF + 0.35), Color("3b2f2b"))
@@ -6221,6 +6217,55 @@ func yatai(node: Node3D, paper: StandardMaterial3D) -> void:
 	plane(node, Vector2(2.4, 2.4), Vector3((X0 + X1) / 2, -0.03, ZF - 0.4), stall_glow_mat)
 	cast(node, Vector2((X0 + X1) / 2, (ZB + ZF) / 2), 0.0, 2.64, 2.1)
 	blob(node, Vector2((X0 + X1) / 2, (ZB + ZF) / 2), 1.5)
+
+
+## The yatai's noren: four indigo panels hung from a joined head, slit apart below it, each dyed with one kana of
+## やきそば in cream, every panel's fold lit down its left edge and shaded down its right, with a pale hem.
+func noren(node: Node3D, at: Vector3, w: float) -> void:
+	var glyphs := [[".#......", ".#..###.", "####...#", ".#.#..#.", ".#..#...", "..#.....", "..#.....", "...#...."],
+		["...#....", "#######.", "....#...", "#######.", ".....#..", "..####..", ".#......", "..####.."],
+		[".#####..", "....#...", "...#....", "########", "...#....", "..#.....", "..#.....", "...####."],
+		["#...#.##", "#.#####.", "#...#...", "#...#...", "#...#...", "#..###..", "##.#.##.", "#..##..."]]
+	const PW := 16
+	const GAP := 2
+	const H := 22
+	var iw := PW * 4 + GAP * 3
+	var indigo := Color("2c3f78")
+	var dye := Color("f4ead6")
+	var img := Image.create(iw, H, false, Image.FORMAT_RGBA8)
+	for px in iw:
+		var k := px / (PW + GAP)
+		var col := px % (PW + GAP)
+		for y in H:
+			var c := indigo.darkened(0.25) if y < 4 else indigo
+			if col >= PW:
+				c = c if y < 4 else Color(0, 0, 0, 0)  # the slit between panels
+			elif y >= 4:
+				if col == 0:
+					c = c.lightened(0.18)
+				elif col == PW - 1:
+					c = c.darkened(0.3)
+				if y == H - 2:
+					c = c.lightened(0.12)
+				elif y == H - 1:
+					c = c.darkened(0.2)
+				var g := Vector2i(col - 3, y - 8)
+				if g.y >= 0 and g.y < 8 and ((g.x >= 0 and g.x < 8 and glyphs[k][g.y][g.x] == "#") or (g.x >= 1 and g.x <= 8 and glyphs[k][g.y][g.x - 1] == "#")):
+					c = dye  # each stroke two pixels thick, so it holds at the street camera's distance
+			if y == 1:
+				c = c.lightened(0.2)  # the rod's sleeve
+			img.set_pixel(px, y, c)
+	var m := mat(Color.WHITE, ImageTexture.create_from_image(img))
+	m.texture_repeat = false
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	festive(m, Color.WHITE, 0.7)
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(w, 0.56)
+	mi.mesh = q
+	mi.material_override = m
+	mi.position = at
+	node.add_child(mi)
 
 
 ## Roadworks: a stretch of the near kerb lane fenced off with striped barricades, cones on a striped bar, steel plates
