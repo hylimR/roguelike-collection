@@ -222,8 +222,10 @@ void fragment() {
 }
 """
 # per vehicle in art/vehicles.png: length, width and height (m) of the shadow, and how far behind the ground under its
-# sprite's centre (away from the camera) its art's footprint lies: kei car, taxi, kei truck, scooter
-const CAR_FOOT := [Vector4(2.85, 1.35, 1.6, 1.26), Vector4(3.0, 1.25, 1.45, 1.26), Vector4(3.0, 1.3, 1.75, 1.24), Vector4(1.9, 0.55, 1.4, 0.78)]
+# sprite's centre (away from the camera) its art's footprint lies: kei car, taxi, kei truck, scooter, then the event
+# vans backed into your free bay: the TV crew's and the health centre's
+const CAR_FOOT := [Vector4(2.85, 1.35, 1.6, 1.26), Vector4(3.0, 1.25, 1.45, 1.26), Vector4(3.0, 1.3, 1.75, 1.24), Vector4(1.9, 0.55, 1.4, 0.78),
+		Vector4(4.3, 1.75, 2.0, 0.0), Vector4(3.6, 1.45, 1.5, 0.0)]
 # Daylight through your shop's glass front, laid over its floor: every point takes the light that came in over the
 # sill above it, so the panes fall as a band slanting away from the sun, barred by the mullions and brightest out of
 # the open door. `gate` holds what each pane lets through (u across the front, v the depth the light falls to).
@@ -5572,6 +5574,14 @@ func car_shade(kv: int, node: Sprite3D = null, lift := 0.0) -> MeshInstance3D:
 	return mi
 
 
+## Event van kv's shadow (CAR_FOOT) under it where it stands backed into your free bay, nose to the street.
+func bay_shade(parent: Node3D, kv: int) -> void:
+	var sh := car_shade(kv)
+	sh.position = Vector3(-1.0, 0.0, -13.15)
+	sh.rotation.y = PI / 2
+	parent.add_child(sh)
+
+
 ## A soft round shadow at a sprite's feet, `drop` below its centre, r across.
 func shadow(drop := 0.8, r := 0.5) -> MeshInstance3D:
 	var sh := MeshInstance3D.new()
@@ -6521,11 +6531,10 @@ func tv_crew() -> Node3D:
 	gm.set_instance_transform(0, Transform3D(Basis().scaled(Vector3(2.4, 2.4, 2.4)), face.position))
 	gm.set_instance_transform(1, Transform3D(Basis().scaled(Vector3(0.6, 0.6, 0.6)), tally.position))
 	mm_node(gm, halo_mat, node)
-	cast(node, Vector2(-1.0, -13.15), 0.3, 2.1, 1.7)
+	bay_shade(node, 4)
 	cast(node, Vector2(cam_at.x, cam_at.z), 0.0, 1.4, 0.4)
 	cast(node, Vector2(lt_at.x, lt_at.z), 1.55, 2.12, 0.84)
 	cast(node, Vector2(lt_at.x, lt_at.z), 0.0, 1.55, 0.06)
-	blob(node, Vector2(-1.0, -13.15), 1.6)
 	blob(node, Vector2(cam_at.x, cam_at.z), 0.5)
 	return node
 
@@ -6727,9 +6736,8 @@ func health_check() -> Node3D:
 	var gm := multimesh(QuadMesh.new(), 1)
 	gm.set_instance_transform(0, Transform3D(Basis().scaled(Vector3(1.8, 1.8, 1.8)), Vector3(-0.9, 1.775, -13.45)))
 	mm_node(gm, halo_mat, node)
-	cast(node, Vector2(-1.0, -13.15), 0.26, 1.6, 1.5)
+	bay_shade(node, 5)
 	cast(node, Vector2(sa.x, sa.z), 0.0, 1.3, 0.12)
-	blob(node, Vector2(-1.0, -13.15), 1.5)
 	blob(node, Vector2(sa.x, sa.z), 0.3)
 	return node
 
