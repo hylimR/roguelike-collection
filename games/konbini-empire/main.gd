@@ -1148,7 +1148,7 @@ func show_intro() -> void:
 	var go := func():
 		close_modal()
 		sim.act({"type": "start"})
-	v.add_child(button("Open the shop!  [Space]", go))
+	v.add_child(primary(button("Open the shop!  [Space]", go)))
 	open_modal("Konbini Empire", v, {KEY_SPACE: go, KEY_ENTER: go}, "intro")
 
 
@@ -1890,7 +1890,7 @@ func show_report(r: Dictionary) -> void:
 		close_modal()
 		view.show_branch(sim.active)
 		ui_t = 0.0
-	v.add_child(button("Next day  [Space]", go))
+	v.add_child(primary(button("Next day  [Space]", go)))
 	open_modal("Day %d closed" % r.day, v, {KEY_SPACE: go, KEY_ENTER: go}, "report", ORANGE)
 
 
