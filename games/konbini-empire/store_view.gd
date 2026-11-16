@@ -11211,13 +11211,15 @@ func draw_city_marks(font: Font) -> void:
 		taken.append(r)
 		return true
 	var pins := []
+	var font_b: Font = bold if bold else font
 	for b in sim.branches:
 		var p2: Vector2 = Sim.lot_pos(sim.lots[b.lot])
 		var ground := screen_world(Vector3(p2.x + 2.0, 0.0, p2.y + 3.0))
-		pins.append([ground, b])
-		taken.append(Rect2(ground + Vector2(-40, -52), Vector2(80, 56)))
-		if not b.rival.defeated:
-			taken.append(Rect2(screen_world(frame_origin(b.lot) + Vector3(rival_span(b.rival).x + 4.0, 0.0, -7.2)) + Vector2(-13, -29), Vector2(26, 34)))
+		var h := font_b.get_ascent(11) + font_b.get_descent(11) + 6
+		var w := font_b.get_string_size(b.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + h + (22.0 if not b.rival.defeated else 10.0)
+		var r := Rect2(ground.x - w / 2, ground.y - 30 - h, w, h)
+		pins.append([ground, b, r])
+		taken.append(Rect2(r.position - Vector2(2, 4), r.size + Vector2(18, 8)).merge(Rect2(ground + Vector2(-40, -52), Vector2(80, 56))))
 	var bf: Font = bold if bold else font
 	var offered := {}
 	if pick == "listing" and sim.choice != null and sim.choice.source == "listing":
@@ -11301,8 +11303,7 @@ func draw_city_marks(font: Font) -> void:
 		if mark.a > 0.0:
 			overlay.draw_polyline(lot_poly(li), mark, 2.0)
 	# each branch as a map pin: its number and name on a pill whose tail drops a stem to a disc on the lot, and the
-	# rival's mascot in a roundel beside it, its ring a gauge of the rival's takings
-	var font_b: Font = bold if bold else font
+	# rival's mascot in a roundel breaking the pill's right end, its ring a gauge of the rival's takings
 	var shade := Color(0.42, 0.3, 0.15, 0.3)
 	var cream := Color(1.0, 0.98, 0.92)
 	for e in pins:
@@ -11311,21 +11312,9 @@ func draw_city_marks(font: Font) -> void:
 		if not Rect2(Vector2.ZERO, size).grow(40).has_point(ground):
 			continue
 		var c := Color("e98a1d") if is_same(b, branch) else Color("c46a14")
-		if not b.rival.defeated:
-			var rc := Color(Sim.RIVALS[b.rival.id].color)
-			var rat := screen_world(frame_origin(b.lot) + Vector3(rival_span(b.rival).x + 4.0, 0.0, -7.2))
-			var top := rat + Vector2(0, -15)
-			ground_disc(rat, 4.0, rc, shade)
-			overlay.draw_line(rat, top, Color.WHITE, 1.5)
-			overlay.draw_circle(top + Vector2(0, 2), 12.0, shade)
-			overlay.draw_texture_rect(rival_face(b.rival.id), Rect2(top - Vector2(12, 12), Vector2(24, 24)), false)
-			var f := clampf(b.rival.hp / b.rival.max_hp, 0.0, 1.0)
-			if f < 1.0:  # the roundel's ring is the gauge: what's gone of its takings shows cream, from the top round
-				overlay.draw_arc(top, 10.35, -PI / 2 + TAU * f, 1.5 * PI, maxi(4, roundi(32 * (1.0 - f))), cream.darkened(0.12), 2.0, true)
 		var asc := font_b.get_ascent(11)
-		var h := asc + font_b.get_descent(11) + 6
-		var w := font_b.get_string_size(b.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + h + 10
-		var r := Rect2(ground.x - w / 2, ground.y - 30 - h, w, h)
+		var r: Rect2 = e[2]
+		var h := r.size.y
 		var tip := Vector2(ground.x, r.end.y + 5)
 		overlay.draw_line(ground + Vector2(1, 0), tip + Vector2(1, 0), shade, 3.0)
 		overlay.draw_line(ground, tip, Color.WHITE, 2.0)
@@ -11337,6 +11326,14 @@ func draw_city_marks(font: Font) -> void:
 		overlay.draw_circle(bc, h / 2 - 2.5, cream)
 		overlay.draw_string(font_b, Vector2(bc.x - h / 2, bc.y + (font_b.get_ascent(10) - font_b.get_descent(10)) / 2), str(sim.branches.find(b) + 1), HORIZONTAL_ALIGNMENT_CENTER, h, 10, c.darkened(0.25))
 		overlay.draw_string(font_b, Vector2(r.position.x + h + 3, r.position.y + 3 + asc), b.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+		if not b.rival.defeated:
+			var top := Vector2(r.end.x, r.get_center().y)
+			overlay.draw_circle(top + Vector2(0, 2.5), 13.0, shade)
+			overlay.draw_circle(top, 13.0, cream)
+			overlay.draw_texture_rect(rival_face(b.rival.id), Rect2(top - Vector2(12, 12), Vector2(24, 24)), false)
+			var f := clampf(b.rival.hp / b.rival.max_hp, 0.0, 1.0)
+			if f < 1.0:  # the roundel's ring is the gauge: what's gone of its takings shows cream, from the top round
+				overlay.draw_arc(top, 10.35, -PI / 2 + TAU * f, 1.5 * PI, maxi(4, roundi(32 * (1.0 - f))), cream.darkened(0.12), 2.0, true)
 	for li in lot_tags:
 		var r: Rect2 = lot_tags[li]
 		var ground: Vector2 = lot_text[li][0]
