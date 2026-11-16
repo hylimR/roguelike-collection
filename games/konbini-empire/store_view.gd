@@ -11031,6 +11031,24 @@ func draw_street() -> void:
 				if box.grow(2.0).intersects(o):
 					box.position.y = o.position.y - box.size.y - 3.0
 					moved = true
+		# stacked over a tag that hides where its own stem lands: it stands beside that tag on its threat's side instead,
+		# its stem down to the threat itself
+		var aim: Vector2 = g.home + Vector2(0, 2)
+		var cover: Array = placed.slice(hud_dock.size()).filter(func(o): return o.has_point(aim))
+		var seen: bool = not (placed + over).any(func(o): return o.has_point(g.pts[0]))
+		if g.pts.size() == 1 and not cover.is_empty() and seen:
+			var o: Rect2 = cover[0]
+			var cand := Rect2(Vector2(o.end.x + 4.0 if g.home.x >= o.get_center().x else o.position.x - box.size.x - 4.0, g.box.position.y), box.size)
+			moved = true
+			while moved:
+				moved = false
+				for p in placed:
+					if cand.grow(2.0).intersects(p):
+						cand.position.y = p.position.y - cand.size.y - 3.0
+						moved = true
+			if cand.position.x >= 4.0 and cand.end.x <= overlay.size.x - 4.0:
+				box = cand
+				aim = g.pts[0]
 		# stacked up under the clock, a chip, the store card or the rival's plate: the tag hangs below its threat's feet instead, or
 		# beside the HUD when that is nearer, and anything placed under it pushes it on down
 		var hud := Rect2()
@@ -11058,7 +11076,7 @@ func draw_street() -> void:
 		placed.append(box)
 		g.top = g.home + box.position - g.box.position
 		var hung: bool = box.position.y >= g.home.y  # a tag hung below takes its stem up to the feet
-		var tos: Array = [g.home + Vector2(0, 2) if not hung else Vector2(g.home.x, g.foot)]
+		var tos: Array = [aim if not hung else Vector2(g.home.x, g.foot)]
 		if g.pts.size() > 1:
 			tos = g.pts.map(func(p): return p + (g.lift + Vector2(0, 2) if not hung else Vector2.ZERO))
 		if g.top.distance_to(g.home) > 1.0 or tos.size() > 1:  # stems first, so no tag's stem crosses another; none to a threat hidden under the HUD
