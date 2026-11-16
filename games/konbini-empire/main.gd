@@ -26,7 +26,7 @@ const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9
 const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: that person off the street, "drawn" one drawn in code); product lines use their product, abilities their key
 	"charm": ["perks", 0], "premium": ["perks", 8], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["walk", 21],
 	"bulk": ["perks", 7], "bow": ["walk", 3], "impulse": ["walk", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
-	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["perks", 6],
+	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["drawn", "shield"],
 	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["walk", 11], "spotless": ["drawn", "wet_sign"],
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
 	"floor": ["drawn", "wall_through"], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
@@ -1654,6 +1654,59 @@ func wall_through() -> ImageTexture:
 			var hb := absf(hq.dot(along))
 			if ha < 6.0 and hb < 2.8:
 				c = line if ha > 5.0 or hb > 1.9 else (Color("aab5c2") if hq.dot(along) > 0.2 else Color("66707c"))
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Thick Skin's picture, in the sprites' chunky pixels: a steel-rimmed shield faced in the shop's cream with its
+## orange and green band, a rival's flyer bouncing off it past two impact ticks.
+func shield() -> ImageTexture:
+	var n := 40
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var line := Color("3a2f28")
+	var cx := 15.5
+	var fly := Vector2(34.5, 9.0)
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var c := Color(0, 0, 0, 0)
+			var t := clampf((p.y - 16.0) / 22.0, 0.0, 1.0)
+			var half := 13.0 * (1.0 - pow(t, 1.6))
+			var corner := Vector2(maxf(absf(p.x - cx) - 10.0, 0.0), maxf(6.0 - p.y, 0.0)).length()
+			var d := minf(minf(p.y - 3.0, half - absf(p.x - cx)), 3.0 - corner)  # >0 inside, in px
+			if d > 0:
+				var lit := p.x < cx + 3.0
+				if d < 1:
+					c = line
+				elif d < 3:
+					c = Color("c3ccd6") if lit else Color("7d8794")  # the steel rim
+					if p.y < 5.5 and lit:
+						c = Color("eef2f5")
+				else:
+					c = Color("fffdf8") if lit else Color("e4ddce")
+					if p.y >= 15 and p.y < 18:
+						c = Color("f08a24") if lit else Color("cf7419")
+					elif p.y >= 18 and p.y < 21:
+						c = Color("2f9e5a") if lit else Color("25804a")
+					if d < 4:
+						c = c.darkened(0.1)  # the face's shade under the rim
+					var g := (p.x - 8.0) + (p.y - 8.0) * 0.6
+					if absf(g) < 0.8 and p.y > 6 and p.y < 13 or absf(g + 3.0) < 0.5 and p.y > 6 and p.y < 10:
+						c = Color.WHITE  # a glint across the face
+				if (x == 5 or x == 25) and y == 5 or x == 15 and y == 34:
+					c = line  # rivets
+			if y == 17 and x >= 30 and x <= 32 or x - y == 12 and y >= 19 and y <= 21:
+				c = line  # impact ticks where the flyer struck the rim
+			var q := Vector2(p.x - 34.5 + (9.5 - p.y) * 0.25, p.y - 9.5)  # the flyer, tumbling
+			var e := minf(3.8 - absf(q.x), 5.5 - absf(q.y))
+			if e > 0:
+				c = line if e < 1 else (Color("d94b3c") if q.y < -2.2 else Color("fbf7ee"))
+				if e >= 1 and (y == 9 or y == 11) and absf(q.x) < 2.0:
+					c = Color("9a948a")  # its print
+				if e >= 1 and q.x + q.y > 5.4:
+					c = Color("d8d0bf")  # a dog-eared corner
 			img.set_pixel(x, y, c)
 	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
 	img.generate_mipmaps()
