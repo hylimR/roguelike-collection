@@ -10863,11 +10863,12 @@ func draw_clock() -> void:
 	for part in [[Vector2(16, 46), t, big], [Vector2(22 + w, 46), "AM" if hh < 12 else "PM", 16]]:
 		overlay.draw_string_outline(font, part[0] + Vector2(1, 2), part[1], HORIZONTAL_ALIGNMENT_LEFT, -1, part[2], 4, shade)
 		overlay.draw_string(font, part[0], part[1], HORIZONTAL_ALIGNMENT_LEFT, -1, part[2], Color.WHITE)
-	# the rule is the day from 06:00 to midnight: the rushes still ahead in amber, the hours gone in white up to a knob at now
+	# the rule is the day from 06:00 to midnight, a meter in a cream rim on the pills' drop shadow: the rushes still ahead
+	# in amber on a brown track, the hours gone in white up to a knob at now
 	var rule := Rect2(16, 52, 176, 5)
 	var at := rule.position.x + rule.size.x * clampf((h - 6.0) / 18.0, 0.0, 1.0)
-	overlay.draw_style_box(round_box(shade, 3), Rect2(rule.position + Vector2(0, 2), rule.size))
-	overlay.draw_style_box(round_box(Color(1, 1, 1, 0.4), 3), rule)
+	overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 5), Rect2(rule.position + Vector2(-2, 0), rule.size + Vector2(4, 4)))
+	bar(rule, 0.0, Color.WHITE, Color("9c8160"))
 	for b in Sim.SCHEDULE:
 		if b.rush:
 			var x0: float = rule.position.x + rule.size.x * (b.from - 6.0) / 18.0
