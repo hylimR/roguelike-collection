@@ -11248,7 +11248,10 @@ func draw_city_marks(font: Font) -> void:
 		var r := Rect2(at.x - w / 2 - 5, at.y - asc - 1, w + 10, asc + bf.get_descent(px) + 2)
 		if not room_for.call(r.grow(1)):
 			continue
-		overlay.draw_style_box(round_box(Color(0.22, 0.16, 0.1, 0.62), r.size.y / 2), r)
+		# a solid plate on its own shadow, ringed in cream so it stands off a dark city as well as a sunny one
+		overlay.draw_style_box(round_box(Color(0.08, 0.05, 0.03, 0.4), r.size.y / 2), Rect2(r.position + Vector2(0, 2), r.size))
+		overlay.draw_style_box(round_box(Color(1.0, 0.94, 0.8, 0.7 if d.type == "hub" else 0.4), r.size.y / 2), r)
+		overlay.draw_style_box(round_box(Color("3a2a1f") if d.type == "hub" else Color(0.26, 0.19, 0.14, 0.92), r.size.y / 2 - 1), r.grow(-1.0))
 		overlay.draw_string(bf, Vector2(at.x - w / 2, at.y), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, px, Color("fff1c9") if d.type == "hub" else Color("f7f3e8"))
 	if zoom < 0.45:
 		# a street's name on a cream tag laid along it, a Shuto route's number on a green plate ringed by a white rule,
