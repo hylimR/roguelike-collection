@@ -67,6 +67,7 @@ var seed_btn: Button
 var tabs: HBoxContainer
 var ability_row: HBoxContainer
 var pick_btn: Button
+var well_style: StyleBoxTexture
 var pick_badge: Label
 var info: Label
 var info_lines: Array = []
@@ -328,14 +329,9 @@ func ability_look(a: Button, state: String) -> void:
 	if not a.has_meta("art"):
 		a.set_meta("art", a.icon)
 		a.set_meta("shape", silhouette(a.icon))
-	var off: StyleBoxFlat
+	var off: StyleBox
 	if state == "locked":
-		off = box(Color("eee1bd"), 27, 4)
-		off.border_width_top = 4  # the well's lip shades its top inside, so it reads pressed into the HUD
-		off.border_width_left = 1
-		off.border_width_right = 1
-		off.border_color = Color("d3bd8a")
-		off.corner_detail = 16
+		off = well_box()
 		a.icon = a.get_meta("shape")
 		a.add_theme_color_override("icon_disabled_color", Color("dcc797"))
 		a.add_theme_color_override("font_disabled_color", Color("a99062"))
@@ -345,6 +341,30 @@ func ability_look(a: Button, state: String) -> void:
 		a.add_theme_color_override("icon_disabled_color", Color(1, 1, 1, 0.8))
 		a.add_theme_color_override("font_disabled_color", ORANGE if state == "cooling" else MUTED)
 	a.add_theme_stylebox_override("disabled", off)
+
+
+## A cream key like the ready ones, rim, lip and shadow, with its face sunk into a well shaded under its top edge,
+## so a locked key still stands off light paving.
+func well_box() -> StyleBoxTexture:
+	if well_style == null:
+		var img := Image.create(116, 120, false, Image.FORMAT_RGBA8)  # drawn at twice the key's size, as the HUD scales up
+		var c0 := Vector2(29, 29)
+		for y in 120:
+			for x in 116:
+				var p := Vector2(x + 0.5, y + 0.5) / 2.0
+				var cov := func(o: Vector2, r: float) -> float: return clampf((r - (p - o - c0).length()) * 2.0 + 0.5, 0.0, 1.0)
+				var c := Color(SHADOW, SHADOW.a * clampf((28.5 - (p - c0 - Vector2(0, 2)).length()) / 2.0, 0.0, 1.0))
+				c = c.blend(Color(PAPER.darkened(0.16), cov.call(Vector2(0, 1), 27.0)))
+				c = c.blend(Color(PAPER, cov.call(Vector2.ZERO, 27.0)))
+				var well := Color("eee1bd").lerp(Color("d3bd8a"), maxf(1.0 - cov.call(Vector2(0, 3), 23.0), 0.6 * (1.0 - cov.call(Vector2.ZERO, 22.0))))
+				c = c.blend(Color(well, cov.call(Vector2.ZERO, 23.0)))
+				img.set_pixel(x, y, c)
+		well_style = StyleBoxTexture.new()
+		well_style.texture = ImageTexture.create_from_image(img)
+		well_style.set_expand_margin_all(2)
+		well_style.expand_margin_bottom = 4
+		well_style.set_content_margin_all(4)
+	return well_style
 
 
 ## The art in one tone, its shading kept as light and dark of white for a modulate to tint, its soft halo cut off.
