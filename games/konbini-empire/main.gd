@@ -29,7 +29,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["perks", 6],
 	"hotStreak": ["perks", 5], "negotiator": ["perks", 11], "hr": ["walk", 7], "teamSpirit": ["walk", 11], "spotless": ["drawn", "wet_sign"],
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
-	"floor": ["decor", 7], "neon": ["perks", 8], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
+	"floor": ["decor", 7], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
 	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["perks", 7],
 	"r_franchise": ["perks", 8], "r_warchest": ["perks", 11], "r_killer": ["decor", 5], "r_express": ["perks", 10], "r_scholar": ["decor", 8],
 	"r_hq": ["walk", 13], "r_logistics": ["perks", 7], "r_brand": ["perks", 1], "r_academy": ["walk", 10],
@@ -1518,6 +1518,72 @@ func wet_sign() -> ImageTexture:
 					c = line if tri < 1.3 else Color.WHITE
 					if x >= 19 and x <= 20 and (y >= 15 and y <= 21 or y >= 23 and y <= 24):
 						c = line
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Neon Sign's picture, in the sprites' chunky pixels: the dark board the shop hangs over its back wall, OPEN in the
+## pink tube it lights there and 24 in cyan inside a pink frame, each tube a pale core in a halo of its colour.
+func neon_board() -> ImageTexture:
+	var n := 44
+	var glyphs := {
+		"O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+		"P": ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
+		"E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
+		"N": ["#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#"],
+		"2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
+		"4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+	}
+	var pink := Color("ff4fa0")
+	var cyan := Color("3fd8ff")
+	var tube := {}
+	for x in range(3, 41):
+		tube[Vector2i(x, 9)] = pink
+		tube[Vector2i(x, 35)] = pink
+	for y in range(10, 35):
+		tube[Vector2i(3, y)] = pink
+		tube[Vector2i(40, y)] = pink
+	for word in [["OPEN", 7, 13, pink], ["24", 15, 24, cyan]]:
+		for k in word[0].length():
+			var rows: Array = glyphs[word[0][k]]
+			for r in 7:
+				for col in 5:
+					if rows[r][col] == "#":
+						tube[Vector2i(word[1] + k * 8 + col, word[2] + r)] = word[3]
+	var board := Color("2b2d42")
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var c := Color(0, 0, 0, 0)
+			if (x == 11 or x == 32) and y >= 1 and y <= 6:
+				c = Color("6a6d7c") if y > 1 else Color("3a3c48")  # the hangers
+			var edge := mini(mini(x - 1, 42 - x), mini(y - 7, 37 - y))
+			var corner := (x == 1 or x == 42) and (y == 7 or y == 37)
+			if edge < 0 or corner:
+				var out := Vector2(maxf(maxf(1 - x, x - 42), 0.0), maxf(maxf(7 - y, y - 37), 0.0)).length()
+				if out < 3.0 and not corner:
+					c = c.blend(Color(pink, 0.22 * (1.0 - out / 3.0)))
+			else:
+				c = Color("15161f") if edge == 0 else (board.lightened(0.12) if y == 8 else (board.darkened(0.25) if y == 36 else board))
+				if edge > 0:
+					var near := 9.0
+					var glow := pink
+					for dy in range(-2, 3):
+						for dx in range(-2, 3):
+							var q := Vector2i(x + dx, y + dy)
+							if tube.has(q) and Vector2(dx, dy).length() < near:
+								near = Vector2(dx, dy).length()
+								glow = tube[q]
+					if near == 0.0:
+						c = glow.lerp(Color.WHITE, 0.62)
+					elif near < 1.1:
+						c = glow
+					elif near < 1.5:
+						c = c.lerp(glow, 0.6)
+					elif near < 2.9:
+						c = c.lerp(glow, 0.2)
 			img.set_pixel(x, y, c)
 	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
 	img.generate_mipmaps()
