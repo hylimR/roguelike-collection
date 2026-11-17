@@ -7561,7 +7561,7 @@ func build_set() -> void:
 	if near_water():
 		made_runs = made_ground(C, here, street_x, span)
 		for w in made_runs:
-			rect_quad(made, w, -0.125, 0.0, false, 0.25)  # over the water, under any bridge
+			rect_quad(made, w, -0.1225, 0.0, false, 0.25)  # over the water and the shore's lap, under any bridge
 		roads.append_array(water_runs(C, here, SET.position.y, -20.2) + water_runs(C, here, -20.2, -7.2, SET.position.x, -16.5) + water_runs(C, here, -20.2, -7.2, span.y, SET.end.x))
 	var far_gaps := mouths(-8.2, -3.6, side_roads, Vector2(-16.5, span.y))  # none between your shop and the rival
 	var near_gaps := mouths(3.6, 8.2, side_roads)
