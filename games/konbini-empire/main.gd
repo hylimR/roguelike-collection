@@ -496,6 +496,15 @@ func picture(sheet: String, i: int, cell: int, min_size: Vector2) -> TextureRect
 	return r
 
 
+## A picture drawn in code, made once and kept.
+func drawn(id: String, min_size: Vector2) -> TextureRect:
+	var r := picture("perks", 0, 80, min_size)
+	if not tex.has(id):
+		tex[id] = call(id)
+	r.texture = tex[id]
+	return r
+
+
 func ability_art(id: String) -> Texture2D:
 	var ic = ABILITY_ICON[id]
 	if ic is int:
@@ -1612,10 +1621,7 @@ func card_picture(id: String, u: Dictionary) -> PanelContainer:
 	else:
 		var ic: Array = CARD_ICON.get(id, ["perks", 11])
 		if ic[0] == "drawn":
-			pic = picture("perks", 0, 80, Vector2(60, 60))
-			if not tex.has(ic[1]):
-				tex[ic[1]] = call(ic[1])
-			pic.texture = tex[ic[1]]
+			pic = drawn(ic[1], Vector2(60, 60))
 		elif ic[0] == "walk":
 			pic = picture("walk", 0, 80, Vector2(60, 60))
 			pic.texture.region = Rect2(Vector2(0, ic[1] * StoreView.PERSON.y), StoreView.PERSON)
@@ -2551,7 +2557,7 @@ func show_over() -> void:
 		[picture("perks", 11, 80, Vector2(40, 40)), "Revenue", yen(rs.revenue), ""],
 		[picture("perks", 10, 80, Vector2(40, 40)), "Customers", Sim.money(rs.customers), ""],
 		[rival_badge(), "Rivals closed", str(rs.rivals_defeated), ""],
-		[picture("perks", 1, 80, Vector2(40, 40)), "Threats repelled", str(rs.threats_repelled), ""],
+		[drawn("shield", Vector2(40, 40)), "Threats repelled", str(rs.threats_repelled), ""],
 		[intro_shop(), "Stores opened", str(rs.stores_opened), "peak %d at once%s" % [rs.peak_stores, "" if rs.foreclosed == 0 else ", %d foreclosed" % rs.foreclosed]],
 	]:
 		var tile := stat_tile(t[0], t[1], t[2], t[3])
