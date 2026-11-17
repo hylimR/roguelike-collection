@@ -278,6 +278,8 @@ void fragment() {
 """
 # Farmland: each field's crop colour, furrowed, under the hour's light; after dark the crops fade into one dark green
 # so the lit city stands out rather than a patchwork of maroon, olive and green round it, while the lanes stay gravel.
+# UV and UV2 carry a field's metres in from its edges along x and z, so each field is rimmed a pixel wide at any zoom,
+# its sunward edges lit and the far ones shaded, and the green fields read as plots apart from the grass round them.
 const FIELD_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled;
@@ -286,13 +288,19 @@ uniform vec3 light = vec3(1.0);
 uniform float night = 0.0;
 
 void fragment() {
-	float field = step(0.99, COLOR.a);  // lanes come in at alpha below 1: bare gravel, no furrows, no crop at night
+	float field = step(0.9, COLOR.a);  // lanes come in at alpha 0.5: bare gravel, no furrows, no rim, no crop at night
 	float l = dot(COLOR.rgb, vec3(0.3, 0.59, 0.11));
 	// by moonlight each field keeps its own shade and a trace of its crop, so the patchwork still reads after dark
 	vec3 moon = mix(vec3(l), COLOR.rgb, 0.55) * vec3(1.0, 1.02, 0.94);
 	moon = max(vec3(0.0), moon + (l - 0.62) * 0.6);
 	vec3 crop = mix(COLOR.rgb, moon, night * field);
-	ALBEDO = crop * mix(vec3(1.0), texture(furrows, UV).rgb, field) * light;
+	// furrows run down the strip, one every 3 m across it (alpha 1: strips along x)
+	vec3 fur = texture(furrows, vec2((COLOR.a > 0.97 ? UV2.x : UV.x) / 3.0, 0.0)).rgb;
+	vec2 ex = vec2(min(UV.x, UV.y), min(UV2.x, UV2.y)) / max(vec2(fwidth(UV.x), fwidth(UV2.x)), vec2(1e-4));
+	bool on_x = ex.x < ex.y;
+	float side = on_x ? (UV.x < UV.y ? 0.35 : -0.35) : (UV2.x < UV2.y ? -0.6 : 0.6);  // toward the sun from that edge
+	float rim = min(ex.x, ex.y) < 1.0 ? (side > 0.0 ? 1.1 : 0.84) : 1.0;
+	ALBEDO = crop * mix(vec3(1.0), fur * rim, field) * light;
 }
 """
 # The map's streetlights after dark, the lamps a unit of u apart along both kerbs and staggered: a hot spot under
@@ -3174,6 +3182,7 @@ func build_static() -> void:
 	fm.set_shader_parameter("night", maxf(night, 0.0))
 	field_mat = fm
 	var fs := surface(fm)
+	fs.set_uv2(Vector2.ZERO)  # so the mesh carries UV2 from its first vertex, the lanes' included
 	var fr := RandomNumberGenerator.new()
 	fr.seed = 5
 	var fb := b.grow(1300.0)
@@ -3218,8 +3227,15 @@ func build_static() -> void:
 						var crop: int = crops[cell] if fr.randf() < 0.75 else fr.rand_weighted(fw8)
 						var shade := fr.randf_range(-0.06, 0.06)
 						var fc := Color(FIELDS[crop])
-						fs.set_color(fc.lightened(shade) if shade > 0.0 else fc.darkened(-shade))
-						rect_quad(fs, r, -0.155, (r.size.y if along else r.size.x) / 3.0, along)
+						fc = fc.lightened(shade) if shade > 0.0 else fc.darkened(-shade)
+						fc.a = 1.0 if along else 0.94
+						fs.set_color(fc)
+						var vs := [Vector2(r.position.x, r.position.y), Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]
+						for i in [0, 1, 2, 0, 2, 3]:
+							var pv: Vector2 = vs[i]
+							fs.set_uv(Vector2(pv.x - r.position.x, r.end.x - pv.x))
+							fs.set_uv2(Vector2(pv.y - r.position.y, r.end.y - pv.y))
+							fs.add_vertex(Vector3(pv.x, -0.155, pv.y))
 					t0 += fl
 				s0 += sw
 			fx += bw
