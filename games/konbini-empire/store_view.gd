@@ -79,7 +79,7 @@ const FIELD_WEIGHTS := [3.0, 2.0, 0.8, 0.8, 0.7, 2.0, 1.5]  # mostly green, with
 const WEATHER_LOOK := {
 	"hot": [Color(1.0, 0.68, 0.3, 0.15)],
 	"rain": [Color(0.2, 0.25, 0.38, 0.24), 170, -0.18, 950.0, 15.0],
-	"cold": [Color(0.8, 0.88, 1.0, 0.2), 240, 0.15, 50.0, 0.0],
+	"cold": [Color(0.8, 0.88, 1.0, 0.2), 300, 0.15, 50.0, 0.0],
 	"typhoon": [Color(0.1, 0.14, 0.24, 0.36), 360, -0.6, 1500.0, 24.0],
 }
 # the hour's light on everything outdoors, [hour, tint]: a pink dawn, plain day, golden hour, dusk, night; lit windows,
@@ -10884,17 +10884,16 @@ func draw_weather() -> void:
 		if inside.size() > 2 and Geometry2D.is_point_in_polygon(p, inside):
 			continue
 		if snowing:
-			var px := 2.0 if d < 0.45 else (3.0 if d < 0.85 else 4.0)
+			var rad := lerpf(0.8, 2.4, d * d) * r.randf_range(0.85, 1.15)
 			var k := 0.0
 			for e in lit:
 				k = maxf(k, 1.0 - p.distance_to(e[0]) / e[1])
 			var glow := clampf(k * 1.6, 0.0, 1.0) * night
 			var c := flake.lerp(Color(1.0, 0.95, 0.84), glow)
 			if glow > 0.0:  # a flake lit up out of the dark glints, a soft rim round it
-				overlay.draw_rect(Rect2(p - Vector2(px + 4, px + 4) / 2, Vector2(px + 4, px + 4)), Color(c, 0.14 * glow))
-			if px == 4.0 or glow > 0.0:
-				overlay.draw_rect(Rect2(p - Vector2(px + 2, px + 2) / 2, Vector2(px + 2, px + 2)), Color(c, 0.25 + 0.2 * glow))
-			overlay.draw_rect(Rect2(p - Vector2(px, px) / 2, Vector2(px, px)), Color(c, lerpf(0.5, 0.95, d)))
+				overlay.draw_circle(p, rad + 3.0, Color(c, 0.12 * glow), true, -1.0, true)
+			overlay.draw_circle(p, rad + 1.0, Color(c, lerpf(0.12, 0.3, d) + 0.15 * glow), true, -1.0, true)  # feathered edge
+			overlay.draw_circle(p, rad, Color(c, lerpf(0.45, 0.95, d)), true, -1.0, true)
 		else:
 			lines.append_array([p, p + Vector2(look[2], 1.0).normalized() * look[4]])
 	if not lines.is_empty():
