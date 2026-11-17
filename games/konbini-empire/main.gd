@@ -71,6 +71,7 @@ var well_style: StyleBoxTexture
 var pick_badge: Label
 var info: RichTextLabel
 var info_lines: Array = []
+var cap_tex := {}  # key -> a keycap drawn once in its own small viewport, inlined in the bubble's text
 var head: Label
 var kind_chip: PanelContainer
 var kind_lbl: Label
@@ -952,13 +953,18 @@ func fit_info() -> void:
 
 
 ## The bubble's lines at px, each [text, colour, bullet]: a toast keeps its own colour behind a bullet of it, its
-## wrapped lines hung under its text, and a key hint like "[P]" is held to the word before it rather than wrapping alone
-## (by a figure space: the label still breaks at a no-break space).
+## wrapped lines hung under its text, and a trailing key hint like "  [P]" sits on a white keycap like the buttons' ones,
+## held to the word before it rather than wrapping alone (by a figure space: the label still breaks at a no-break space).
 func show_info(lines: Array, px: int) -> void:
 	info.clear()
 	info.add_theme_font_size_override("normal_font_size", px)
 	for i in lines.size():
-		var text: String = lines[i][0].replace("  [", "\u2007[")
+		var text: String = lines[i][0]
+		var key := ""
+		var at := text.rfind("  [")
+		if at >= 0 and text.ends_with("]"):
+			key = text.substr(at + 3, text.length() - at - 4)
+			text = text.substr(0, at) + "\u2007"
 		if i > 0:
 			info.newline()
 		if lines[i][2]:
@@ -966,8 +972,40 @@ func show_info(lines: Array, px: int) -> void:
 		info.push_color(lines[i][1])
 		info.add_text(text)
 		info.pop()
+		if key != "":
+			var tex := key_cap(key)
+			var h := px + 6
+			info.add_image(tex, roundi(tex.get_size().x * h / tex.get_size().y), h, Color.WHITE, INLINE_ALIGNMENT_CENTER)
 		if lines[i][2]:
 			info.pop()
+
+
+## A white keycap for `key` with a lip, as `keyed` puts on cream buttons, rendered once at 4x so it stays crisp inline.
+func key_cap(key: String) -> Texture2D:
+	if cap_tex.has(key):
+		return cap_tex[key]
+	const S := 4
+	var s := box(Color.WHITE, 5 * S, 0, 3 * S)
+	s.set_border_width_all(S)
+	s.border_width_bottom = 3 * S
+	s.border_color = LINE.darkened(0.18)
+	s.content_margin_left = 6 * S
+	s.content_margin_right = 6 * S
+	var cap := PanelContainer.new()
+	cap.add_theme_stylebox_override("panel", s)
+	var kl := label(key, INK, 11 * S)
+	kl.add_theme_font_override("font", bold)
+	kl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	kl.custom_minimum_size.y = 14 * S
+	cap.add_child(kl)
+	var vp := SubViewport.new()
+	vp.transparent_bg = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	vp.add_child(cap)
+	add_child(vp)
+	vp.size = Vector2i(cap.get_combined_minimum_size().ceil())
+	cap_tex[key] = vp.get_texture()
+	return cap_tex[key]
 
 
 func toast(text: String, color := INK) -> void:
