@@ -2053,7 +2053,7 @@ func show_staff() -> void:
 	var b: Dictionary = sim.branches[sim.active]
 	var st: Dictionary = b.store
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 6)
+	v.add_theme_constant_override("separation", 10)
 	v.add_child(label("Cash %s. Hiring costs a day's wage now; wages are paid every midnight." % yen(sim.player.cash), MUTED))
 	var cols := HBoxContainer.new()
 	cols.add_theme_constant_override("separation", 22)
