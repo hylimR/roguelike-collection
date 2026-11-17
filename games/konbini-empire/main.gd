@@ -22,7 +22,7 @@ const SHADOW := Color(0.42, 0.3, 0.15, 0.25)
 const RARITY_COLOR := {"common": Color("a08c69"), "rare": Color("3a9bd9"), "epic": Color("a36fd6"), "legendary": Color("e8a317")}
 const DISTRICT_COLOR := {"sakura": Color("d9708f"), "campus": Color("3a9bd9"), "onsen": Color("e0903a"), "ekimae": Color("1f9e8e"), "neon": Color("8a5cc8")}
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
-const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
+const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": "torn_sale", "influencer": 9, "truck": 7}  # perks.png frames, or a picture drawn in code
 const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: that person off the street, "drawn" one drawn in code); product lines use their product, abilities their key
 	"charm": ["perks", 0], "premium": ["drawn", "premium_tag"], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["walk", 21],
 	"bulk": ["perks", 7], "bow": ["walk", 3], "impulse": ["walk", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
@@ -407,8 +407,9 @@ func well_box() -> StyleBoxTexture:
 
 
 ## The art in one tone, its shading kept as light and dark of white for a modulate to tint, its soft halo cut off.
-func silhouette(t: AtlasTexture) -> ImageTexture:
-	var img := t.atlas.get_image().get_region(Rect2i(t.region))
+func silhouette(t: Texture2D) -> ImageTexture:
+	var img: Image = (t as AtlasTexture).atlas.get_image().get_region(Rect2i((t as AtlasTexture).region)) if t is AtlasTexture else t.get_image()
+	img.clear_mipmaps()
 	img.convert(Image.FORMAT_RGBA8)
 	for y in img.get_height():
 		for x in img.get_width():
@@ -437,6 +438,15 @@ func picture(sheet: String, i: int, cell: int, min_size: Vector2) -> TextureRect
 	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	r.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	return r
+
+
+func ability_art(id: String) -> Texture2D:
+	var ic = ABILITY_ICON[id]
+	if ic is int:
+		return frame("perks", ic, 80)
+	if not tex.has(ic):
+		tex[ic] = call(ic)
+	return tex[ic]
 
 
 func product_frame(pid: String) -> AtlasTexture:
@@ -538,7 +548,7 @@ func build() -> void:
 			disc.set_pixel(x, y, Color(INK, 0.3 * clampf(26.5 - Vector2(x - 26.5, y - 26.5).length(), 0.0, 1.0)))
 	var wipe_tex := ImageTexture.create_from_image(disc)
 	for i in ABILITY_KEYS.size():
-		var k := key_button(do_act.bind({"type": "useAbility", "id": ABILITY_KEYS[i]}), "", frame("perks", ABILITY_ICON[ABILITY_KEYS[i]], 80), 54, 54, 27)
+		var k := key_button(do_act.bind({"type": "useAbility", "id": ABILITY_KEYS[i]}), "", ability_art(ABILITY_KEYS[i]), 54, 54, 27)
 		var wipe := TextureProgressBar.new()  # the cooldown still to run, shrinking round the key like a clock hand
 		wipe.texture_progress = wipe_tex
 		wipe.fill_mode = TextureProgressBar.FILL_COUNTER_CLOCKWISE
@@ -1456,7 +1466,8 @@ func card_picture(id: String, u: Dictionary) -> PanelContainer:
 	if u.has("product"):
 		pic = icon(u.product, 60)
 	elif u.has("ability"):
-		pic = picture("perks", ABILITY_ICON[u.ability], 80, Vector2(60, 60))
+		pic = picture("perks", 0, 80, Vector2(60, 60))
+		pic.texture = ability_art(u.ability)
 	else:
 		var ic: Array = CARD_ICON.get(id, ["perks", 11])
 		if ic[0] == "drawn":
@@ -1802,6 +1813,65 @@ func shield() -> ImageTexture:
 					c = Color("9a948a")  # its print
 				if e >= 1 and q.x + q.y > 5.4:
 					c = Color("d8d0bf")  # a dog-eared corner
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Counter Campaign's picture, in the sprites' chunky pixels: the rival's red and yellow SALE poster torn in two, its
+## halves flung apart on a slash in your shop's orange and green, scraps of it flying.
+func torn_sale() -> ImageTexture:
+	var n := 40
+	var glyphs := {
+		"S": ["###", "#..", "###", "..#", "###"], "A": [".#.", "#.#", "###", "#.#", "#.#"], "L": ["#..", "#..", "#..", "#..", "###"],
+		"E": ["###", "#..", "##.", "#..", "###"], "5": ["###", "#..", "##.", "..#", "##."], "0": ["###", "#.#", "#.#", "#.#", "###"],
+		"%": ["#.#", "..#", ".#.", "#..", "#.#"],
+	}
+	var words := [["SALE", 5, 5], ["50%", 19, 7]]  # text, row, column on the poster
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var line := Color("3a2f28")
+	var c0 := Vector2(19.5, 19.5)
+	var along := Vector2(1.0, -0.2).normalized()
+	var across := Vector2(-along.y, along.x)
+	var halves := [[Vector2(-1.5, -2.3), deg_to_rad(-4.0), -1.0], [Vector2(1.5, 2.3), deg_to_rad(5.0), 1.0]]  # offset, turn, side of the tear
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var c := Color(0, 0, 0, 0)
+			for h in halves:
+				var q: Vector2 = (p - c0 - h[0]).rotated(-h[1])
+				var jag := 1.2 * (absf(fposmod(q.dot(along), 3.0) - 1.5) - 0.75)
+				var e: float = (q.dot(across) - jag) * h[2]  # >0 on this half's side of the tear
+				var d := minf(12.5 - absf(q.x), 14.5 - absf(q.y))
+				if d <= 0 or e <= 0:
+					continue
+				var col := floori(q.x + 12.5)
+				var row := floori(q.y + 14.5)
+				if d < 1:
+					c = line
+				elif e < 1.2:
+					c = Color("fbf7ee")  # the paper's torn white edge
+				else:
+					c = Color("dd3a2c")
+					if row in [2, 3] or row in [25, 26]:
+						c = Color("f6cf3c")
+					for w in words:
+						var gx: int = col - w[2]
+						var gy: int = row - w[1]
+						if gy >= 0 and gy < 5 and gx >= 0 and gx < w[0].length() * 4 and gx % 4 < 3 and glyphs[w[0][gx >> 2]][gy][gx % 4] == "#":
+							c = Color.WHITE
+					if h[2] > 0:
+						c = c.darkened(0.12)  # the half turned away from the light
+			var r := p - c0
+			var t := r.dot(along)
+			var w := r.dot(across)
+			var half := 2.2 * (1.0 - pow(t / 19.5, 2.0))
+			if absf(t) < 19.5 and absf(w) < half:  # the slash through the tear
+				c = Color("f08a24") if w < -0.6 else (Color("2f9e5a") if w > 0.6 else Color("fffdf8"))
+			for s in [[Vector2(36, 9), Vector2(2, 2), Color("dd3a2c")], [Vector2(37, 14), Vector2(1, 1), Color("f6cf3c")], [Vector2(1, 23), Vector2(2, 1), Color("f6cf3c")], [Vector2(2, 27), Vector2(1, 2), Color("dd3a2c")]]:
+				if Rect2(s[0], s[1]).has_point(p):
+					c = s[2]  # scraps of the poster
 			img.set_pixel(x, y, c)
 	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
 	img.generate_mipmaps()
