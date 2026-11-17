@@ -234,15 +234,17 @@ func primary(b: Button, c := MINT) -> Button:
 	return b
 
 
-## A cream button's trailing "  [Key]" as a white keycap after its label, like the intro's key legend.
+## A cream button's trailing "  [Key]" as a white keycap after its label, like the intro's key legend. Set `disabled`
+## first: an unaffordable button keeps its label readable in muted ink over a sunken cap.
 func keyed(b: Button) -> Button:
-	var s := box(Color.WHITE, 7, 0, 2)
+	var off := b.disabled
+	var s := box(LINE.lerp(Color.WHITE, 0.45) if off else Color.WHITE, 7, 0, 2)
 	s.set_border_width_all(1)
-	s.border_width_bottom = 3
+	s.border_width_bottom = 1 if off else 3
 	s.border_color = LINE.darkened(0.18)
 	s.content_margin_left = 8
 	s.content_margin_right = 8
-	key_face(b, INK, 15, s, INK, 34)
+	key_face(b, MUTED if off else INK, 15, s, MUTED if off else INK, 34)
 	return b
 
 
@@ -1354,7 +1356,7 @@ func show_choice() -> void:
 			b.disabled = sim.player.cash < c.options[i].cost
 		elif c.source == "expansion":
 			b.disabled = sim.player.cash < c.cost
-		b.add_theme_color_override("font_disabled_color", MUTED)  # the price you can't meet yet stays readable
+		keyed(b)
 		var gap := Control.new()  # keeps every card's button on one line
 		gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		col.add_child(gap)
@@ -1381,10 +1383,12 @@ func show_choice() -> void:
 	var spare: int = sim.player.cash - (c.cost if c.source == "expansion" else 0)
 	var rr := button("Reroll %s  [R]" % yen(rc), reroll)
 	rr.disabled = spare < rc
-	row.add_child(rr)
+	row.add_child(keyed(rr))
 	if c.source == "listing":
-		row.add_child(button("See on map", see_listings))
-	row.add_child(button("Later  [Esc]", later))
+		var see := button("See on map", see_listings)
+		see.add_theme_font_size_override("font_size", 15)  # matches the keyed buttons beside it
+		row.add_child(see)
+	row.add_child(keyed(button("Later  [Esc]", later)))
 	v.add_child(row)
 	keys[KEY_R] = reroll
 	keys[KEY_ESCAPE] = later
@@ -2585,7 +2589,7 @@ func show_new_run() -> void:
 			show_intro()
 		elif sim.phase == "choice":
 			show_choice()
-	v.add_child(button("Cancel  [Esc]", cancel))
+	v.add_child(keyed(button("Cancel  [Esc]", cancel)))
 	edit.gui_input.connect(func(e):  # the field would only drop focus on the first Esc
 		if e is InputEventKey and e.pressed and e.keycode == KEY_ESCAPE:
 			edit.accept_event()
