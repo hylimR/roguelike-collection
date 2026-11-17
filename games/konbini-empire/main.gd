@@ -272,6 +272,25 @@ func vs_badge(bg: Color) -> Control:
 	return p
 
 
+## A store tab's alert: a white glyph on a small disc in `bg`, ringed in cream on its own drop shadow, breaking the tab's
+## top edge at its right end.
+func alert_badge(bg: Color, glyph: String) -> Control:
+	var p := PanelContainer.new()
+	var s := box(bg, 9, 0, 0, 2)
+	s.set_border_width_all(2)
+	s.border_color = PAPER
+	p.add_theme_stylebox_override("panel", s)
+	p.custom_minimum_size = Vector2(18, 18)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := label(glyph, Color.WHITE, 11)
+	l.add_theme_font_override("font", bold)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	p.add_child(l)
+	p.visible = false
+	return p
+
+
 ## A name tag: a label on a colored pill, tilted a little.
 func tag(l: Label, bg: Color) -> PanelContainer:
 	var p := chip([l], bg)
@@ -963,18 +982,28 @@ func refresh_ui() -> void:
 		for i in sim.branches.size():
 			var t := button("", select_store.bind(i), "Switch store  [Tab]")
 			t.custom_minimum_size.y = 26
+			t.add_child(alert_badge(RED, "!"))
+			t.add_child(alert_badge(ORANGE, "▾"))
 			tabs.add_child(t)
 	for i in sim.branches.size():
 		var o: Dictionary = sim.branches[i]
 		var t: Button = tabs.get_child(i)
-		var alert := ""
-		if o.threats.any(func(x): return x.type != "spill") or o.rival.telegraph != "":
-			alert = " !"
-		if o.store.products.values().any(func(p): return float(p.stock) / p.capacity < Sim.LOW_STOCK):
-			alert += " ▾"
-		t.text = "%d  %s%s" % [i + 1, o.name, alert]
-		t.add_theme_stylebox_override("normal", pill_box(MINT if i == sim.active else PAPER))
-		t.add_theme_color_override("font_color", Color.WHITE if i == sim.active else (RED if alert != "" else INK))
+		var flags := [
+			o.threats.any(func(x): return x.type != "spill") or o.rival.telegraph != "",
+			o.store.products.values().any(func(p): return float(p.stock) / p.capacity < Sim.LOW_STOCK),
+		]
+		t.text = "%d  %s" % [i + 1, o.name]
+		var s := pill_box(MINT if i == sim.active else PAPER)
+		var x := t.size.x - 12.0
+		for k in 2:
+			var badge: Control = t.get_child(k)
+			badge.visible = flags[k]
+			if flags[k]:
+				badge.position = Vector2(x, -7)
+				x -= 15.0
+				s.content_margin_right += 9
+		t.add_theme_stylebox_override("normal", s)
+		t.add_theme_color_override("font_color", Color.WHITE if i == sim.active else INK)
 
 	for i in ABILITY_KEYS.size():
 		var id: String = ABILITY_KEYS[i]
