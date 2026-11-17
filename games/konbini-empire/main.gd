@@ -1958,9 +1958,12 @@ func show_staff() -> void:
 		var l := para(r[1], MUTED, 196)
 		l.add_theme_font_size_override("font_size", 11)
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		l.size_flags_vertical = Control.SIZE_EXPAND | Control.SIZE_SHRINK_CENTER  # rows share out the well's spare height
 		roles.add_child(l)
-	key.add_child(staff_well(roles))
+	var key_well := staff_well(roles)
+	key_well.size_flags_vertical = Control.SIZE_EXPAND_FILL  # down to the foot of the longer column beside it
+	key.add_child(key_well)
+	key.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cols.add_child(crew)
 	var apps := staff_grid()
 	for role in Sim.ROLES:
