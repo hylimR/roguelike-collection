@@ -6490,7 +6490,9 @@ func roadworks(near_gaps: Array, far_gaps: Array) -> Node3D:
 		box_into(st, Vector3(obx + lx - 0.1, -0.045, 3.16), Vector3(obx + lx + 0.1, 0.07, 3.24), Color("b39a6c"))
 		box_into(st, Vector3(obx + lx - 0.09, 0.07, 3.17), Vector3(obx + lx + 0.09, 0.09, 3.23), Color("c9b183"))
 	commit([st], body)
-	art_panel(body, apology_board(), Vector2(0.62, 1.13), Vector3(obx, 0.795, 3.302), Color(0.95, 0.95, 0.95), 1.0, false)
+	for side in 2:  # lettered both sides, so it reads from the road as well as the sidewalk
+		art_panel(body, apology_board(), Vector2(0.62, 1.13), Vector3(obx, 0.795, 3.302 - 0.034 * side), Color(0.95, 0.95, 0.95), 1.0, false)
+		body.get_child(-1).rotation.y = PI * side
 	tone_flip = false
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.03
@@ -6525,41 +6527,46 @@ func roadworks(near_gaps: Array, far_gaps: Array) -> Node3D:
 	mm_node(lm, lamp, body)
 	# the board's face: a matrix of amber LEDs on black drawing a bold arrow that turns traffic away from the kerb, a
 	# shaft four LEDs thick into a head the board's full height, each lit LED haloed so the arrow reads as one shape
-	# when the board is seen edge-on, the dark LEDs left as faint dots, lit like a sign
-	var img := Image.create(96, 96, false, Image.FORMAT_RGB8)
-	img.fill(Color("121114"))
-	var lit := func(i: int, j: int) -> bool:
-		if i < 0 or i > 11 or j < 0 or j > 11:
-			return false
+	# when the board is seen edge-on, the dark LEDs left as faint dots, lit like a sign; its back warns the other
+	# lane's traffic with a bold ! between flashers in the corners
+	var arrow := func(i: int, j: int) -> bool:
 		return (j >= 4 and j <= 7 and i >= 1 and i <= 5) or (i >= 5 and absf(j - 5.5) <= (12 - i) * 0.9)
-	for j in 12:
-		for i in 12:
-			var on: bool = lit.call(i, j)
-			var near := 0
-			for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-				near += 1 if lit.call(i + o.x, j + o.y) else 0
-			for y in 8:
-				for x in 8:
-					var d := Vector2(x - 3.5, y - 3.5).length()
-					var c := Color("121114")
-					if on:
-						c = Color("3a2208").lerp(Color("ffb52e"), clampf(4.4 - d, 0.0, 1.0)).lerp(Color("fff0c0"), 0.6 * clampf(1.6 - d, 0.0, 1.0))
-					elif near > 0:  # the glow of lit neighbours spilling into the gaps beside them
-						c = Color("121114").lerp(Color("3a2208"), 0.5 + 0.2 * near) if d >= 3.0 else Color("2a1d12")
-					elif d < 3.0:
-						c = Color("221e1b")
-					img.set_pixel(i * 8 + x, j * 8 + y, c)
-	img.generate_mipmaps()
-	var face := MeshInstance3D.new()
-	var fq := QuadMesh.new()
-	fq.size = Vector2(0.94, 0.9)
-	face.mesh = fq
-	var fm := mat(Color.WHITE, ImageTexture.create_from_image(img))
-	light_up(fm, 1.0)
-	face.material_override = fm
-	face.rotation.y = PI / 2
-	face.position = Vector3(ab + 0.065, 1.64, 3.12)
-	body.add_child(face)
+	var warn := func(i: int, j: int) -> bool:
+		return (i >= 5 and i <= 6 and ((j >= 1 and j <= 7) or (j >= 9 and j <= 10))) or ((i < 2 or i > 9) and (j < 2 or j > 9))
+	for side in 2:
+		var shape: Callable = arrow if side == 0 else warn
+		var img := Image.create(96, 96, false, Image.FORMAT_RGB8)
+		img.fill(Color("121114"))
+		var lit := func(i: int, j: int) -> bool:
+			return i >= 0 and i <= 11 and j >= 0 and j <= 11 and shape.call(i, j)
+		for j in 12:
+			for i in 12:
+				var on: bool = lit.call(i, j)
+				var near := 0
+				for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					near += 1 if lit.call(i + o.x, j + o.y) else 0
+				for y in 8:
+					for x in 8:
+						var d := Vector2(x - 3.5, y - 3.5).length()
+						var c := Color("121114")
+						if on:
+							c = Color("3a2208").lerp(Color("ffb52e"), clampf(4.4 - d, 0.0, 1.0)).lerp(Color("fff0c0"), 0.6 * clampf(1.6 - d, 0.0, 1.0))
+						elif near > 0:  # the glow of lit neighbours spilling into the gaps beside them
+							c = Color("121114").lerp(Color("3a2208"), 0.5 + 0.2 * near) if d >= 3.0 else Color("2a1d12")
+						elif d < 3.0:
+							c = Color("221e1b")
+						img.set_pixel(i * 8 + x, j * 8 + y, c)
+		img.generate_mipmaps()
+		var face := MeshInstance3D.new()
+		var fq := QuadMesh.new()
+		fq.size = Vector2(0.94, 0.9)
+		face.mesh = fq
+		var fm := mat(Color.WHITE, ImageTexture.create_from_image(img))
+		light_up(fm, 1.0)
+		face.material_override = fm
+		face.rotation.y = PI / 2 if side == 0 else -PI / 2
+		face.position = Vector3(ab + 0.065 if side == 0 else ab - 0.145, 1.64, 3.12)
+		body.add_child(face)
 	var gm := multimesh(QuadMesh.new(), lamps.size() + 1)
 	for i in lamps.size():
 		gm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.2, 1.2, 1.2)), lamps[i]))
