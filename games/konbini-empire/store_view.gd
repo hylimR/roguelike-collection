@@ -371,8 +371,8 @@ void fragment() {
 }
 """
 # Your car park's tarmac, bay lines and bicycle hatch: the hour's light like any outdoor surface, and after dark the
-# floodlight multiplying their own colours, brightest where the pole's two floods aim (as flood_tex), so the grime, tyre
-# tracks, tar seals and paint still read under it instead of washing out to one pale sheet.
+# floodlight multiplying their own colours, pooled where the pole's two floods aim (as flood_tex) and falling off to
+# a dim lit grey between, never brighter than noon, so the lot reads as tarmac under lights instead of one pale sheet.
 const FLOODLIT_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled;
@@ -390,7 +390,7 @@ void fragment() {
 	vec2 a = p - vec2(-0.6, -14.4);
 	vec2 b = p - vec2(1.9, -11.2);
 	float aim = max(exp(-dot(a, a) / 9.0), exp(-dot(b, b) / 11.0));
-	ALBEDO = texture(tex, UV).rgb * base * min(light + flood * (0.62 + 0.68 * aim), vec3(1.3));
+	ALBEDO = texture(tex, UV).rgb * base * min(light + flood * (0.26 + 0.78 * aim), vec3(1.05));
 }
 """
 # A heatwave's air over the street, on the 3D view's own picture: rows of it waver sideways as the heat climbs off the
