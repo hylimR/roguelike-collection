@@ -861,12 +861,13 @@ func fit_info() -> void:
 
 
 ## The bubble's lines at px, each [text, colour, bullet]: a toast keeps its own colour behind a bullet of it, its
-## wrapped lines hung under its text, and a key hint like "[P]" is held to the word before it rather than wrapping alone.
+## wrapped lines hung under its text, and a key hint like "[P]" is held to the word before it rather than wrapping alone
+## (by a figure space: the label still breaks at a no-break space).
 func show_info(lines: Array, px: int) -> void:
 	info.clear()
 	info.add_theme_font_size_override("normal_font_size", px)
 	for i in lines.size():
-		var text: String = lines[i][0].replace("  [", "\u00a0\u00a0[")
+		var text: String = lines[i][0].replace("  [", "\u2007[")
 		if i > 0:
 			info.newline()
 		if lines[i][2]:
