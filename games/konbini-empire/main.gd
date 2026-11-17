@@ -69,7 +69,7 @@ var ability_row: HBoxContainer
 var pick_btn: Button
 var well_style: StyleBoxTexture
 var pick_badge: Label
-var info: Label
+var info: RichTextLabel
 var info_lines: Array = []
 var head: Label
 var kind_chip: PanelContainer
@@ -579,16 +579,18 @@ func build() -> void:
 	bh.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bubble.add_child(bh)
 	bh.add_child(picture("perks", 0, 80, Vector2(38, 38)))
-	info = label("", INK)
+	info = RichTextLabel.new()
+	info.scroll_active = false
+	info.tab_size = 2
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	info.max_lines_visible = 3
-	info.add_theme_font_size_override("font_size", 11)
-	info.add_theme_constant_override("line_spacing", -3)
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.add_theme_color_override("default_color", INK)
+	info.add_theme_font_size_override("normal_font_size", 11)
+	info.add_theme_constant_override("line_separation", -3)
 	bh.add_child(info)
-	info.text = "\n\n"
-	info.custom_minimum_size = Vector2(150, info.get_minimum_size().y)  # always three lines tall, so the tabs above never jump
+	info.custom_minimum_size = Vector2(150, info.get_theme_font("normal_font").get_height(11) * 3 - 6)  # always three lines tall, so the tabs above never jump
 	info.resized.connect(fit_info)
 	var dock := HBoxContainer.new()
 	dock.add_theme_constant_override("separation", 6)
@@ -838,33 +840,32 @@ func cycle_sound(m := -1) -> void:
 ## Fits the bubble's three lines: older toasts drop off first, then the type shrinks, so the newest line is never cut off.
 func fit_info() -> void:
 	var lines := info_lines.slice(maxi(0, info_lines.size() - 3))
-	info.add_theme_font_size_override("font_size", 11)
-	info.text = info_text(lines, 11)
+	show_info(lines, 11)
 	while lines.size() > 1 and info.get_line_count() > 3:
 		lines.pop_front()
-		info.text = info_text(lines, 11)
+		show_info(lines, 11)
 	for px in [10, 9]:
 		if info.get_line_count() <= 3:
 			break
-		info.add_theme_font_size_override("font_size", px)
-		info.text = info_text(lines, px)
+		show_info(lines, px)
 
 
-## The bubble's lines at px, each key hint like "[P]" that would wrap onto a line of its own taking the word before it along.
-func info_text(lines: Array, px: int) -> String:
-	var out := []
-	for line: String in lines:
-		var at := line.rfind("  [")
-		if at > 0:
-			var p := TextParagraph.new()
-			p.add_string(line, info.get_theme_font("font"), px)
-			p.break_flags = TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
-			p.width = info.size.x
-			var cut := line.rfind(" ", at - 1)
-			if p.get_line_count() > 1 and p.get_line_range(p.get_line_count() - 1).x > at and cut > 0:
-				line = line.substr(0, cut) + "\n" + line.substr(cut + 1)
-		out.append(line)
-	return "\n".join(out)
+## The bubble's lines at px, each [text, colour, bullet]: a toast keeps its own colour behind a bullet of it, its
+## wrapped lines hung under its text, and a key hint like "[P]" is held to the word before it rather than wrapping alone.
+func show_info(lines: Array, px: int) -> void:
+	info.clear()
+	info.add_theme_font_size_override("normal_font_size", px)
+	for i in lines.size():
+		var text: String = lines[i][0].replace("  [", "\u00a0\u00a0[")
+		if i > 0:
+			info.newline()
+		if lines[i][2]:
+			info.push_list(1, RichTextLabel.LIST_DOTS, false, "•")
+		info.push_color(lines[i][1])
+		info.add_text(text)
+		info.pop()
+		if lines[i][2]:
+			info.pop()
 
 
 func toast(text: String, color := INK) -> void:
@@ -1025,13 +1026,12 @@ func refresh_ui() -> void:
 		ability_look(a, "locked" if ab == null else ("cooling" if ab.cd > 0.0 else "ready"))
 	pick_btn.visible = not sim.pending.is_empty()
 	pick_badge.text = str(sim.pending.size())
-	var lines := toasts.map(func(t): return t[0])
+	var lines := toasts.map(func(t): return [t[0], t[1], true])
 	if lines.is_empty():
-		lines = [hint(b)]
+		lines = [[hint(b), INK, false]]
 	if lines != info_lines:
 		info_lines = lines
 		fit_info()
-	info.add_theme_color_override("font_color", toasts[-1][1] if not toasts.is_empty() else INK)
 
 	head.text = b.name
 	var d: Dictionary = Sim.DISTRICTS[b.district]
