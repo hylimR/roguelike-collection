@@ -24,7 +24,7 @@ const DISTRICT_COLOR := {"sakura": Color("d9708f"), "campus": Color("3a9bd9"), "
 const ABILITY_KEYS := ["flyer", "timeSale", "counter", "influencer", "truck"]
 const ABILITY_ICON := {"flyer": 1, "timeSale": 11, "counter": 4, "influencer": 9, "truck": 7}  # perks.png frames
 const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: that person off the street, "drawn" one drawn in code); product lines use their product, abilities their key
-	"charm": ["perks", 0], "premium": ["perks", 8], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["walk", 21],
+	"charm": ["perks", 0], "premium": ["drawn", "premium_tag"], "swift": ["perks", 10], "learner": ["decor", 8], "spirit": ["walk", 21],
 	"bulk": ["perks", 7], "bow": ["walk", 3], "impulse": ["walk", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
 	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["drawn", "shield"],
 	"hotStreak": ["perks", 5], "negotiator": ["drawn", "lease_deal"], "hr": ["walk", 7], "teamSpirit": ["drawn", "team_trio"], "spotless": ["drawn", "wet_sign"],
@@ -1873,6 +1873,60 @@ func lease_deal() -> ImageTexture:
 					c = Color("4a5f9e") if (p - nib).dot(across) < 0 else Color("2b3a67")
 				if u > reach - 7.0 and u < reach - 1.5 and (p - nib).dot(across) > 0.7:
 					c = Color("e8b33a")  # the clip
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Premium Branding's picture, in the sprites' chunky pixels: the shop's cream price tag, a bold ¥ over its orange and
+## green band, hung from a gold eyelet on a looped string, a gold rosette with red tails pinned to its corner.
+func premium_tag() -> ImageTexture:
+	var n := 40
+	var yen_glyph := ["##.....##", ".##...##.", "..##.##..", "...###...", "#########", "...###...", "#########", "...###...", "...###...", "...###..."]
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var line := Color("3a2f28")
+	var hole := Vector2(17.0, 13.0)
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var c := Color(0, 0, 0, 0)
+			for k in 24:  # the string, looping up out of the eyelet
+				var t := k / 23.0
+				var top := hole - Vector2(0.0, 2.0)
+				var b := top.lerp(Vector2(18.0, 1.0), t).lerp(Vector2(18.0, 1.0).lerp(Vector2(7.0, 3.0), t), t)
+				if p.distance_to(b) < 0.75:
+					c = Color("8a6a4a")
+			var d := minf(minf(p.x - 7.0, 27.0 - p.x), minf(37.0 - p.y, p.y - 8.0 - maxf(absf(p.x - 17.0) - 4.0, 0.0) * 0.9))  # >0 on the tag
+			var r := p.distance_to(hole)
+			if d > 0 and r > 1.6:
+				c = line if d < 1 else (Color("fffdf8") if p.x < 24.0 else Color("e9e1d0"))
+				if d >= 1:
+					if y >= 29 and y <= 30:
+						c = Color("f08a24") if p.x < 24.0 else Color("cf7419")
+					elif y >= 31 and y <= 32:
+						c = Color("2f9e5a") if p.x < 24.0 else Color("25804a")
+					var gx := x - 13
+					var gy := y - 17
+					if gx >= 0 and gx < 9 and gy >= 0 and gy < 10 and yen_glyph[gy][gx] == "#":
+						c = line
+				if r < 3.0:
+					c = Color("e8b33a") if r > 2.2 or p.x < hole.x else Color("b8862a")  # the eyelet
+					if r > 2.2 and p.x < hole.x and p.y < hole.y:
+						c = Color("fff1b8")
+			var q := p - Vector2(28.0, 30.0)
+			var a := atan2(q.y, q.x)
+			for side in [-1.0, 1.0]:  # the rosette's tails, notched at the foot
+				var u := Vector2(q.x - side * (1.5 + q.y * 0.35), q.y)
+				if q.y > 1.0 and q.y < 9.5 - absf(u.x) * 0.8 and absf(u.x) < 1.8:
+					c = line if absf(u.x) > 1.0 else (Color("d94b3c") if side < 0 else Color("b23a2e"))
+			var rim := 5.6 + 0.6 * cos(a * 10.0)
+			if q.length() < rim:
+				c = line if q.length() > rim - 1.0 else (Color("f2c14e") if q.x + q.y < 1.0 else Color("d9a234"))
+				if q.length() < 3.3:
+					c = Color("ffe08a") if q.length() < 2.6 else Color("b8862a")  # the medal's face in its ring
+					if q.x + q.y < -1.5 and q.length() > 1.2:
+						c = Color("fff6d6")
 			img.set_pixel(x, y, c)
 	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
 	img.generate_mipmaps()
