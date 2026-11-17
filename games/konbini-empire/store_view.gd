@@ -11065,6 +11065,7 @@ func draw_street() -> void:
 			sign_at.x -= reach.end.x - hud_card.position.x
 	if sign_at != roof_at + Vector2(0, -58):
 		stem_to = Vector2(clampf(roof_at.x, sign_at.x - (bw + 50) / 2 + 14, sign_at.x + (bw + 38) / 2), sign_at.y)
+	var warn_box := Rect2()  # the price war or attack warning under the plate, which threat tags keep clear of too
 	overlay.draw_line(roof_at + Vector2(1, 0), stem_to + Vector2(1, 0), Color(0, 0, 0, 0.3), 3.0)
 	overlay.draw_line(roof_at, stem_to, Color.WHITE, 2.0)
 	overlay.draw_circle(roof_at + Vector2(0, 1.5), 5.5, Color(0, 0, 0, 0.3))
@@ -11074,6 +11075,19 @@ func draw_street() -> void:
 		# name and takings on one cream plate, so the bar never sits on the chain's own fascia color
 		# its mascot in a roundel that breaks the plate's left edge, the name over a gauge of the same width
 		var plate := Rect2(sign_at + Vector2(-(bw + 50) / 2 + 6, 18 - ph), Vector2(bw + 44, ph))
+		if rv.price_war > 0.0 or rv.telegraph != "":
+			# a price war or an attack warning hangs as a red tab tucked under the plate's foot, over the stem
+			var s := "Price war %ds" % ceili(rv.price_war)
+			var blink: bool = rv.price_war > 0.0 or floori(Time.get_ticks_msec() / 250.0) % 2 == 0
+			if rv.price_war <= 0.0:
+				s = "! %s in %ds" % [Sim.ATTACKS[rv.telegraph].name, ceili(maxf(0.0, rv.attack_timer))]
+			var sw := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+			var tab := Rect2(plate.position.x + 30 + bw / 2 - sw / 2 - 10, plate.end.y - 10, sw + 20, font.get_ascent(12) + font.get_descent(12) + 16)
+			overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.3), 10), Rect2(tab.position + Vector2(0, 3), tab.size))
+			overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92), 11.5), tab.grow(1.5))
+			overlay.draw_style_box(round_box(Color("e05a4e") if blink else Color("b8372d"), 10), tab)
+			overlay.draw_string(font, Vector2(tab.position.x + 10, plate.end.y + 3 + font.get_ascent(12)), s, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.WHITE)
+			warn_box = tab.grow(1.5)
 		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 12), Rect2(plate.position + Vector2(0, 3), plate.size))
 		overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92, 0.96), 12), plate)
 		var disc := Vector2(plate.position.x, plate.get_center().y)
@@ -11091,15 +11105,6 @@ func draw_street() -> void:
 			overlay.draw_rect(Rect2(gauge.position + Vector2(roundf(gauge.size.x * q) - 0.5, 1), Vector2(1, gauge.size.y - 2)), Color(0.3, 0.2, 0.1, 0.35))
 	else:
 		pill(sign_at, def.name + "  (closed)", 13, Color("a99f8c"))
-	var warn_box := Rect2()  # the price war or attack warning under the plate, which threat tags keep clear of too
-	if not rv.defeated and (rv.price_war > 0.0 or rv.telegraph != ""):
-		var s := "Price war %ds" % ceili(rv.price_war)
-		var blink: bool = rv.price_war > 0.0 or floori(Time.get_ticks_msec() / 250.0) % 2 == 0
-		if rv.price_war <= 0.0:
-			s = "! %s in %ds" % [Sim.ATTACKS[rv.telegraph].name, ceili(maxf(0.0, rv.attack_timer))]
-		pill(sign_at + Vector2(0, 44), s, 12, Color("e05a4e") if blink else Color("b8372d"))
-		var cw := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-		warn_box = Rect2(sign_at.x - cw / 2 - 7, sign_at.y + 42 - font.get_ascent(12), cw + 14, font.get_ascent(12) + font.get_descent(12) + 6)
 	# shelves once they've sold some: a shelf tag with the product and its stock bar, red when low
 	for pid in st.products:
 		var p: Dictionary = st.products[pid]
