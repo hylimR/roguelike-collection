@@ -332,7 +332,7 @@ void fragment() {
 """
 # The decks overhead, their pillars and the viaduct in the shop view: where one stands between the camera and the
 # rival next door (the box cut_lo..cut_hi, the shop and the sidewalk at its door) it is cut away, so the rival shows
-# through, its cut edge a rim of its own colour in shadow, as the city's cut-down buildings show their core.
+# through, its cut edge a thin rim of its own colour in shade, not a black slab across a parapet or deck.
 const DECK_CUT_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled;
@@ -367,7 +367,7 @@ void fragment() {
 	if (cut > 0.5 && behind(cut_lo, cut_hi)) {
 		discard;
 	}
-	ALBEDO = cut > 0.5 && behind(cut_lo - vec3(0.45), cut_hi + vec3(0.45)) ? c * 0.3 : c;
+	ALBEDO = cut > 0.5 && behind(cut_lo - vec3(0.15), cut_hi + vec3(0.15)) ? c * 0.6 : c;
 }
 """
 # Your car park's tarmac, bay lines and bicycle hatch: the hour's light like any outdoor surface, and after dark the
