@@ -252,6 +252,26 @@ func chip(parts: Array, bg := PAPER) -> PanelContainer:
 	return p
 
 
+## A fight card's VS: bold white on a round badge in `bg`, ringed in cream on its own drop shadow, tilted a little.
+func vs_badge(bg: Color) -> Control:
+	var p := PanelContainer.new()
+	var s := box(bg, 15, 0, 0, 3)
+	s.set_border_width_all(2)
+	s.border_color = PAPER
+	p.add_theme_stylebox_override("panel", s)
+	p.custom_minimum_size = Vector2(30, 30)
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := label("VS", Color.WHITE, 12)
+	l.add_theme_font_override("font", bold)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	p.add_child(l)
+	p.pivot_offset = Vector2(15, 15)
+	p.rotation = deg_to_rad(-8)
+	return p
+
+
 ## A name tag: a label on a colored pill, tilted a little.
 func tag(l: Label, bg: Color) -> PanelContainer:
 	var p := chip([l], bg)
@@ -1127,7 +1147,7 @@ func show_intro() -> void:
 	var vs := HBoxContainer.new()
 	vs.add_theme_constant_override("separation", 8)
 	vs.add_child(chip([label(b.name, Color.WHITE, 15), label(Sim.DISTRICTS[b.district].name, Color(1, 1, 1, 0.85), 11)], DISTRICT_COLOR[b.district]))
-	vs.add_child(label("vs", MUTED, 15))
+	vs.add_child(vs_badge(INK))
 	vs.add_child(chip([label(rv.name, Color.WHITE, 15), label("next door", Color(1, 1, 1, 0.85), 11)], Color(rv.color).darkened(0.1)))
 	v.add_child(vs)
 	v.add_child(para("Your first konbini opens in %s, and %s wants your customers. Every sale you make hits its takings; drive it out of business and a bigger chain moves in." % [b.name, rv.name], INK, 560))
@@ -1332,10 +1352,7 @@ func lot_picture(L: Dictionary) -> PanelContainer:
 	h.alignment = BoxContainer.ALIGNMENT_CENTER
 	h.add_theme_constant_override("separation", 14)
 	h.add_child(shop_on_shade(ours, 54.0))
-	var vs := label("vs", tint.darkened(0.25), 13)
-	vs.add_theme_font_override("font", bold)
-	vs.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	h.add_child(vs)
+	h.add_child(vs_badge(tint.darkened(0.3)))
 	# the chain's mascot roundel breaks the corner of its shop, so a red chain's front never reads as a second konbini of yours
 	var reg: Rect2 = theirs.texture.region
 	var wide := minf(96.0, 56.0 * reg.size.x / reg.size.y)
