@@ -216,11 +216,43 @@ func button(text: String, cb: Callable, tip := "") -> Button:
 
 
 ## A button filled in the given colour with white text, for the one action a modal leads to.
+## A trailing "  [Key]" becomes a cream keycap after the label, like the intro's key legend.
 func primary(b: Button, c := MINT) -> Button:
 	for k in ["normal", "hover", "pressed"]:
 		b.add_theme_stylebox_override(k, pill_box(c.lightened(0.12) if k == "hover" else c, 1 if k == "pressed" else 3, 1 if k == "pressed" else 2))
 	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
 		b.add_theme_color_override(k, Color.WHITE)
+	var at := b.text.rfind("  [")
+	if at < 0 or not b.text.ends_with("]"):
+		return b
+	var key := b.text.substr(at + 3, b.text.length() - at - 4)
+	var words := label(b.text.substr(0, at), Color.WHITE, 17)
+	words.add_theme_color_override("font_shadow_color", c.darkened(0.3))
+	words.add_theme_constant_override("shadow_offset_y", 2)
+	words.add_theme_constant_override("shadow_offset_x", 0)
+	var cap := PanelContainer.new()
+	var s := box(PAPER, 7, 0, 2)
+	s.border_color = c.darkened(0.3)
+	s.content_margin_left = 8
+	s.content_margin_right = 8
+	cap.add_theme_stylebox_override("panel", s)
+	var kl := label(key, c.darkened(0.4), 12)
+	kl.add_theme_font_override("font", bold)
+	cap.add_child(kl)
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	h.add_child(words)
+	h.add_child(cap)
+	var mid := CenterContainer.new()
+	mid.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	mid.offset_bottom = -2  # centred on the face, above the lip
+	mid.add_child(h)
+	for n in [mid, h, words, cap, kl]:
+		n.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.text = ""
+	b.custom_minimum_size = Vector2(maxf(b.custom_minimum_size.x, bold.get_string_size(words.text, 0, -1, 17).x + bold.get_string_size(key, 0, -1, 12).x + 66), 44)
+	b.add_child(mid)
 	return b
 
 
