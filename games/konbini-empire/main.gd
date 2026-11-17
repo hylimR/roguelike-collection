@@ -742,7 +742,16 @@ func build() -> void:
 	sv.add_child(rival_chip)
 	var rrow := HBoxContainer.new()
 	rrow.add_theme_constant_override("separation", 6)
-	rival_bar = progress(RED, 8)
+	rival_bar = progress(RED, 10)
+	rival_bar.add_theme_stylebox_override("background", box(Color(0.42, 0.3, 0.15, 0.3), 5, 0))
+	# the same gauge as the rival's plate over its roof: a gloss along the fill and a notch at each quarter
+	rival_bar.draw.connect(func():
+		var r := Rect2(Vector2.ZERO, rival_bar.size)
+		if rival_bar.value > 0.0:
+			var fw := maxf(r.size.y, r.size.x * float(rival_bar.value))
+			rival_bar.draw_style_box(box(Color(1, 1, 1, 0.35), 2, 0), Rect2(Vector2(4, 1.5), Vector2(fw - 8, 2.5)))
+		for q in [0.25, 0.5, 0.75]:
+			rival_bar.draw_rect(Rect2(Vector2(roundf(r.size.x * q) - 0.5, 1.5), Vector2(1, r.size.y - 3)), Color(0.3, 0.2, 0.1, 0.35)))
 	rival_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rival_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	rrow.add_child(rival_bar)
