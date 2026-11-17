@@ -89,7 +89,9 @@ var staff_btn: Button
 var grow_btn: Button
 var store_btn: Button
 var city_btn: Button
-var banner: Label
+var banner: PanelContainer
+var banner_text := ""
+var transport_icons: Array[ImageTexture] = []  # the pause button's pause and play glyphs
 var hud_rows: Array[Container] = []  # the HUD's rows over the view, whose chips the map's labels keep clear of
 var dev_js: JavaScriptObject  # keeps the web build's dev hook alive
 
@@ -562,7 +564,10 @@ func build() -> void:
 	clock_row.add_theme_constant_override("separation", 6)
 	clock_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(clock_row)
-	pause_btn = button("II", toggle_hold, "Pause  [Space]")
+	pause_btn = button("", toggle_hold, "Pause  [Space]")
+	transport_icons = [transport_glyph(false, INK), transport_glyph(true, INK)]
+	pause_btn.icon = transport_icons[0]
+	pause_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	speed_btn = button("1x", cycle_speed, "Game speed  [F]")
 	sound_btn = button("", cycle_sound, "Sound: on, music off, muted  [V]")
 	seed_btn = button("", show_new_run, "Start a new run (you can type a seed)")
@@ -572,9 +577,18 @@ func build() -> void:
 		b.custom_minimum_size = Vector2(40, 28)
 		clock_row.add_child(b)
 	cycle_sound(best.get_value("settings", "sound", 0))
-	banner = label("", PAPER, 15)
-	banner.add_theme_stylebox_override("normal", pill_box(INK, 0, 3))
+	banner = PanelContainer.new()
+	var plate := pill_box(INK, 0, 4)
+	plate.set_border_width_all(2)
+	plate.border_color = PAPER
+	plate.content_margin_left = 14
+	plate.content_margin_right = 14
+	plate.content_margin_top = 6
+	plate.content_margin_bottom = 6
+	banner.add_theme_stylebox_override("panel", plate)
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	banner.position.y = 48
+	banner.visible = false
 	add_child(banner)
 
 	var bottom := VBoxContainer.new()
@@ -1036,10 +1050,8 @@ func refresh_ui() -> void:
 	(bills_chip.get_theme_stylebox("panel") as StyleBoxFlat).bg_color = RED if short else PAPER
 	seed_btn.text = "Seed %s  ·  new run" % sim.seed_text
 	speed_btn.text = "%dx" % speed
-	pause_btn.text = ">" if held else "II"
-	banner.text = "Paused  [Space]" if held else ("Click a numbered lot  ·  Esc to go back" if view.pick == "listing" and view.mode == "city" else "")
-	banner.visible = banner.text != ""
-	banner.reset_size()
+	pause_btn.icon = transport_icons[1 if held else 0]
+	set_banner("paused" if held else ("listing" if view.pick == "listing" and view.mode == "city" else ""))
 	banner.position.x = (size.x - banner.size.x) / 2.0
 
 	if tabs.get_child_count() != sim.branches.size():
@@ -1137,6 +1149,69 @@ func refresh_ui() -> void:
 	store_btn.tooltip_text = "Open another branch: from %s  [N]" % yen(sim.store_cost())
 	staff_btn.disabled = sim.phase != "playing"
 	city_btn.text = "Shop" if view.mode == "city" else "City"
+
+
+## The banner over the view while paused or picking a lot: a dark plate ringed in cream on its own drop shadow, its
+## keys on cream caps like the intro's key legend, rebuilt only when what it says changes.
+func set_banner(what: String) -> void:
+	if what == banner_text:
+		return
+	banner_text = what
+	for c in banner.get_children():
+		c.queue_free()
+	banner.visible = what != ""
+	if what == "":
+		return
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 8)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var parts: Array = [label("Paused", PAPER, 16), "Space", label("to resume", LINE, 13)] if what == "paused" else \
+		[label("Click a numbered lot", PAPER, 16), label("·", LINE, 13), "Esc", label("to go back", LINE, 13)]
+	if what == "paused":
+		var g := TextureRect.new()
+		g.texture = transport_glyph(false, PAPER)
+		g.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+		parts.push_front(g)
+	for part in parts:
+		var c: Control = part if part is Control else null
+		if part is String:
+			c = PanelContainer.new()
+			var s := box(PAPER, 7, 0, 2)
+			s.border_color = LINE.darkened(0.3)
+			s.content_margin_left = 7
+			s.content_margin_right = 7
+			c.add_theme_stylebox_override("panel", s)
+			var kl := label(part, INK, 12)
+			kl.add_theme_font_override("font", bold)
+			c.add_child(kl)
+		c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		h.add_child(c)
+	banner.add_child(h)
+	banner.reset_size()
+
+
+## A 14 px pause (two rounded bars) or play (a triangle with softened corners) glyph in `c`, its edges smoothed by
+## coverage so it stays crisp on the round buttons.
+func transport_glyph(play: bool, c: Color) -> ImageTexture:
+	const N := 14
+	var img := Image.create(N, N, false, Image.FORMAT_RGBA8)
+	for y in N:
+		for x in N:
+			var cover := 0.0
+			for sy in 4:
+				for sx in 4:
+					var p := Vector2(x + (sx + 0.5) / 4.0, y + (sy + 0.5) / 4.0)
+					var inside := false
+					if play:  # pointing right, its corners eased 0.8 px in
+						inside = p.x > 3.0 and p.x < 12.2 and absf(p.y - 7.0) < (12.2 - p.x) * 0.62 and absf(p.y - 7.0) < 5.4
+					else:
+						for bx in [3.0, 8.0]:
+							var d := Vector2(maxf(absf(p.x - bx - 1.5) - 0.9, 0.0), maxf(absf(p.y - 7.0) - 4.4, 0.0))
+							inside = inside or d.length() < 0.7
+					cover += 1.0 / 16.0 if inside else 0.0
+			img.set_pixel(x, y, Color(c, cover))
+	return ImageTexture.create_from_image(img)
 
 
 func card_stat(k: String, value: String, color: Color) -> void:
