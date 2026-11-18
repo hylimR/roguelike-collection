@@ -73,6 +73,8 @@ var well_style: StyleBoxTexture
 var pick_badge: Label
 var info: RichTextLabel
 var info_lines: Array = []
+var info_face: TextureRect
+var face_cut := [[], 0.0]  # [lines, text width] the face was last dropped at, so the relayout that follows keeps it off
 var cap_tex := {}  # key -> a keycap drawn once in its own small viewport, inlined in the bubble's text
 var head: Label
 var kind_chip: PanelContainer
@@ -712,7 +714,8 @@ func build() -> void:
 	bh.add_theme_constant_override("separation", 8)
 	bh.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bubble.add_child(bh)
-	bh.add_child(picture("perks", 0, 80, Vector2(38, 38)))
+	info_face = picture("perks", 0, 80, Vector2(38, 38))
+	bh.add_child(info_face)
 	info = RichTextLabel.new()
 	info.scroll_active = false
 	info.tab_size = 2
@@ -971,13 +974,20 @@ func cycle_sound(m := -1) -> void:
 	best.save("user://best.cfg")
 
 
-## Fits the bubble's three lines: older toasts drop off first, then the type shrinks, so the newest line is never cut off.
+## Fits the bubble's three lines: older toasts drop off first, then the face beside them, then the type shrinks, so the
+## newest line is never cut off. The face shows or hides once layout is done (a box ignores a re-sort asked mid-sort),
+## and the text it resizes calls this again.
 func fit_info() -> void:
 	var lines := info_lines.slice(maxi(0, info_lines.size() - 3))
+	if not info_face.visible and (face_cut[0] != info_lines or absf(face_cut[1] - info.size.x) > 2.0):
+		info_face.set_deferred("visible", true)
 	show_info(lines, 11)
 	while lines.size() > 1 and info.get_line_count() > 3:
 		lines.pop_front()
 		show_info(lines, 11)
+	if info_face.visible and info.get_line_count() > 3:
+		face_cut = [info_lines, info.size.x + info_face.size.x + 8]
+		info_face.set_deferred("visible", false)
 	for px in [10, 9]:
 		if info.get_line_count() <= 3:
 			break
