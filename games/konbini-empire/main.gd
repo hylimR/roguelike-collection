@@ -1581,9 +1581,8 @@ func show_choice() -> void:
 	rr.disabled = spare < rc
 	row.add_child(keyed(rr))
 	if c.source == "listing":
-		var see := button("See on map", see_listings)
-		see.add_theme_font_size_override("font_size", 15)  # matches the keyed buttons beside it
-		row.add_child(see)
+		row.add_child(keyed(button("See on map  [M]", see_listings)))
+		keys[KEY_M] = see_listings
 	row.add_child(keyed(button("Later  [Esc]", later)))
 	v.add_child(row)
 	keys[KEY_R] = reroll
