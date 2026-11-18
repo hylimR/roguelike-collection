@@ -11346,10 +11346,28 @@ func draw_street() -> void:
 		if g.pts.size() > 1:
 			tos = g.pts.duplicate()  # each stem lands on its own piece of the heap
 		if g.top.distance_to(g.home) > 1.0 or tos.size() > 1:  # stems first, so no tag's stem crosses another; none to a threat hidden under the HUD
+			# each stem springs from the tag as drawn: the pip tray or timer bar under it where the stem drops through
+			# that, else the pill's own edge, its end tucked under the pill
+			var pw := font.get_string_size(g.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 14
+			var pr := Rect2(g.top.x - pw / 2, g.top.y - font.get_ascent(11) - 2, pw, font.get_ascent(11) + font.get_descent(11) + 4)
+			var ur := Rect2()
+			if g.t.max_clicks > 1:
+				ur = Rect2(g.top + Vector2(-g.t.max_clicks * 4.5 - 1.0, 4), Vector2(g.t.max_clicks * 9 + 2, 10))
+			elif g.t.type == "review":
+				ur = Rect2(g.top + Vector2(-16, 7), Vector2(32, 4))
 			for to in tos:
 				if over.any(func(o): return o.has_point(to)):
 					continue
-				var foot := Vector2(clampf(to.x, box.position.x + 8.0, box.end.x - 8.0), box.end.y if to.y > box.end.y else (box.position.y if to.y < box.position.y else box.get_center().y))
+				var fx := clampf(to.x, pr.position.x + pr.size.y / 2, pr.end.x - pr.size.y / 2)
+				var foot := Vector2(fx, pr.get_center().y)
+				if to.y > pr.end.y:
+					foot.y = pr.end.y - 3.0
+					if ur.has_area() and to.y > ur.end.y:
+						var ux := clampf(to.x, ur.position.x + 4.0, ur.end.x - 4.0)
+						if absf(ux - to.x) <= absf(fx - to.x) + 6.0:  # straight down through the tray or bar
+							foot = Vector2(ux, ur.end.y - 1.0)
+				elif to.y < pr.position.y:
+					foot.y = pr.position.y + 3.0
 				overlay.draw_line(foot + Vector2(1, 0), to + Vector2(1, 0), Color(0, 0, 0, 0.3), 2.5)
 				overlay.draw_line(foot, to, Color.WHITE, 1.5)
 				overlay.draw_circle(to, 3.0, Color.WHITE)
