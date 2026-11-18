@@ -3395,22 +3395,22 @@ func swell_depth() -> void:
 	swell_mat.set_shader_parameter("depth_rect", Vector4(r.position.x, r.position.y, r.size.x, r.size.y))
 
 
-## The sea's outline: the city's bay as the rules lay it out in town, and past the town both its shores and the open
-## sea's run south off the map wandering in coves and headlands, out to sea of the straight lines they're planned on
-## (never inland, where the fields and the coast road keep to those lines) and settling onto them over their last
-## 160 m toward the town. shore_line is the coast from the west shore round the bay and down the east one.
+## The sea's outline: the city's bay as the rules lay it out in town, and past the town both its shores (the east one
+## from where the town ends on the bay's head) and the open sea's run south off the map wandering in coves and
+## headlands, out to sea of the straight lines they're planned on (never inland, where the fields and the coast road
+## keep to those lines) and settling onto them over their last 160 m toward the town. shore_line is the coast from the west shore round the bay and down the east one.
 func plan_sea() -> void:
 	var w := PackedVector2Array([BAY_MOUTH[6], BAY_MOUTH[7], BAY_MOUTH[8], BAY_MOUTH[9], C.bay[0], C.bay[1]])
-	var e := PackedVector2Array([C.bay[-3], C.bay[-2], C.bay[-1], BAY_MOUTH[2], BAY_MOUTH[3], BAY_MOUTH[4], BAY_MOUTH[5]])
+	var e := PackedVector2Array([C.bay[-4], C.bay[-3], C.bay[-2], C.bay[-1], BAY_MOUTH[2], BAY_MOUTH[3], BAY_MOUTH[4], BAY_MOUTH[5]])
 	sea_plan = [C.bay, PackedVector2Array(BAY_MOUTH), [w, e]]
 	var west := wander(w, 0.0)
-	var east := wander(e, 2.1)
+	var east := wander(e, 2.1, 1)
 	sea_edge = west[0].slice(0, -1)
-	sea_edge.append_array(C.bay.slice(1, -2))
+	sea_edge.append_array(C.bay.slice(1, -3))
 	sea_edge.append_array(east[0].slice(1))
 	shore_line = west[0].slice(west[1][1])
-	shore_line.append_array(C.bay.slice(2, -3))
-	shore_line.append_array(east[0].slice(0, east[1][5] + 1))
+	shore_line.append_array(C.bay.slice(2, -4))
+	shore_line.append_array(east[0].slice(0, east[1][6] + 1))
 
 
 ## Whether q is in sea_edge, tested against the planned outlines first, which settle most points far quicker.
@@ -3443,8 +3443,9 @@ func shore_blocked(r: Rect2) -> bool:
 
 
 ## pts (running with the land on their left) cut every 12 m and pushed out to sea, up to 54 m, by a sum of waves along
-## them, along a normal averaged over 100 m so the corners round off, still at both ends; with where each of pts landed.
-func wander(pts: PackedVector2Array, phase: float) -> Array:
+## them (counted from pts[lead]), along a normal averaged over 100 m so the corners round off, still at both ends; with
+## where each of pts landed.
+func wander(pts: PackedVector2Array, phase: float, lead := 0) -> Array:
 	var out := PackedVector2Array()
 	var at: Array[int] = []
 	for i in pts.size() - 1:
@@ -3459,11 +3460,24 @@ func wander(pts: PackedVector2Array, phase: float) -> Array:
 		cum.append(cum[i - 1] + out[i].distance_to(out[i - 1]))
 	var total := cum[-1]
 	var moved := out.duplicate()
+	var land := PackedVector2Array()
 	for i in out.size():
 		var t := (out[mini(i + 4, out.size() - 1)] - out[maxi(i - 4, 0)]).normalized()
-		var s := cum[i]
+		var s := cum[i] - cum[at[lead]]
 		var d := maxf(0.0, 22.0 + 18.0 * sin(s / 167.0 + phase) + 10.0 * sin(s / 61.0 + 2.3 + phase) + 4.0 * sin(s / 23.0 + 0.7))
-		moved[i] = out[i] - Vector2(t.y, -t.x) * d * smoothstep(0.0, 160.0, s) * smoothstep(0.0, 160.0, total - s)
+		land.append(Vector2(t.y, -t.x))
+		moved[i] = out[i] - land[i] * d * smoothstep(0.0, 160.0, cum[i]) * smoothstep(0.0, 160.0, total - cum[i])
+	# a planned corner turning away from the land leaves its point pushed out less than its neighbours, a notch of water
+	# biting into the beach: ease every sharp bend out to sea until the shore turns no more than 11 degrees a step
+	for pass_ in 80:
+		var eased := false
+		for i in range(1, moved.size() - 1):
+			var mid := (moved[i - 1] + moved[i + 1]) * 0.5
+			if absf((moved[i] - moved[i - 1]).angle_to(moved[i + 1] - moved[i])) > 0.2 and (mid - moved[i]).dot(land[i]) < 0.0:
+				moved[i] = mid
+				eased = true
+		if not eased:
+			break
 	return [moved, at]
 
 
