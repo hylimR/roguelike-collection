@@ -7195,7 +7195,6 @@ func garbage_station(gs: Vector3) -> void:
 			box_into(st, gs + Vector3(x * h.x - 0.02, y - 0.02, -h.z), gs + Vector3(x * h.x + 0.02, y + 0.02, h.z), frame)
 	for z in [-1, 1]:
 		box_into(st, gs + Vector3(-h.x, 0.86, z * h.z - 0.02), gs + Vector3(h.x, 0.9, z * h.z + 0.02), frame)
-	# the bags heaped inside, each a lumpy sack with its neck tied off
 	# the bags heaped inside, each a lumpy sack bellied over its shaded foot with its neck tied off in two ears; one
 	# half-full bag slumped on the heap, the yellow one printed with the ward's mark
 	for bag in [[Vector3(-0.12, 0, -0.45), 0.5, Color("e9edf0")], [Vector3(0.13, 0, -0.38), 0.42, Color("d6e4ec")],
@@ -7204,15 +7203,9 @@ func garbage_station(gs: Vector3) -> void:
 		var bc: Vector3 = gs + bag[0] + Vector3(0, 0.07, 0)
 		var r: float = bag[1] / 2
 		var bcol: Color = bag[2]
-		box_into(st, bc + Vector3(-r * 0.85, 0, -r * 0.85), bc + Vector3(r * 0.85, r * 0.3, r * 0.85), bcol.darkened(0.1))
-		box_into(st, bc + Vector3(-r, r * 0.3, -r), bc + Vector3(r, r * 1.2, r), bcol)
-		box_into(st, bc + Vector3(-r * 0.75, r * 1.2, -r * 0.75), bc + Vector3(r * 0.75, r * 1.55, r * 0.75), bcol.lightened(0.06))
-		box_into(st, bc + Vector3(-r * 0.4, r * 1.55, -r * 0.4), bc + Vector3(r * 0.4, r * 1.7, r * 0.4), bcol.darkened(0.04))
-		box_into(st, bc + Vector3(-0.03, r * 1.7, -0.03), bc + Vector3(0.03, r * 1.7 + 0.06, 0.03), bcol.darkened(0.2))
-		for e in [-1, 1]:
-			box_into(st, bc + Vector3(e * 0.03 - 0.02, r * 1.7 + 0.04, -0.015), bc + Vector3(e * 0.07 + 0.02, r * 1.7 + 0.09, 0.015), bcol.darkened(0.12))
+		sack_into(st, bc, r, bcol, int(bag[0].x * 100 + bag[0].z * 37))
 		if bcol == Color("efe3b4"):
-			box_into(st, bc + Vector3(-r * 0.45, r * 0.6, r + 0.002), bc + Vector3(r * 0.45, r * 0.95, r + 0.006), Color("3f6fb8"))
+			box_into(st, bc + Vector3(-r * 0.4, r * 0.32, r * 0.86), bc + Vector3(r * 0.1, r * 0.58, r * 0.9), Color("3f6fb8"))
 	# the lid: a lipped steel frame netted over, the bags showing through it, hinged along the back on two knuckles,
 	# braced across its middle, with a grab bar on the sidewalk end
 	var lid := Color("4f8a5c")
@@ -10546,25 +10539,11 @@ func trash_bag(mi: MeshInstance3D, spot: int) -> void:
 		var bc: Vector3 = bag[0]
 		var r: float = bag[1]
 		var c: Color = bag[2]
-		# a sack in octagonal tiers on a rounded profile, bellied low and gathered up to the neck
-		for k in 7:
-			var y0 := r * 1.5 * k / 7.0
-			var y1 := r * 1.5 * (k + 1) / 7.0
-			var w := r * sqrt(maxf(0.08, 1.0 - pow((k + 0.5) / 7.0 * 2.0 - 0.75, 2) / 1.6))
-			var tc := c.darkened(0.18 * (1.0 - k / 6.0)).lightened(0.06 * k / 6.0)
-			box_into(st, bc + Vector3(-w, y0, -w * 0.62), bc + Vector3(w, y1, w * 0.62), tc)
-			box_into(st, bc + Vector3(-w * 0.62, y0, -w), bc + Vector3(w * 0.62, y1, w), tc)
-		# the rubbish showing through the film on the street faces, and the film's sheen down the sun side
-		for k in 3:
-			var at := bc + Vector3(-r * 0.4 + k * r * 0.4, r * (0.4 + 0.25 * (k % 2)), r * 0.95 + 0.004)
-			box_into(st, at + Vector3(-r * 0.16, -r * 0.1, 0), at + Vector3(r * 0.16, r * 0.1, 0.004), [Color("c9a46a"), Color("d98c7a"), Color("9fb4c2")][k].lerp(c, 0.55))
-		box_into(st, bc + Vector3(r * 0.95 + 0.002, r * 0.45, -r * 0.5), bc + Vector3(r * 0.95 + 0.006, r * 0.95, r * 0.05), c.lerp(Color.WHITE, 0.65))
-		box_into(st, bc + Vector3(-r * 0.5, r * 0.5, r * 0.95 + 0.006), bc + Vector3(-r * 0.36, r * 1.0, r * 0.95 + 0.01), c.lerp(Color.WHITE, 0.65))
-		box_into(st, bc + Vector3(-0.03, r * 1.5, -0.03), bc + Vector3(0.03, r * 1.5 + 0.06, 0.03), c.darkened(0.25))
-		for e in [-1, 1]:
-			box_into(st, bc + Vector3(e * 0.03 - 0.02, r * 1.5 + 0.04, -0.015), bc + Vector3(e * 0.08 + 0.02, r * 1.5 + 0.1, 0.015), c.darkened(0.14))
-		if c == Color("e8d58e"):  # the ward's printed mark on a burnables bag
-			box_into(st, bc + Vector3(-r * 0.4, r * 0.5, r * 0.95 + 0.01), bc + Vector3(r * 0.1, r * 0.85, r * 0.95 + 0.014), Color("3f6fb8"))
+		# the rubbish pressing through the film on the street faces, or the ward's mark printed on a burnables bag
+		var junk := [[PI * 0.35, 0.3, Color("c9a46a")], [PI * 0.65, 0.42, Color("d98c7a")], [PI * 0.1, 0.5, Color("9fb4c2")]]
+		if c == Color("e8d58e"):
+			junk = [[PI * 0.3, 0.32, Color("1f4fa8")], [PI * 0.05, 0.5, Color("c9a46a")]]
+		sack_into(st, bc, r, c, int(r * 100) + spot, junk)
 	if spot % 3 == 1:  # litter spilled out round it: a crushed can, a cup on its side and a scrap of paper
 		box_into(st, Vector3(0.36, 0, 0.12), Vector3(0.48, 0.06, 0.18), Color("c8463c"))
 		box_into(st, Vector3(0.36, 0.055, 0.12), Vector3(0.48, 0.065, 0.18), Color("c9ccd0"))
@@ -10577,6 +10556,60 @@ func trash_bag(mi: MeshInstance3D, spot: int) -> void:
 	var sh := foot(0.9)  # a walker's shadow fits a sack's: a contact patch and its cast away from the sun
 	sh.position.y = 0.04
 	mi.add_child(sh)
+
+
+## A tied bin bag standing on `base` into a vertex-coloured surface, its belly r across: a lumpy translucent sack slumped
+## wide and low and gathered up in soft folds to a twisted neck tied off in two ears, shaded round like pipe_into with
+## the film's sheen toward the sun and its foot darkened, and the rubbish pressing through as dull patches of `junk`.
+func sack_into(st: SurfaceTool, base: Vector3, r: float, col: Color, seed_: int, junk: Array = []) -> void:
+	const SEGS := 16
+	const PROFILE := [[0.0, 0.7], [0.06, 0.92], [0.18, 1.04], [0.34, 1.03], [0.5, 0.92], [0.64, 0.74], [0.76, 0.5], [0.86, 0.28], [0.93, 0.15], [1.0, 0.1]]
+	var h := r * 1.4
+	var sun := Vector3(-0.35, 1.0, 0.35).normalized()
+	var s := float(seed_) * 1.37
+	var pts := []
+	for j in PROFILE.size():
+		var t: float = PROFILE[j][0]
+		var row := []
+		for i in SEGS:
+			var a := TAU * i / SEGS
+			var lump := 1.0 + (0.08 * sin(3.0 * a + j * 1.7 + s) + 0.05 * sin(5.0 * a - j * 2.3 + s * 2.0)) * (1.0 - t * 0.8)
+			var k: float = PROFILE[j][1] * r * lump
+			row.append(base + Vector3(cos(a) * k, t * h * (1.0 + 0.06 * sin(2.0 * a + s) * t), sin(a) * k * 0.86))
+		pts.append(row)
+	var tone := func(j: int, i: int) -> Color:
+		var row: Array = pts[j]
+		var across: Vector3 = row[(i + 1) % SEGS] - row[(i + SEGS - 1) % SEGS]
+		var up: Vector3 = pts[mini(j + 1, pts.size() - 1)][i] - pts[maxi(j - 1, 0)][i]
+		var n := up.cross(across).normalized()
+		var t: float = PROFILE[j][0]
+		var a := TAU * i / SEGS
+		var side := 0.825 + 0.075 * clampf((n.z - n.x) / 0.7, -1.0, 1.0)
+		var v := lerpf(side, 1.0, n.y) if n.y > 0.0 else lerpf(side, 0.62, -n.y)
+		v *= 1.0 - 0.1 * maxf(0.0, sin(a * 6.0 + s)) * smoothstep(0.35, 0.85, t)  # folds gathered to the neck
+		v *= lerpf(0.82, 1.0, smoothstep(0.0, 0.25, t))
+		var c := col
+		for p: Array in junk:  # [angle, height 0-1, colour]
+			var d := Vector2(wrapf(a - p[0], -PI, PI) * 1.3, (t - p[1]) * 4.0).length()
+			c = c.lerp(p[2], 0.5 * (1.0 - smoothstep(0.35, 0.9, d)))
+		c = Color(c.r * v, c.g * v, c.b * v)
+		return c.lerp(Color.WHITE, 0.45 * pow(maxf(n.dot(sun), 0.0), 12.0))
+	for j in pts.size() - 1:
+		for i in SEGS:
+			var q := [[j, i], [j + 1, i], [j + 1, (i + 1) % SEGS], [j, (i + 1) % SEGS]]
+			for e in [q[0], q[2], q[1], q[0], q[3], q[2]]:
+				st.set_color(tone.call(e[0], e[1]))
+				st.set_uv(Vector2.ZERO)
+				st.add_vertex(pts[e[0]][e[1]])
+	var top := base + Vector3(0, h, 0)
+	st.set_color(col.darkened(0.12))
+	for i in SEGS:
+		for p in [top, pts[-1][(i + 1) % SEGS], pts[-1][i]]:
+			st.set_uv(Vector2.ZERO)
+			st.add_vertex(p)
+	pipe_into(st, top - Vector3(0, 0.01, 0), top + Vector3(0, 0.05, 0), r * 0.12, col.darkened(0.2), 6)
+	for e in [-1.0, 1.0]:
+		pipe_into(st, top + Vector3(0, 0.04, 0), top + Vector3(e * r * 0.45, 0.06 + r * 0.3, e * r * 0.12), r * 0.1, col.darkened(0.1), 6)
 
 
 ## A spill on your shop's floor: a wet patch the tiles show through, edged by a darker meniscus with its lip catching

@@ -5,7 +5,7 @@ Run konbini across Tokyo in real time, each one in a street fight with the rival
 The rival fights back. It warns a few seconds ahead, then launches an attack:
 
 - a flyer promoter in a happi coat in the chain's colors, or a parade by its costume mascot (Tanuki Mart's tanuki, Usagi Express's rabbit, Kitsune 24's fox, Oni Discount's ogre, MEGAMART's robot), that poaches your customers;
-- trash bags dumped at your door, tied-off sacks of rubbish showing through their film with litter strewn round them;
+- trash bags dumped at your door, round lumpy sacks slumped on the paving and gathered in soft folds to a tied neck, the rubbish dulling their film in patches, with litter strewn round them;
 - a price war, which stands red and yellow SALE banners along the rival's front, its lit glass shining through their cloth after dark so they keep their colours (as your own Time Sale nobori do), and puts SALE posters on its glass;
 - fake reviews, typed on the sidewalk at your door;
 - shoplifters in a hood and mask;
