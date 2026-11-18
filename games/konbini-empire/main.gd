@@ -2640,14 +2640,15 @@ func show_over() -> void:
 	h.add_child(meta)
 	var again := func(): new_run(sim.seed_text)
 	var fresh := func(): new_run("")
-	var retry := button("Retry seed", again)
+	var retry := button("Retry seed  [R]", again)
 	retry.custom_minimum_size.x = 150
+	keyed(retry).custom_minimum_size.y = 44  # level with New run beside it
 	h.add_child(retry)
 	var on := primary(button("New run  [Space]", fresh))
 	on.custom_minimum_size.x = 300
 	h.add_child(on)
 	v.add_child(h)
-	open_modal("Bankrupt", v, {KEY_SPACE: fresh, KEY_ENTER: fresh}, "over", RED)
+	open_modal("Bankrupt", v, {KEY_SPACE: fresh, KEY_ENTER: fresh, KEY_R: again}, "over", RED)
 
 
 ## The mascot of the chain you were last up against, in its roundel, so it never reads as one of your own shops.
