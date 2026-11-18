@@ -65,6 +65,7 @@ var bills_chip: PanelContainer
 var speed_btn: Button
 var pause_btn: Button
 var seed_btn: Button
+var seed_code: Label  # the seed on its sunken tag in the seed button
 var tabs: HBoxContainer
 var ability_row: HBoxContainer
 var pick_btn: Button
@@ -281,6 +282,34 @@ func key_face(b: Button, color: Color, px: int, cap_box: StyleBox, key_color: Co
 	b.custom_minimum_size = Vector2(maxf(b.custom_minimum_size.x, bold.get_string_size(words.text, 0, -1, px).x + bold.get_string_size(key, 0, -1, 12).x + 66), h)
 	b.add_child(mid)
 	return words
+
+
+## The seed button's face: a small SEED over to the left of the seed in bold ink on a sunken tag, then New run in teal.
+func seed_face(b: Button) -> void:
+	var cap := label("SEED", MUTED, 10)
+	seed_code = label("", INK, 13)
+	seed_code.add_theme_font_override("font", bold)
+	var tag := PanelContainer.new()
+	var ts := box(GROUND.darkened(0.04), 7, 0)
+	ts.border_width_top = 1  # sunk under its top edge
+	ts.border_color = LINE.darkened(0.12)
+	ts.content_margin_left = 7
+	ts.content_margin_right = 7
+	tag.add_theme_stylebox_override("panel", ts)
+	tag.add_child(seed_code)
+	var go := label("New run", BLUE, 11)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 6)
+	for c in [cap, tag, go]:
+		c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		hb.add_child(c)
+	var mid := CenterContainer.new()
+	mid.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	mid.offset_bottom = -2  # centred on the face, above the lip
+	mid.add_child(hb)
+	for n in [mid, hb, cap, tag, seed_code, go]:
+		n.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(mid)
 
 
 func progress(color: Color, h := 8) -> ProgressBar:
@@ -599,8 +628,7 @@ func build() -> void:
 	sound_icons = [sound_glyph(0, INK), sound_glyph(1, INK), sound_glyph(2, INK)]
 	sound_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	seed_btn = button("", show_new_run, "Start a new run (you can type a seed)")
-	seed_btn.add_theme_font_size_override("font_size", 11)
-	seed_btn.add_theme_color_override("font_color", MUTED)
+	seed_face(seed_btn)
 	for b in [pause_btn, speed_btn, sound_btn, seed_btn]:
 		b.custom_minimum_size = Vector2(40, 28)
 		clock_row.add_child(b)
@@ -1113,7 +1141,9 @@ func refresh_ui() -> void:
 	lbl_bills.text = "Bills tonight %s" % yen(bills)
 	lbl_bills.add_theme_color_override("font_color", Color.WHITE if short else INK)
 	(bills_chip.get_theme_stylebox("panel") as StyleBoxFlat).bg_color = RED if short else PAPER
-	seed_btn.text = "Seed %s  ·  new run" % sim.seed_text
+	if seed_code.text != sim.seed_text:
+		seed_code.text = sim.seed_text
+		seed_btn.custom_minimum_size.x = bold.get_string_size(sim.seed_text, 0, -1, 13).x + 136
 	speed_btn.text = "%dx" % speed
 	pause_btn.icon = transport_icons[1 if held else 0]
 	set_banner("paused" if held else ("listing" if view.pick == "listing" and view.mode == "city" else ""))
