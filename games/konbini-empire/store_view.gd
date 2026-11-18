@@ -7455,9 +7455,10 @@ func a_board(at: Vector2, turn: float) -> void:
 	commit([fs, st], set_node)
 
 
-## The car park's furniture in one surface: wheel stops banded in yellow, and a low planter along the back below the
-## till's sight line, a coped concrete trough holding a clipped hedge of lumpy shrubs with a few azaleas in flower,
-## their foliage leafed in leaf_tex and each lump bellying out over a shaded waist.
+## The car park's furniture in one surface: wheel stops banded in yellow, a low planter along the back below the
+## till's sight line and a square one guarding the front corner by the pole sign, each a coped concrete trough holding a
+## clipped hedge of lumpy shrubs with a few azaleas in flower, their foliage leafed in leaf_tex and each lump bellying
+## out over a shaded waist.
 func car_park_kit() -> void:
 	var kit := mat(Color.WHITE)
 	kit.vertex_color_use_as_albedo = true
@@ -7467,41 +7468,48 @@ func car_park_kit() -> void:
 		box_into(st, Vector3(cx - 0.75, -0.04, -15.4), Vector3(cx + 0.75, 0.08, -15.2), Color("d8d2c4"))
 		for bx in [-0.42, 0.42]:
 			box_into(st, Vector3(cx + bx - 0.1, -0.04, -15.41), Vector3(cx + bx + 0.1, 0.085, -15.19), Color("e2b23a"))
-	var p0 := Vector3(-3.2, -0.04, -16.8)
-	var p1 := Vector3(2.0, 0.26, -16.3)
-	box_into(st, p0, p1, Color("b3ad9f"))
-	box_into(st, p0 - Vector3(0.01, 0, 0.01), Vector3(p1.x + 0.01, 0.03, p1.z + 0.01), Color("8c877c"))  # grime at its foot
-	box_into(st, Vector3(p0.x - 0.04, 0.26, p0.z - 0.04), Vector3(p1.x + 0.04, 0.31, p1.z + 0.04), Color("d6d0c3"))
-	box_into(st, Vector3(p0.x + 0.06, 0.31, p0.z + 0.06), Vector3(p1.x - 0.06, 0.315, p1.z - 0.06), Color("5a4636"))
 	var r := RandomNumberGenerator.new()
 	r.seed = 31
 	var fm := mat(Color.WHITE, leaf_tex())
 	fm.vertex_color_use_as_albedo = true
 	fm.vertex_color_is_srgb = true
 	var fol := surface(fm)
+	planter_into(st, fol, Vector3(-3.2, -0.04, -16.8), Vector3(2.0, 0.26, -16.3), r)
+	planter_into(st, fol, Vector3(2.86, -0.04, -15.58), Vector3(3.5, 0.3, -14.94), r)
+	commit([st, fol], set_node)
+	blob(set_node, Vector2(3.18, -15.26), 0.42)
+	cast(set_node, Vector2(3.18, -15.26), 0.0, 0.62, 0.62, true)
+
+
+## A coped concrete trough from p0 to p1 (its rim at p1.y), grimed at its foot, holding a clipped hedge along x.
+func planter_into(st: SurfaceTool, fol: SurfaceTool, p0: Vector3, p1: Vector3, r: RandomNumberGenerator) -> void:
+	box_into(st, p0, p1, Color("b3ad9f"))
+	box_into(st, p0 - Vector3(0.01, 0, 0.01), Vector3(p1.x + 0.01, 0.03, p1.z + 0.01), Color("8c877c"))  # grime at its foot
+	box_into(st, Vector3(p0.x - 0.04, p1.y, p0.z - 0.04), Vector3(p1.x + 0.04, p1.y + 0.05, p1.z + 0.04), Color("d6d0c3"))
+	box_into(st, Vector3(p0.x + 0.06, p1.y + 0.05, p0.z + 0.06), Vector3(p1.x - 0.06, p1.y + 0.055, p1.z - 0.06), Color("5a4636"))
+	var y := p1.y - 0.26  # the hedge's heights over the long trough's rim
 	var leaf := Color("5f9e50")  # the leaf texture averages about 0.8, so this lands on the old 4f8a43
-	box_into(fol, Vector3(p0.x + 0.08, 0.31, p0.z + 0.08), Vector3(p1.x - 0.08, 0.42, p1.z - 0.08), leaf.darkened(0.22), 3.0)
+	box_into(fol, Vector3(p0.x + 0.08, y + 0.31, p0.z + 0.08), Vector3(p1.x - 0.08, y + 0.42, p1.z - 0.08), leaf.darkened(0.22), 3.0)
 	var x := p0.x + 0.08
 	while x < p1.x - 0.12:  # the clipped top rises and dips in soft lumps, each lit a shade on its crown
 		var x1 := minf(x + r.randf_range(0.3, 0.42), p1.x - 0.08)
-		var top := r.randf_range(0.49, 0.58)
+		var top := y + r.randf_range(0.49, 0.58)
 		var g: Color = leaf.lightened(r.randf_range(-0.06, 0.08))
 		var z0 := p0.z + r.randf_range(0.06, 0.1)
 		var z1 := p1.z - r.randf_range(0.06, 0.1)
 		var ix := (x1 - x) * 0.18
-		box_into(fol, Vector3(x + 0.03, 0.36, z0 + 0.03), Vector3(x1 - 0.03, 0.44, z1 - 0.03), g.darkened(0.14), 3.0)
-		box_into(fol, Vector3(x, 0.44, z0), Vector3(x1, top - 0.03, z1), g, 3.0)
+		box_into(fol, Vector3(x + 0.03, y + 0.36, z0 + 0.03), Vector3(x1 - 0.03, y + 0.44, z1 - 0.03), g.darkened(0.14), 3.0)
+		box_into(fol, Vector3(x, y + 0.44, z0), Vector3(x1, top - 0.03, z1), g, 3.0)
 		box_into(fol, Vector3(x + ix * 0.5, top - 0.03, z0 + 0.025), Vector3(x1 - ix * 0.5, top, z1 - 0.025), g.lightened(0.08), 3.0)
 		box_into(fol, Vector3(x + ix, top, z0 + 0.06), Vector3(x1 - ix, top + 0.025, z1 - 0.06), g.lightened(0.2), 3.0)
 		if r.randf() < 0.45:  # an azalea in flower poking through the clipped face
 			var fx := r.randf_range(x + 0.04, x1 - 0.1)
-			var fy := r.randf_range(0.36, top - 0.06)
+			var fy := r.randf_range(y + 0.36, top - 0.06)
 			var fz := maxf(z1, p1.z - 0.08)
 			box_into(st, Vector3(fx, fy, fz), Vector3(fx + 0.06, fy + 0.05, fz + 0.03), Color("e86a9a") if r.randf() < 0.6 else Color("f4f0ec"))
 		if x1 >= p1.x - 0.08:
 			break
 		x = x1 - r.randf_range(0.08, 0.14)
-	commit([st, fol], set_node)
 
 
 ## Clipped foliage in grey: leaf tips lit on top over a darker underside, dark gaps between, around 0.8 on average.
@@ -8058,7 +8066,7 @@ func build_set() -> void:
 	var props_at := [[6, Vector2(-22.0, -4.3)], [6, Vector2(-38.0, -4.3)], [6, Vector2(9.0, -4.3)], [6, Vector2(34.0, -4.3)],
 		[1, Vector2(-30.0, 6.0)], [2, Vector2(-14.0, 6.0)], [1, Vector2(12.0, 6.0)], [0, Vector2(26.0, 6.0)], [1, Vector2(42.0, 6.0)],
 		[6, Vector2(-6.0, 4.3)], [6, Vector2(20.0, 4.3)], [7, Vector2(-1.6, -4.6)], [10, Vector2(-22.6, -6.6)],
-		[8, Vector2(-2.75, -12.3)], [8, Vector2(-2.75, -13.5)], [4, Vector2(3.3, -15.2)]]
+		[8, Vector2(-2.75, -12.3)], [8, Vector2(-2.75, -13.5)]]
 	if b.quirk == "busStop":
 		props_at.append([11, Vector2(-24.5, -4.4)])
 	wall_bikes = Node3D.new()
