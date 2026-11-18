@@ -31,7 +31,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
 	"floor": ["drawn", "wall_through"], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
 	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["perks", 7],
-	"r_franchise": ["perks", 8], "r_warchest": ["perks", 11], "r_killer": ["decor", 5], "r_express": ["perks", 10], "r_scholar": ["decor", 8],
+	"r_franchise": ["drawn", "fame_sign"], "r_warchest": ["perks", 11], "r_killer": ["decor", 5], "r_express": ["perks", 10], "r_scholar": ["decor", 8],
 	"r_hq": ["walk", 13], "r_logistics": ["perks", 7], "r_brand": ["perks", 1], "r_academy": ["walk", 10],
 }
 const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
@@ -2203,6 +2203,57 @@ func lease_deal() -> ImageTexture:
 					c = Color("4a5f9e") if (p - nib).dot(across) < 0 else Color("2b3a67")
 				if u > reach - 7.0 and u < reach - 1.5 and (p - nib).dot(across) > 0.7:
 					c = Color("e8b33a")  # the clip
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Franchise Fame's picture, in the sprites' chunky pixels: your shop's pole sign lit up, its orange ring logo and 24 in
+## green over the chain's orange and green bands, crowned by three gold stars and glinting.
+func fame_sign() -> ImageTexture:
+	var n := 40
+	var digits := {"2": ["###", "..#", "###", "#..", "###"], "4": ["#.#", "#.#", "###", "..#", "..#"]}
+	var orange := Color("f08a24")
+	var green := Color("2f9e5a")
+	var line := Color("3a2f28")
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var c := Color(0, 0, 0, 0)
+			if absf(p.x - 20.0) < 2.0 and p.y > 29.0 and p.y < 37.0:
+				c = line if absf(p.x - 20.0) > 1.2 else (Color("b9bec4") if p.x < 20.0 else Color("8d939a"))  # the pole
+				if absf(p.x - 20.0) <= 1.2 and y >= 33:
+					c = (Color("e3c34a") if y % 2 == 1 else Color("3b3c40")).darkened(0.0 if p.x < 20.0 else 0.2)  # its hazard sleeve
+			if absf(p.x - 20.0) < 4.5 and p.y >= 36.0 and p.y < 39.0:
+				c = line if absf(p.x - 20.0) > 3.7 or p.y > 38.0 else Color("c3beb4")  # its footing
+			var bd := minf(minf(p.x - 3.0, 37.0 - p.x), minf(p.y - 11.0, 30.0 - p.y))  # >0 on the lightbox
+			if bd > 0:
+				c = line if bd < 1.0 else (Color("aeb3b9") if bd < 2.0 else Color("fffdf6"))
+				if bd >= 2.0:
+					if y >= 24 and y <= 25:
+						c = orange
+					elif y >= 26:
+						c = green
+					var r := p.distance_to(Vector2(11.0, 18.0))
+					if r < 5.3:
+						c = orange if r > 3.2 else (green if r < 2.2 else c)
+					for k in 2:
+						var gx := (x - (19 + k * 8)) / 2
+						var gy := (y - 13) / 2
+						if x >= 19 + k * 8 and gx < 3 and y >= 13 and gy < 5 and digits["24"[k]][gy][gx] == "#":
+							c = green
+			for st in [[Vector2(9.0, 6.2), 4.7], [Vector2(20.0, 5.3), 5.6], [Vector2(31.0, 6.2), 4.7]]:  # the stars
+				var q: Vector2 = p - st[0]
+				var f := absf(wrapf(atan2(q.y, q.x) + PI / 2.0, -PI / 5.0, PI / 5.0)) / (PI / 5.0)
+				var d: float = lerpf(st[1], st[1] * 0.45, f) - q.length()
+				if d > 0:
+					c = line if d < 1.0 else (Color("ffe08a") if q.x + q.y * 1.3 < 0.0 else Color("e2a62e"))
+			for g in [Vector2(2.5, 2.5), Vector2(37.5, 17.5)]:  # glints off the sign
+				var q: Vector2 = (p - g).abs()
+				if q.x < 0.6 and q.y < 2.6 or q.y < 0.6 and q.x < 2.6:
+					c = Color("fff6d6") if q.x + q.y < 1.0 else Color("ffd56a")
 			img.set_pixel(x, y, c)
 	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
 	img.generate_mipmaps()
