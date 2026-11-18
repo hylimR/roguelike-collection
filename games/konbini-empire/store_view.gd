@@ -2561,10 +2561,10 @@ func leafy_ground() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-## A utility cut's reinstatement over the tarmac pixel at q (col, the street there with its grain): fresher, blacker
-## binder with fewer pale stones that keeps a trace of the street's wear and grime under it, sealed at its sawn edge
-## by overbanding that wanders 1-3 px wide (a few cm), glossy along the lip facing the sun. age greys an older patch, and its
-## seal, toward the street round it.
+## A utility cut's reinstatement over the tarmac pixel at q (col, the street there with its grain): laid flush, a
+## shade darker and cooler than the street with a trace of its wear and grime, its fresh chippings rolled in as pale
+## specks, sealed at its sawn edge by overbanding that wanders 1-3 px wide (a few cm), dark and flecked with gloss
+## all round, so it reads as a level repair rather than a pit. age greys an older patch, and its seal, toward the street.
 static func patched(col: Color, q: Vector2, p: Rect2, age: float, r: RandomNumberGenerator) -> Color:
 	var e := minf(minf(q.x - p.position.x, p.end.x - q.x), minf(q.y - p.position.y, p.end.y - q.y))
 	var along := q.x + q.y
@@ -2572,19 +2572,18 @@ static func patched(col: Color, q: Vector2, p: Rect2, age: float, r: RandomNumbe
 	if e < -w:
 		return col
 	if e < w:
-		var seal := Color("20232b").lerp(col, 0.2 + 0.45 * age) * r.randf_range(0.97, 1.03)
-		var sunward := q.x - p.position.x < w or p.end.y - q.y < w
-		if sunward and e < 0.0:
-			seal = seal.lerp(Color("7d8599"), r.randf_range(0.3, 0.5) * (1.0 - age))
+		var seal := col.darkened(0.3 - 0.12 * age).lerp(Color("2a2e38"), 0.25 * (1.0 - age))
+		if r.randf() < 0.18 * (1.0 - age):
+			seal = seal.lerp(Color("8e97ab"), r.randf_range(0.25, 0.4))
 		return seal
-	var fresh := ASPHALT.darkened(0.24).lerp(Color(0.2, 0.22, 0.27), 0.15)
-	var v := r.randf_range(0.97, 1.02)
+	var fresh := col.darkened(0.12).lerp(Color("3e4452"), 0.2)
+	var v := r.randf_range(0.97, 1.03)
 	var g := r.randf()
-	if g > 0.965:
-		v = r.randf_range(1.06, 1.1)
-	elif g < 0.02:
+	if g > 0.93:
+		v = r.randf_range(1.1, 1.18)
+	elif g < 0.03:
 		v = 0.88
-	var c := fresh.lerp(col, 0.12 + 0.6 * age)
+	var c := fresh.lerp(col, 0.15 + 0.6 * age)
 	return Color(c.r * v, c.g * v, c.b * v)
 
 
