@@ -53,6 +53,8 @@ const WALK_NEAR := 1.2  # customers' sidewalk line in front of the shop
 const MAX_WALKERS := 70
 const MAX_CARS := 70
 const SET := Rect2(-52, -32, 104, 52)  # the street set round your shop, in the street frame
+const STREET_LAMPS := [Vector2(-22.0, -4.3), Vector2(-38.0, -4.3), Vector2(9.0, -4.3), Vector2(34.0, -4.3), Vector2(-6.0, 4.3), Vector2(20.0, 4.3)]
+const POLE_X := [-42.0, -19.0, 12.0, 36.0]  # utility poles along the near sidewalk, at z = 6.85
 # art/walk.png rows past the seven customers: staff and threats, then a flyer girl and a mascot per rival chain in
 # Sim.RIVALS order
 const WALK_ROW := {"cashier": 7, "guard": 8, "cleaner": 9, "promoter": 10, "stocker": 11, "shoplifter": 12, "suit": 13, "review": 14, "flyer": 15, "mascot": 21}
@@ -6377,27 +6379,41 @@ func noren(node: Node3D, at: Vector3, w: float) -> void:
 ## Roadworks: a stretch of the near kerb lane fenced off with striped barricades, cones on a striped bar, steel plates
 ## over a trench, and an arrow board turning traffic out; their red lamps and the arrow flash after dark. Where wide
 ## mouths leave no clear kerb near the middle of the view, they take the far kerb lane by your shop instead, turned
-## half round to face that lane's traffic. Built hidden.
+## half round to face that lane's traffic. On the near kerb they slide along until no lamp or pole on the sidewalk in
+## front stands across the trench and its spoil heap. Built hidden.
 func roadworks(near_gaps: Array, far_gaps: Array) -> Node3D:
 	var node := Node3D.new()
 	node.visible = false
 	set_node.add_child(node)
 	const L := 7.6
-	var pick := func(gaps: Array, lo: float, hi: float, ends: Vector2) -> float:  # the run nearest the middle of the view
+	# the x each upright on the near sidewalk hides at the trench's depth (the view looks down x - z), measured from the
+	# works' start: the spoil heap and trench, with their clods and the pole's own width, take 2.9..6.2 of it
+	var hides: Array = []
+	for u in STREET_LAMPS.filter(func(l): return l.y > 0.0) + POLE_X.map(func(px): return Vector2(px, 6.85)):
+		if u.x > street_x.x + 0.5 and u.x < street_x.y - 0.5 and not in_gaps(u.x, near_gaps):
+			hides.append(u.x - u.y + 3.1)
+	var pick := func(gaps: Array, lo: float, hi: float, ends: Vector2, hidden: Array) -> float:  # the clear run nearest the middle of the view
 		var g2: Array = gaps.duplicate()
 		g2.sort_custom(func(a, b2): return a.x < b2.x)
 		var best := INF
+		var best_clear := false
 		for o in open_spans(g2):
 			for run in [Vector2(o.x + ends.x, minf(o.y - ends.y, lo)), Vector2(maxf(o.x + ends.x, hi), o.y - ends.y)]:
 				if run.y - run.x >= L:
-					var at := clampf(-7.0 - L / 2, run.x, run.y - L)
-					if best == INF or absf(at + L / 2 + 7.0) < absf(best + L / 2 + 7.0):
-						best = at
+					var tries := [-7.0 - L / 2]
+					for h in hidden:
+						tries.append_array([h - 6.2, h - 2.9])
+					for t in tries:
+						var at := clampf(t, run.x, run.y - L)
+						var clear: bool = hidden.all(func(h): return h <= at + 2.9 or h >= at + 6.2)
+						if best == INF or (clear and not best_clear) or (clear == best_clear and absf(at + L / 2 + 7.0) < absf(best + L / 2 + 7.0)):
+							best = at
+							best_clear = clear
 		return best
-	var x0: float = pick.call(near_gaps, Sim.CROSS_X - 4.8, Sim.CROSS_X + 3.2, Vector2(1.4, 2.4))
+	var x0: float = pick.call(near_gaps, Sim.CROSS_X - 4.8, Sim.CROSS_X + 3.2, Vector2(1.4, 2.4), hides)
 	var far := x0 == INF or absf(x0 + L / 2 + 7.0) > 9.0
 	if far:
-		var fx: float = pick.call(far_gaps + [Vector2(maxf(Sim.CROSS_X - 3.0, -16.5), INF)], INF, INF, Vector2(2.4, 0.0))
+		var fx: float = pick.call(far_gaps + [Vector2(maxf(Sim.CROSS_X - 3.0, -16.5), INF)], INF, INF, Vector2(2.4, 0.0), [])
 		if fx != INF and fx > -16.5:
 			x0 = fx
 		else:
@@ -7843,7 +7859,7 @@ func build_set() -> void:
 	km.vertex_color_use_as_albedo = true
 	km.vertex_color_is_srgb = true
 	var closures := surface(km)
-	var poles := [-42.0, -19.0, 12.0, 36.0].filter(func(px): return px > street_x.x + 1.0 and px < street_x.y - 1.0 and not in_gaps(px, near_gaps + under[1]))
+	var poles := POLE_X.filter(func(px): return px > street_x.x + 1.0 and px < street_x.y - 1.0 and not in_gaps(px, near_gaps + under[1]))
 	if street_x.x == SET.position.x:  # the wires run on off the set where the street does; at a quay they stop at a pole
 		poles.push_front(SET.position.x)
 	if street_x.y == SET.end.x:
@@ -8063,9 +8079,9 @@ func build_set() -> void:
 		rect_quad(seam, Rect2(f.x, -7.2, f.y - f.x, 0.9), -0.036)
 	commit([seam], set_node)
 	# street furniture
-	var props_at := [[6, Vector2(-22.0, -4.3)], [6, Vector2(-38.0, -4.3)], [6, Vector2(9.0, -4.3)], [6, Vector2(34.0, -4.3)],
+	var props_at := STREET_LAMPS.map(func(l): return [6, l]) + [
 		[1, Vector2(-30.0, 6.0)], [2, Vector2(-14.0, 6.0)], [1, Vector2(12.0, 6.0)], [0, Vector2(26.0, 6.0)], [1, Vector2(42.0, 6.0)],
-		[6, Vector2(-6.0, 4.3)], [6, Vector2(20.0, 4.3)], [7, Vector2(-1.6, -4.6)], [10, Vector2(-22.6, -6.6)],
+		[7, Vector2(-1.6, -4.6)], [10, Vector2(-22.6, -6.6)],
 		[8, Vector2(-2.75, -12.3)], [8, Vector2(-2.75, -13.5)]]
 	if b.quirk == "busStop":
 		props_at.append([11, Vector2(-24.5, -4.4)])
