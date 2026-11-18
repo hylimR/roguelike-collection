@@ -18,6 +18,7 @@ const MAX_FPS := 11.0
 const ITEM_PX := 0.007
 const DECOR_PX := 0.014
 const OUTDOOR_PX := 0.03
+const NOBORI_GLOW := 0.7  # how far a nobori lights toward its own colours after dark, backlit by the shop
 # per-prop size: trees full, street furniture smaller (art/outdoor.png draws every prop the same size)
 const OUTDOOR_SCALE := [1.0, 1.0, 0.95, 1.05, 0.45, 0.45, 0.6, 0.84, 0.66, 0.38, 0.5, 1.23]
 const PROP_BLOB := {7: 0.35, 8: 0.5, 10: 0.6, 11: 0.25}  # street props whose shadow is narrower than their art
@@ -9000,16 +9001,17 @@ func sale_display(rv: Dictionary, span: Vector2) -> Node3D:
 	km.vertex_color_use_as_albedo = true
 	km.vertex_color_is_srgb = true
 	var st := surface(km)
+	var ct := surface(backlit())
 	var red := Color("dd3a2c")
 	var yellow := Color("f6cf3c")
 	var k := 0
 	var x := span.x + 1.1
 	while x < span.y - 0.8:
 		if absf(x - rv.x) > 1.4:
-			nobori(node, st, x, -6.45, red if k % 2 == 0 else yellow, yellow if k % 2 == 0 else red)
+			nobori(node, st, ct, x, -6.45, red if k % 2 == 0 else yellow, yellow if k % 2 == 0 else red)
 			k += 1
 		x += 2.1
-	commit([st], node)
+	commit([st, ct], node)
 	# a poster on the glass either side of the door
 	for dx in [-1.75, 1.75]:
 		var px: float = rv.x + dx
@@ -9036,6 +9038,7 @@ func time_sale_display(zl: float) -> Node3D:
 	km.vertex_color_use_as_albedo = true
 	km.vertex_color_is_srgb = true
 	var st := surface(km)
+	var ct := surface(backlit())
 	var xs := [-3.45, -7.75, -9.8]
 	var x := -11.9
 	while x > Sim.ORIGIN.x + zl + 0.3:
@@ -9043,23 +9046,33 @@ func time_sale_display(zl: float) -> Node3D:
 			xs.append(x)
 		x -= 2.1
 	for i in xs.size():
-		nobori(node, st, xs[i], -6.45, LAYOUT.stripe[i % 2], Color("fbfaf5"))
-	commit([st], node)
+		nobori(node, st, ct, xs[i], -6.45, LAYOUT.stripe[i % 2], Color("fbfaf5"))
+	commit([st, ct], node)
 	return node
 
 
+## The cloth of nobori stood before a lit shopfront: after dark the glass behind shines through it, so it keeps its colours.
+func backlit() -> StandardMaterial3D:
+	var m := mat(Color.WHITE)
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	light_up(m, NOBORI_GLOW)
+	return m
+
+
 ## A nobori at x: a tall cloth banner on a pole in a weighted base, hung from a bar to the pole's right with white hems
-## top and bottom and SALE down it in `ink`.
-func nobori(node: Node3D, st: SurfaceTool, x: float, z: float, cloth: Color, ink: Color) -> void:
+## top and bottom and SALE down it in `ink`, the cloth into `ct`.
+func nobori(node: Node3D, st: SurfaceTool, ct: SurfaceTool, x: float, z: float, cloth: Color, ink: Color) -> void:
 	box_into(st, Vector3(x - 0.2, 0, z - 0.2), Vector3(x + 0.2, 0.16, z + 0.2), Color("4a4b50"))  # the base, filled with water
 	box_into(st, Vector3(x - 0.14, 0.16, z - 0.14), Vector3(x + 0.14, 0.2, z + 0.14), Color("5c5d62"))
 	box_into(st, Vector3(x - 0.02, 0.2, z - 0.02), Vector3(x + 0.02, 2.42, z + 0.02), Color("d9d6cf"))
 	box_into(st, Vector3(x, 2.33, z - 0.015), Vector3(x + 0.62, 2.36, z + 0.015), Color("d9d6cf"))  # the bar it hangs from
-	box_into(st, Vector3(x + 0.03, 0.55, z - 0.005), Vector3(x + 0.6, 2.33, z + 0.005), cloth)
-	box_into(st, Vector3(x + 0.03, 0.55, z + 0.005), Vector3(x + 0.08, 2.33, z + 0.008), cloth.darkened(0.2))  # the loops round the pole
-	box_into(st, Vector3(x + 0.08, 2.14, z + 0.005), Vector3(x + 0.6, 2.24, z + 0.008), Color("fbfaf5"))
-	box_into(st, Vector3(x + 0.08, 0.62, z + 0.005), Vector3(x + 0.6, 0.68, z + 0.008), Color("fbfaf5"))
+	box_into(ct, Vector3(x + 0.03, 0.55, z - 0.005), Vector3(x + 0.6, 2.33, z + 0.005), cloth)
+	box_into(ct, Vector3(x + 0.03, 0.55, z + 0.005), Vector3(x + 0.08, 2.33, z + 0.008), cloth.darkened(0.2))  # the loops round the pole
+	box_into(ct, Vector3(x + 0.08, 2.14, z + 0.005), Vector3(x + 0.6, 2.24, z + 0.008), Color("fbfaf5"))
+	box_into(ct, Vector3(x + 0.08, 0.62, z + 0.005), Vector3(x + 0.6, 0.68, z + 0.008), Color("fbfaf5"))
 	sale_words(node, "S\nA\nL\nE", Vector3(x + 0.34, 1.4, z + 0.012), ink, 0.0052)
+	lit_mats[-1][2] = NOBORI_GLOW
 	cast(node, Vector2(x + 0.3, z), 0.55, 2.33, 0.57)
 	blob(node, Vector2(x, z), 0.22)
 
