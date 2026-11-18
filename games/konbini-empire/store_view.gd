@@ -571,7 +571,7 @@ varying flat float rseed;
 varying flat vec2 viewl;  // run along the roof (local x, z) toward the camera per metre of height
 varying flat float square;  // set square to the world, as the city's rooftop kit boxes are
 const vec3 ACCENT[8] = vec3[8](vec3(0.89, 0.25, 0.22), vec3(0.96, 0.56, 0.16), vec3(0.98, 0.82, 0.25), vec3(0.24, 0.68, 0.36), vec3(0.22, 0.5, 0.86), vec3(0.6, 0.34, 0.8), vec3(0.95, 0.45, 0.65), vec3(0.2, 0.72, 0.74));
-const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.8, 0.77, 0.5), vec3(0.5, 0.6, 0.56), vec3(0.8, 0.76, 0.66));  // boards, tatami, painted concrete, tile
+const vec3 FLOOR[4] = vec3[4](vec3(0.6, 0.46, 0.33), vec3(0.8, 0.77, 0.5), vec3(0.64, 0.7, 0.66), vec3(0.8, 0.76, 0.66));  // boards, tatami, painted concrete, tile
 const vec3 ROOF[8] = vec3[8](FLAT_ROOFS);  // Sim.City.FLAT_ROOFS
 
 void vertex() {
@@ -754,7 +754,7 @@ void fragment() {
 				float deep = k == 0 ? 0.85 : 0.55;
 				vec2 ha = side / 2 == 0 ? vec2(deep, run) * 0.5 : vec2(run, deep) * 0.5;
 				vec2 ca = mid + (side / 2 == 0 ? vec2((room.x * 0.5 - ha.x) * (side == 0 ? -1.0 : 1.0), 0.0) : vec2(0.0, (room.y * 0.5 - ha.y) * (side == 2 ? -1.0 : 1.0)));
-				vec2 hb = min(room * (k == 0 ? vec2(0.24, 0.22) : vec2(0.15, 0.12)) + 0.05, vec2(0.75));
+				vec2 hb = min(room * (k == 0 ? vec2(0.24, 0.22) : (k == 2 ? vec2(0.18, 0.15) : vec2(0.15, 0.12))) + 0.05, vec2(0.75));
 				vec2 cb = mid + (vec2(fract(r * 5.3), fract(r * 9.7)) - 0.5) * 0.25 * room + (ca - mid) * (k == 0 ? 0.25 : -0.15);  // a rug runs under the sofa's front
 				vec3 ACol[4] = vec3[4](mix(ACCENT[(pick + 4) % 8], vec3(0.4), 0.35), vec3(0.93, 0.9, 0.84), vec3(0.6, 0.65, 0.7), vec3(0.9, 0.9, 0.87));
 				vec3 BCol[4] = vec3[4](mix(ACCENT[(pick + int(r * 5.0) + 1) % 8], fl, 0.35), vec3(0.42, 0.27, 0.17), vec3(0.77, 0.6, 0.4), vec3(0.74, 0.56, 0.36));
@@ -765,7 +765,7 @@ void fragment() {
 				vec2 sa = abs(fp + sunl * ta - ca) - ha;
 				vec2 sb = abs(fp + sunl * tb - cb) - hb;
 				float ina = max(da.x, da.y);
-				float inb = fract(r * 17.0) < 0.8 ? max(db.x, db.y) : 1.0;
+				float inb = k == 2 || fract(r * 17.0) < 0.8 ? max(db.x, db.y) : 1.0;
 				// a living room's TV board against the wall facing the sofa
 				vec2 tw = side / 2 == 0 ? vec2(side == 0 ? -1.0 : 1.0, 0.0) : vec2(0.0, side == 2 ? -1.0 : 1.0);
 				vec2 tp = abs(tw.yx);
@@ -774,6 +774,19 @@ void fragment() {
 				vec2 dtv = abs(fp - ct) - ht;
 				vec2 stv = abs(fp + sunl * 0.3 - ct) - ht;
 				float intv = k == 0 && fract(r * 19.0) < 0.7 ? max(dtv.x, dtv.y) : 1.0;
+				if (k == 2 && inb < 1.0) {  // the cartons stand on a pallet: pale deck boards across it over dark gaps, its rim lit toward the sun
+					vec2 pq = fp - cb;
+					vec2 pd = abs(pq) - hb - 0.1;
+					vec2 ps = abs(pq + sunl * 0.06) - hb - 0.1;
+					float pa = hb.x >= hb.y ? pq.x : pq.y;
+					if (max(pd.x, pd.y) < 0.0) {
+						vec2 en = pd.x > pd.y ? vec2(sign(pq.x), 0.0) : vec2(0.0, sign(pq.y));
+						vec3 wood = vec3(0.84, 0.72, 0.53) * (0.92 + 0.12 * fract(sin(floor(pa / 0.13) * 17.3 + r * 9.0) * 43758.5453));
+						fl = fract(pa / 0.13) < 0.28 ? fl * 0.42 : wood * (max(pd.x, pd.y) > -0.025 ? (dot(en, sunl) > 0.0 ? 1.12 : 0.74) : 1.0);
+					} else if (max(ps.x, ps.y) < 0.0) {
+						fl *= 0.8;
+					}
+				}
 				if (min(min(max(sa.x, sa.y), tb > 0.0 && inb < 1.0 ? max(sb.x, sb.y) : 1.0), intv < 1.0 ? max(stv.x, stv.y) : 1.0) < 0.0 && min(min(ina, inb), intv) > 0.0) {
 					fl *= 0.78;
 				}
