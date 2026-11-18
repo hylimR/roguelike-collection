@@ -36,6 +36,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 }
 const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
 const ROLE_COLOR := {"cashier": Color("e98a1d"), "stocker": Color("3f9e4a"), "cleaner": Color("3a9bd9"), "guard": Color("7a68c8"), "promoter": Color("e0609a")}
+const BUST_H := 58  # a person on a card stands in a frame from the chest up
 const CARD_W := 232  # the store card in the top-right corner
 
 var sim := Sim.new()
@@ -1682,9 +1683,10 @@ func card_frame(tint: Color, glow: bool) -> StyleBoxFlat:
 
 
 ## The card's picture on a plate tinted by its rarity, lit from behind by a soft spot of light (rays fanning out from it
-## on the rarer cards), the art standing over its own shadow.
+## on the rarer cards), the art standing over its own shadow, or a person off the street framed chest-up on its lip.
 func card_picture(id: String, u: Dictionary) -> PanelContainer:
 	var pic: TextureRect
+	var bust := false
 	if u.has("product"):
 		pic = icon(u.product, 60)
 	elif u.has("ability"):
@@ -1696,7 +1698,8 @@ func card_picture(id: String, u: Dictionary) -> PanelContainer:
 			pic = drawn(ic[1], Vector2(60, 60))
 		elif ic[0] == "walk":
 			pic = picture("walk", 0, 80, Vector2(60, 60))
-			pic.texture.region = Rect2(Vector2(0, ic[1] * StoreView.PERSON.y), StoreView.PERSON)
+			pic.texture.region = Rect2(Vector2(0, ic[1] * StoreView.PERSON.y), Vector2(StoreView.PERSON.x, BUST_H))
+			bust = true
 		else:
 			pic = picture(ic[0], ic[1], {"perks": 80, "decor": 96}[ic[0]], Vector2(60, 60))
 	var stage := TextureRect.new()
@@ -1723,6 +1726,14 @@ func card_picture(id: String, u: Dictionary) -> PanelContainer:
 	pic.offset_right = half
 	pic.offset_top = -35
 	pic.offset_bottom = 27
+	if bust:
+		shade.visible = false
+		half = 38.0 * StoreView.PERSON.x / BUST_H
+		pic.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+		pic.offset_left = -half
+		pic.offset_right = half
+		pic.offset_top = -74
+		pic.offset_bottom = 2
 	stage.add_child(pic)
 	var plate := PanelContainer.new()
 	var s := box(Color(RARITY_COLOR[u.rarity]).lerp(PAPER, 0.8), 14, 4)
