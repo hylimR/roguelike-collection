@@ -1247,6 +1247,7 @@ var floodlit_mats: Array = []  # the car park's tarmac and paint, lit by its flo
 var road_paint_m: StandardMaterial3D
 var side_tar_m: StandardMaterial3D
 var manhole_m: StandardMaterial3D
+var rail_m: StandardMaterial3D  # the city's bridge and quay railings
 var tree_pit_m: StandardMaterial3D
 var condenser_m: StandardMaterial3D
 var street_x := Vector2(SET.position.x, SET.end.x)  # how far the set's street runs (street_reach)
@@ -3749,19 +3750,51 @@ func build_road_lights() -> void:
 ## The city's railings, leaving out every piece that crosses one of `clear` (the set's street and buildings), where
 ## the set lays its own ground and quays over the city's.
 func build_rails(clear: Array) -> void:
-	var rail := surface(mat(Color("d9d4c7")))
+	if not rail_m:
+		rail_m = mat(Color.WHITE, rail_tex())
+		rail_m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+		rail_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	var rail := surface(rail_m)
 	var any := false
 	for r in rails:
 		var pts: PackedVector3Array = r[0]
 		var a := Vector2(pts[r[2]].x, pts[r[2]].z)
 		var b := Vector2(pts[r[2] + 1].x, pts[r[2] + 1].z)
 		if not clear.any(func(q): return seg_hits(q, a, b)):
-			wall(rail, pts, r[1], -0.12, 0.55, r[2], r[2] + 1)
+			# whole 2 m bays, so a post stands at each end of every piece
+			var bays := float(maxi(1, roundi(a.distance_to(b) / 2.0)))
+			var p0: Vector3 = pts[r[2]] + left_of(pts, r[2]) * r[1]
+			var p1: Vector3 = pts[r[2] + 1] + left_of(pts, r[2] + 1) * r[1]
+			var up := Vector3(0, 1.0, 0)
+			var dn := Vector3(0, -0.12, 0)
+			add_quad(rail, [p0 + up, p1 + up, p1 + dn, p0 + dn], [Vector2.ZERO, Vector2(bays, 0), Vector2(bays, 1), Vector2.DOWN])
 			any = true
 	var mesh := ArrayMesh.new()
 	if any:
 		rail.commit(mesh)
 	rail_node.mesh = mesh
+
+
+## One 2 m bay of the city's bridge and quay railings at 32 px a metre, 1.12 m tall from just under the ground: a
+## post at its start on a base plate, a pale handrail lit along its top over a foot rail, slim balusters every 20 cm
+## and the ground showing between them, as the street set's quays are railed.
+func rail_tex() -> ImageTexture:
+	var img := Image.create(64, 36, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var bar := Color("5b6e70")
+	var post := Color("526466")
+	for k in range(1, 10):
+		var x := roundi(k * 6.4)
+		img.fill_rect(Rect2i(x, 4, 1, 25), bar if k % 2 else bar.lightened(0.06))
+	img.fill_rect(Rect2i(0, 29, 64, 2), post)  # the foot rail, 10 cm up
+	img.fill_rect(Rect2i(0, 1, 64, 3), Color("93a3a5"))  # the handrail, lit along its top, shaded under
+	img.fill_rect(Rect2i(0, 0, 64, 1), Color("c4d0d0"))
+	img.fill_rect(Rect2i(0, 4, 64, 1), Color("6f8183"))
+	img.fill_rect(Rect2i(0, 1, 3, 35), post)
+	img.fill_rect(Rect2i(0, 1, 1, 35), post.lightened(0.18))
+	img.fill_rect(Rect2i(0, 34, 6, 2), Color("4b5759"))  # the base plate on the ground
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 ## Rect of street s from a0 to a1 along it and c0 to c1 across from its top (or left) edge.
