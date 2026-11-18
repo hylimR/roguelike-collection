@@ -1335,6 +1335,7 @@ var matsuri: Node3D  # the set's festival lanterns and yatai, shown on a Summer 
 var lantern_glow_mat: StandardMaterial3D
 var lantern_pool_mat: StandardMaterial3D  # the matsuri lanterns' warm light on the sidewalk under their strings
 var stall_glow_mat: StandardMaterial3D  # the yatai's lamplight on the bay after dark
+var tv_key_mat: StandardMaterial3D  # the TV crew's light thrown along your shopfront to the reporter after dark
 var festive_mats: Array = []  # [weakref to a matsuri lantern's or the yatai's material, its colour, how far it lights up]
 var works: Node3D  # the set's roadworks, shown on a Roadworks day
 var works_glow_mat: StandardMaterial3D  # the works' flashing lamps and arrow board after dark
@@ -1493,6 +1494,15 @@ func _ready() -> void:
 			throw.set_pixel(x, y, Color(1, 1, 1, clampf(side * along, 0.0, 1.0)))
 	headlight_mat.albedo_texture = ImageTexture.create_from_image(throw)
 	tail_glow_mat = pool_mat.duplicate()
+	tv_key_mat = pool_mat.duplicate()
+	var key := Image.create(64, 32, false, Image.FORMAT_RGBA8)  # forward along x: one soft panel's light opening into a wedge
+	for y in 32:
+		var v := absf(y - 15.5) / 16.0
+		for x in 64:
+			var u := x / 63.0
+			var hw := lerpf(0.22, 0.95, sqrt(u))
+			key.set_pixel(x, y, Color(1, 1, 1, smoothstep(hw, hw * 0.35, v) * smoothstep(0.0, 0.12, u) * pow(1.0 - u, 1.3)))
+	tv_key_mat.albedo_texture = ImageTexture.create_from_image(key)
 	snow_tex = snow_patches()
 	var walk := func(d: float) -> float:  # d metres out from the wall toward the kerb
 		return 0.2 * exp(-pow(d / 0.55, 2.0)) + 0.4 * smoothstep(2.5, 3.3, d) - 0.26 * exp(-pow((d - 1.7) / 0.8, 2.0))
@@ -1832,6 +1842,7 @@ func update_light() -> void:
 	lantern_glow_mat.albedo_color = Color(1.0, 0.55, 0.3, 0.8 * lit)
 	lantern_pool_mat.albedo_color = Color(1.0, 0.5, 0.28, 0.55 * lit)
 	stall_glow_mat.albedo_color = Color(1.0, 0.6, 0.3, 0.95 * lit)
+	tv_key_mat.albedo_color = Color(0.9, 0.95, 1.0, 0.85 * lamps)
 	lamp_mat.albedo_color = (Color("dfe3e2") * light).lerp(Color(1.0, 0.96, 0.82), lamps)
 	if car_glass:
 		car_glass.albedo_color = (Color("33424c") * light).lerp(Color(1.0, 0.93, 0.74), night * 0.9)
@@ -6657,7 +6668,7 @@ func apology_board() -> Image:
 
 ## TV Feature: an outside-broadcast van in the station's livery backed into your free bay with a dish on its roof, a
 ## camera on a tripod at the kerb and a light on a stand by the shopfront, both on your door; the camera's red tally
-## and the light glow after dark. Built hidden.
+## and the light glow after dark, the light thrown cool along the pavement to the reporter. Built hidden.
 func tv_crew() -> Node3D:
 	var node := Node3D.new()
 	node.visible = false
@@ -6747,7 +6758,7 @@ func tv_crew() -> Node3D:
 	var fq := QuadMesh.new()
 	fq.size = Vector2(0.74, 0.47)
 	face.mesh = fq
-	var fm := mat(Color("fff4dc"))
+	var fm := mat(Color("f2f7ff"))
 	light_up(fm, 1.0)
 	face.material_override = fm
 	face.rotation.y = PI / 2
@@ -6765,6 +6776,7 @@ func tv_crew() -> Node3D:
 	gm.set_instance_transform(0, Transform3D(Basis().scaled(Vector3(2.4, 2.4, 2.4)), face.position))
 	gm.set_instance_transform(1, Transform3D(Basis().scaled(Vector3(0.6, 0.6, 0.6)), tally.position))
 	mm_node(gm, halo_mat, node)
+	plane(node, Vector2(5.2, 3.4), Vector3(lt_at.x + 2.7, -0.029, lt_at.z), tv_key_mat)
 	bay_shade(node, 4)
 	cast(node, Vector2(cam_at.x, cam_at.z), 0.0, 1.4, 0.4)
 	cast(node, Vector2(lt_at.x, lt_at.z), 1.55, 2.12, 0.84)
