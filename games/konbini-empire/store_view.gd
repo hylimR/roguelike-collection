@@ -11271,9 +11271,9 @@ func draw_street() -> void:
 		placed.append(box)
 		g.top = g.home + box.position - g.box.position
 		var hung: bool = box.position.y >= g.home.y  # a tag hung below takes its stem up to the feet
-		var tos: Array = [aim if not hung else Vector2(g.home.x, g.foot)]
+		var tos: Array = [(g.pts[0] if g.t.type in ["trash", "spill"] else aim) if not hung else Vector2(g.home.x, g.foot)]
 		if g.pts.size() > 1:
-			tos = g.pts.map(func(p): return p + (g.lift + Vector2(0, 2) if not hung else Vector2.ZERO))
+			tos = g.pts.duplicate()  # each stem lands on its own piece of the heap
 		if g.top.distance_to(g.home) > 1.0 or tos.size() > 1:  # stems first, so no tag's stem crosses another; none to a threat hidden under the HUD
 			for to in tos:
 				if over.any(func(o): return o.has_point(to)):
