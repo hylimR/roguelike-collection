@@ -93,6 +93,7 @@ var city_btn: Button
 var banner: PanelContainer
 var banner_text := ""
 var transport_icons: Array[ImageTexture] = []  # the pause button's pause and play glyphs
+var sound_icons: Array[ImageTexture] = []  # the sound button's speaker: two waves, one (music off), crossed out
 var hud_rows: Array[Container] = []  # the HUD's rows over the view, whose chips the map's labels keep clear of
 var dev_js: JavaScriptObject  # keeps the web build's dev hook alive
 
@@ -594,6 +595,8 @@ func build() -> void:
 	pause_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	speed_btn = button("1x", cycle_speed, "Game speed  [F]")
 	sound_btn = button("", cycle_sound, "Sound: on, music off, muted  [V]")
+	sound_icons = [sound_glyph(0, INK), sound_glyph(1, INK), sound_glyph(2, INK)]
+	sound_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	seed_btn = button("", show_new_run, "Start a new run (you can type a seed)")
 	seed_btn.add_theme_font_size_override("font_size", 11)
 	seed_btn.add_theme_color_override("font_color", MUTED)
@@ -933,7 +936,7 @@ func sound(e: Dictionary, here: bool) -> void:
 
 func cycle_sound(m := -1) -> void:
 	audio.set_mode((audio.mode + 1) % 3 if m < 0 else m)
-	sound_btn.text = ["♪", "♪ sfx", "mute"][audio.mode]
+	sound_btn.icon = sound_icons[audio.mode]
 	sound_btn.tooltip_text = "%s  [V]" % Audio.MODES[audio.mode]
 	best.set_value("settings", "sound", audio.mode)
 	best.save("user://best.cfg")
@@ -1270,6 +1273,32 @@ func transport_glyph(play: bool, c: Color) -> ImageTexture:
 						for bx in [3.0, 8.0]:
 							var d := Vector2(maxf(absf(p.x - bx - 1.5) - 0.9, 0.0), maxf(absf(p.y - 7.0) - 4.4, 0.0))
 							inside = inside or d.length() < 0.7
+					cover += 1.0 / 16.0 if inside else 0.0
+			img.set_pixel(x, y, Color(c, cover))
+	return ImageTexture.create_from_image(img)
+
+
+func sound_glyph(mode: int, c: Color) -> ImageTexture:
+	const W := 20
+	const N := 14
+	var img := Image.create(W, N, false, Image.FORMAT_RGBA8)
+	for y in N:
+		for x in W:
+			var cover := 0.0
+			for sy in 4:
+				for sx in 4:
+					var p := Vector2(x + (sx + 0.5) / 4.0, y + (sy + 0.5) / 4.0)
+					var dy := absf(p.y - 7.0)
+					var inside := p.x > 1.5 and p.x < 5.2 and dy < 2.3  # the box, then its cone flaring out
+					inside = inside or (p.x >= 5.2 and p.x < 9.0 and dy < minf(2.3 + (p.x - 5.2) * 0.9, 5.4))
+					if mode < 2:
+						var r := p.distance_to(Vector2(7.4, 7.0))
+						var arc := p.x > 10.0 and dy < (p.x - 7.4) * 1.2
+						inside = inside or (arc and absf(r - 4.6) < 0.8)
+						inside = inside or (mode == 0 and arc and absf(r - 8.0) < 0.8)
+					else:
+						var q := p - Vector2(14.6, 7.0)
+						inside = inside or (maxf(absf(q.x), absf(q.y)) < 3.3 and minf(absf(q.x - q.y), absf(q.x + q.y)) < 1.2)
 					cover += 1.0 / 16.0 if inside else 0.0
 			img.set_pixel(x, y, Color(c, cover))
 	return ImageTexture.create_from_image(img)
