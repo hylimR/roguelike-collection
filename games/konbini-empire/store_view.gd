@@ -1520,10 +1520,11 @@ func _ready() -> void:
 	var walk := func(d: float) -> float:  # d metres out from the wall toward the kerb
 		return 0.2 * exp(-pow(d / 0.55, 2.0)) + 0.4 * smoothstep(2.5, 3.3, d) - 0.26 * exp(-pow((d - 1.7) / 0.8, 2.0))
 	snow_walk_tex = snow_patches(256, 112, func(_x: float, d: float) -> float: return walk.call(d))
-	snow_road_tex = snow_patches(256, 237, func(_x: float, d: float) -> float:  # d metres from the far kerb
+	var slush := func(_x: float, d: float) -> float:  # d metres from the far kerb
 		var z := absf(d - 3.7)  # out from the centre line; the wheels run 1.1 and 2.6 m out
 		var tracks := exp(-pow((z - 1.1) / 0.3, 2.0)) + exp(-pow((z - 2.6) / 0.3, 2.0))
-		return -0.14 + 0.36 * smoothstep(3.0, 3.6, z) + 0.17 * exp(-pow((z - 1.85) / 0.32, 2.0)) + 0.14 * exp(-pow(z / 0.35, 2.0)) - 0.25 * tracks)
+		return -0.14 + 0.36 * smoothstep(3.0, 3.6, z) + 0.17 * exp(-pow((z - 1.85) / 0.32, 2.0)) + 0.14 * exp(-pow(z / 0.35, 2.0)) - 0.25 * tracks
+	snow_road_tex = snow_patches(512, 237, slush, 2, 1.0)  # 32 px a metre down it, its drifts drawn out along the lanes
 	snow_lot_tex = snow_patches(227, 282, func(x: float, z: float) -> float:  # 7.1 x 8.8 m, the street at z 8.8
 		var edge := minf(x, 7.1 - x)
 		return -0.2 + 0.5 * smoothstep(1.6, 0.2, z) + 0.3 * smoothstep(0.9, 0.1, edge) * smoothstep(5.5, 3.0, z) + 0.25 * exp(-pow((x - 6.0) / 1.1, 2.0) - pow((z - 1.2) / 1.5, 2.0)))
@@ -5960,8 +5961,9 @@ static func car_snow(sheet: Image) -> Image:
 ## rounded body, lit on the slopes that face the sun and cool blue on those turned away, thinning to a translucent rim
 ## with the ground showing through, round it a margin of wet, darkened ground flecked with powder, and the odd glint.
 ## Given a size and `lie` (metres across and down the texture to a bias), it lays one shaped patch instead of a tile:
-## snow heaped where the bias is up, trodden or ploughed down to wet ground where it is down.
-func snow_patches(w := 256, h := 256, lie := Callable()) -> ImageTexture:
+## snow heaped where the bias is up, trodden or ploughed down to wet ground where it is down. `stretch` draws its drifts
+## that many times longer across the texture than down it, smoothly; `dirty` turns them to grey slush on wet ground.
+func snow_patches(w := 256, h := 256, lie := Callable(), stretch := 1, dirty := 0.0) -> ImageTexture:
 	const N := 256
 	var fn := FastNoiseLite.new()
 	fn.seed = 23
@@ -5980,7 +5982,9 @@ func snow_patches(w := 256, h := 256, lie := Callable()) -> ImageTexture:
 	height.resize(w * h)
 	for y in h:
 		for x in w:
-			var v := drifts[y % N * N + x % N] / 255.0
+			var sx := float(x) / stretch
+			var i0 := floori(sx)
+			var v := lerpf(drifts[y % N * N + i0 % N], drifts[y % N * N + (i0 + 1) % N], sx - i0) / 255.0
 			if lies:
 				v += lie.call((x + 0.5) / 32.0, (y + 0.5) / 32.0)
 			vals[y * w + x] = v
@@ -6003,13 +6007,19 @@ func snow_patches(w := 256, h := 256, lie := Callable()) -> ImageTexture:
 				var rim := clampf((v - 0.5) / 0.035, 0.0, 1.0)  # thin at the edge: the ground shows through, slushy and grey
 				c = Color(0.8, 0.84, 0.92).lerp(c, rim)
 				c.a = lerpf(0.62, 0.97, rim)
-				if g > 0.44 and lit > 0.2:
+				if g > 0.44 and lit > 0.2 and dirty == 0.0:
 					c = Color(1, 1, 1, 1)  # a glint in the crust
+				if dirty > 0.0:  # churned by tyres: grey, grimed toward its thin edge, the tarmac showing through
+					var grime := dirty * clampf(0.25 + 0.5 * (1.0 - rim) + 0.8 * g, 0.0, 1.0)
+					c = c.lerp(Color(0.66, 0.63, 0.6), grime * 0.6)
+					c.a = lerpf(0.45, 0.95, rim)
 			elif v > 0.43:
 				var wet := (v - 0.43) / 0.07  # meltwater darkening the ground round the drift
 				c = Color(0.16, 0.2, 0.3, 0.36 * wet)
-				if g > 0.4 and v > 0.465:
+				if g > 0.4 and v > 0.465 and dirty == 0.0:
 					c = Color(0.9, 0.93, 0.99, 0.85)  # powder blown off the drift
+			if dirty > 0.0 and c.a < 0.2 * dirty:
+				c = Color(0.12, 0.15, 0.22, 0.2 * dirty)  # the bare tarmac between, wet and dark
 			img.set_pixel(x, y, c)
 	return ImageTexture.create_from_image(img)
 
@@ -6032,7 +6042,7 @@ func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 	rect_quad(deep, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(-16.5, -20.2, 20.2, 3.95), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(span.x + 0.2, -16.0, span.y - span.x - 0.4, 8.6), 4.27, 0.0, false, 0.125)  # the rival's roof, round its kit
-	var road := surface(snow_mat(Color(0.88, 0.9, 0.95), snow_road_tex))  # trafficked slush, greyer than the sidewalk's
+	var road := surface(snow_mat(Color(0.94, 0.95, 0.97), snow_road_tex))  # trafficked slush, greyer than the sidewalk's
 	var r0 := street_x.x
 	var r1 := street_x.y
 	add_quad(road, [Vector3(r0, -0.034, -3.7), Vector3(r1, -0.034, -3.7), Vector3(r1, -0.034, 3.7), Vector3(r0, -0.034, 3.7)],
