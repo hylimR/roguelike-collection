@@ -11123,11 +11123,17 @@ func round_box(c: Color, r: float) -> StyleBoxFlat:
 func pill(at: Vector2, s: String, px: int, bg: Color, fg := Color.WHITE) -> void:
 	var font: Font = bold if bold else get_theme_default_font()
 	var w := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x
-	var asc := font.get_ascent(px)
-	var r := Rect2(at.x - w / 2 - 7, at.y - asc - 2, w + 14, asc + font.get_descent(px) + 4)
+	var r := pill_rect(at, s, px)
 	overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), r.size.y / 2), Rect2(r.position + Vector2(0, 2), r.size))
 	overlay.draw_style_box(round_box(bg, r.size.y / 2), r)
 	overlay.draw_string(font, Vector2(at.x - w / 2, at.y), s, HORIZONTAL_ALIGNMENT_LEFT, -1, px, fg)
+
+
+func pill_rect(at: Vector2, s: String, px: int) -> Rect2:
+	var font: Font = bold if bold else get_theme_default_font()
+	var w := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x
+	var asc := font.get_ascent(px)
+	return Rect2(at.x - w / 2 - 7, at.y - asc - 2, w + 14, asc + font.get_descent(px) + 4)
 
 
 ## A rival chain's mascot head in a cream roundel ringed in the chain's colour, as on its lightbox sign.
@@ -11244,6 +11250,7 @@ func draw_street() -> void:
 	if sign_at != roof_at + Vector2(0, -58):
 		stem_to = Vector2(clampf(roof_at.x, sign_at.x - (bw + 50) / 2 + 14, sign_at.x + (bw + 38) / 2), sign_at.y)
 	var warn_box := Rect2()  # the price war or attack warning under the plate, which threat tags keep clear of too
+	var marks: Array = [Rect2(sign_at + Vector2(-(bw + 50) / 2 - 20, 12 - ph), Vector2(bw + 76, ph + 6))]  # what floaters rise clear of
 	overlay.draw_line(roof_at + Vector2(1, 0), stem_to + Vector2(1, 0), Color(0, 0, 0, 0.3), 3.0)
 	overlay.draw_line(roof_at, stem_to, Color.WHITE, 2.0)
 	overlay.draw_circle(roof_at + Vector2(0, 1.5), 5.5, Color(0, 0, 0, 0.3))
@@ -11310,6 +11317,7 @@ func draw_street() -> void:
 			if head != null and head.at_head:
 				var staffed: bool = sim.cashier_of(b, reg.id) != null
 				bar(Rect2(at + Vector2(-18, -14), Vector2(36, 5)), reg.progress, Color("3a9bd9"))
+				marks.append(pill_rect(at + Vector2(0, -24), "Ring up!", 11))
 				if not staffed or floori(Time.get_ticks_msec() / 400.0) % 2 == 0:
 					pill(at + Vector2(0, -24), "Ring up!", 11, Color("e98a1d") if staffed else Color("e05a4e"))
 			text(at + Vector2(0, 14), "%d" % reg.queue.size(), 11, Color("6b5236"))
@@ -11498,8 +11506,34 @@ func draw_street() -> void:
 					pill(at + Vector2(0, -30), "Restock %d  ¥%s" % [n, Sim.money(Sim.rnd(n * each))] if n > 0 else "Full", 11, Color(1.0, 0.98, 0.92), Color("6b5236"))
 		if at != Vector2.ZERO:
 			overlay.draw_arc(at, 16.0, 0.0, TAU, 24, Color(1, 1, 1, 0.9), 2.0)
-	for f in floaters:
-		text(screen(f.at), f.text, 15, f.color)
+	# floaters in bold on a cream rim, popping in and fading out; newest first, each steps up clear of the tags, the
+	# rival's plate and the newer floaters, so a sale and its combo or a run of poached walkers stack as a column
+	marks += placed.slice(hud_dock.size())
+	if warn_box.has_area():
+		marks.append(warn_box)
+	for i in range(floaters.size() - 1, -1, -1):
+		var f: Dictionary = floaters[i]
+		var age: float = 1.2 - f.life
+		var px := roundi(lerpf(19.0, 15.0, smoothstep(0.0, 0.15, age)))
+		var a := clampf(f.life / 0.35, 0.0, 1.0)
+		var w := font.get_string_size(f.text, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x
+		var at := screen(f.at)
+		var fb := Rect2(at.x - w / 2 - 3, at.y - font.get_ascent(15) - 2, w + 6, font.get_ascent(15) + 5)
+		for k in 16:  # off whatever it lands on by the shorter way, up or aside
+			var hit: Array = marks.filter(func(o): return fb.intersects(o))
+			if hit.is_empty():
+				break
+			var o: Rect2 = hit[0]
+			var dx: float = o.end.x - fb.position.x + 1.0 if fb.get_center().x > o.get_center().x else o.position.x - fb.end.x - 1.0
+			if absf(dx) < fb.end.y - o.position.y + 1.0:
+				fb.position.x += dx
+			else:
+				fb.position.y = o.position.y - fb.size.y - 1.0
+		marks.append(fb)
+		var base := Vector2(fb.get_center().x - w / 2, fb.end.y - 2.5 + (font.get_ascent(px) - font.get_ascent(15)) / 2)
+		overlay.draw_string_outline(font, base + Vector2(0, 2), f.text, HORIZONTAL_ALIGNMENT_LEFT, -1, px, 6, Color(0.42, 0.3, 0.15, 0.3 * a))
+		overlay.draw_string_outline(font, base, f.text, HORIZONTAL_ALIGNMENT_LEFT, -1, px, 6, Color(1.0, 0.98, 0.92, a))
+		overlay.draw_string(font, base, f.text, HORIZONTAL_ALIGNMENT_LEFT, -1, px, Color(f.color, a))
 
 
 ## A Japanese pedestrian signal's two lamps, red standing figure over green walking one; the lit one glows after dark.
