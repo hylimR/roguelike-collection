@@ -1310,6 +1310,7 @@ var street_pool_mat: StandardMaterial3D  # a street lamp's pool: a broad, evenly
 var lamp_mat: StandardMaterial3D  # street lamp heads: pale by day, lit after dark
 var halo_mat: StandardMaterial3D  # the glow round a lit lamp head
 var glare_mat: StandardMaterial3D  # the hot glare of a lit lamp head's lens
+var flood_glare_mat: StandardMaterial3D  # the cool glare of your car park floods' lenses
 var beam_mat: StandardMaterial3D  # the cone of light falling from a lit lamp head to its pool
 var headlight_mat: StandardMaterial3D  # a moving car's low beams thrown along the road ahead
 var tail_glow_mat: StandardMaterial3D  # the red its tail lamps cast on the road behind
@@ -1466,6 +1467,7 @@ func _ready() -> void:
 	sign_glow_mat.albedo_texture = ImageTexture.create_from_image(ring)
 	glare_mat = halo_mat.duplicate()
 	glare_mat.albedo_texture = radial([Color.WHITE, Color(1, 1, 1, 0.9), Color(1, 1, 1, 0.3), Color(1, 1, 1, 0)], [0.0, 0.14, 0.38, 1.0])
+	flood_glare_mat = glare_mat.duplicate()
 	beam_mat = halo_mat.duplicate()
 	beam_mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	var cone := Image.create(32, 64, false, Image.FORMAT_RGBA8)
@@ -1820,6 +1822,7 @@ func update_light() -> void:
 		m.set_shader_parameter("light", Vector3(light.r, light.g, light.b))
 		m.set_shader_parameter("flood", Vector3(SHOP_LIGHT.r, SHOP_LIGHT.g, SHOP_LIGHT.b) * lamps * on)
 	sign_glow_mat.albedo_color = SHOP_LIGHT * Color(1, 1, 1, 0.7 * lamps * on)
+	flood_glare_mat.albedo_color = Color(0.94, 0.98, 1.0, 0.95 * lamps * on)
 	var lit := maxf(night, smoothstep(17.6, 19.0, h))  # a matsuri's lanterns are lit by sunset, not at full dark
 	festive_mats = festive_mats.filter(func(e): return e[0].get_ref() != null)
 	for e in festive_mats:
@@ -9732,10 +9735,10 @@ func pole_sign(parent: Node3D) -> void:
 			box_into(fk, ps + a * 0.6 + s * (0.2 * k - 0.014) + Vector3(0, 4.94, 0), ps + a * 0.66 + s * (0.2 * k + 0.014) + Vector3(0, 5.19, 0), frame)
 		var b := Basis(s, -0.9 - 0.25 * a.z) * Basis(s, Vector3.UP, a)
 		var c := ps + a * 0.68 + Vector3(0, 4.98, 0)
-		turned_box_into(fk, Transform3D(b * Basis.from_scale(Vector3(0.36, 0.1, 0.3)), c), Color("c4c8cc"))
+		turned_box_into(fk, Transform3D(b * Basis.from_scale(Vector3(0.36, 0.1, 0.3)), c), Color("4b5159"))  # graphite, to stand off pale walls
 		for fx: float in [-0.12, -0.04, 0.04, 0.12]:  # heat-sink fins down its back
-			turned_box_into(fk, Transform3D(b * Basis.from_scale(Vector3(0.022, 0.05, 0.26)), c + b * Vector3(fx, 0.07, 0)), Color("9ea4aa"))
-		turned_box_into(fk, Transform3D(b * Basis.from_scale(Vector3(0.33, 0.02, 0.27)), c + b * Vector3(0, -0.055, 0)), Color("585d65"))  # the bezel
+			turned_box_into(fk, Transform3D(b * Basis.from_scale(Vector3(0.022, 0.05, 0.26)), c + b * Vector3(fx, 0.07, 0)), Color("666c75"))
+		turned_box_into(fk, Transform3D(b * Basis.from_scale(Vector3(0.33, 0.02, 0.27)), c + b * Vector3(0, -0.055, 0)), Color("2e3238"))  # the bezel
 	commit([fk], parent)
 	var lens := QuadMesh.new()
 	lens.size = Vector2(0.29, 0.23)
@@ -9747,6 +9750,14 @@ func pole_sign(parent: Node3D) -> void:
 		head.transform = Transform3D(b * Basis(Vector3.RIGHT, PI / 2), ps + a * 0.68 + Vector3(0, 4.98, 0) + b * Vector3(0, -0.068, 0))
 		head.material_override = lamp_mat
 		parent.add_child(head)
+		var glare := MeshInstance3D.new()  # slid toward the camera like a street lamp's, so the housing can't hide it
+		var gq := QuadMesh.new()
+		gq.size = Vector2.ONE * (1.3 if a == Vector3.BACK else 0.8)  # the far flood shows its lens edge-on
+		glare.mesh = gq
+		glare.material_override = flood_glare_mat
+		var p := deg_to_rad(PITCH)
+		glare.position = head.position + Vector3(sin(PI / 4) * cos(p), sin(p), cos(PI / 4) * cos(p)) * 0.6
+		parent.add_child(glare)
 	var lot := Vector3(FLOOD.get_center().x, 0, FLOOD.get_center().y)
 	plane(parent, FLOOD.size, Vector3(lot.x, -0.032, lot.z), flood_mat)
 	if parent == set_node:
