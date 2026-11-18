@@ -11535,12 +11535,28 @@ func draw_city_marks(font: Font) -> void:
 	var font_b: Font = bold if bold else font
 	for b in sim.branches:
 		var p2: Vector2 = Sim.lot_pos(sim.lots[b.lot])
-		var ground := screen_world(Vector3(p2.x + 2.0, 0.0, p2.y + 3.0))
+		pins.append([screen_world(Vector3(p2.x + 2.0, 0.0, p2.y + 3.0)), b])
+	# nearest pins keep their height; one whose pill (and roundel) would cover a nearer one's, or any pin's foot, climbs
+	# above it on a longer stem
+	pins.sort_custom(func(a, z): return a[0].y > z[0].y)
+	var plates := []
+	var feet := pins.map(func(e): return Rect2(e[0] - Vector2(9, 6), Vector2(18, 12)))
+	for e in pins:
+		var ground: Vector2 = e[0]
+		var b: Dictionary = e[1]
 		var h := font_b.get_ascent(11) + font_b.get_descent(11) + 6
 		var w := font_b.get_string_size(b.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + h + (22.0 if not b.rival.defeated else 10.0)
 		var r := Rect2(ground.x - w / 2, ground.y - 30 - h, w, h)
-		pins.append([ground, b, r])
-		taken.append(Rect2(r.position - Vector2(2, 4), r.size + Vector2(18, 8)).merge(Rect2(ground + Vector2(-40, -52), Vector2(80, 56))))
+		var clear := false
+		while not clear:
+			clear = true
+			for q in plates + feet:
+				if q.intersects(Rect2(r.position - Vector2(2, 4), r.size + Vector2(17, 8))):
+					r.position.y = q.position.y - 4 - h
+					clear = false
+		plates.append(Rect2(r.position - Vector2(2, 4), r.size + Vector2(17, 8)))
+		e.append(r)
+		taken.append(plates[-1].merge(Rect2(ground + Vector2(-40, -52), Vector2(80, 56))))
 	var bf: Font = bold if bold else font
 	var offered := {}
 	if pick == "listing" and sim.choice != null and sim.choice.source == "listing":
@@ -11627,19 +11643,21 @@ func draw_city_marks(font: Font) -> void:
 	# rival's mascot in a roundel breaking the pill's right end, its ring a gauge of the rival's takings
 	var shade := Color(0.42, 0.3, 0.15, 0.3)
 	var cream := Color(1.0, 0.98, 0.92)
+	pins = pins.filter(func(e): return Rect2(Vector2.ZERO, size).grow(40).has_point(e[0]))
+	for e in pins:  # every stem first, so a raised pin's stem passes behind the nearer pills it climbs over
+		var tip := Vector2(e[0].x, e[2].end.y + 5)
+		overlay.draw_line(e[0] + Vector2(1, 0), tip + Vector2(1, 0), shade, 3.0)
+		overlay.draw_line(e[0], tip, Color.WHITE, 2.0)
+		ground_disc(e[0], 5.0, Color("e98a1d") if is_same(e[1], branch) else Color("c46a14"), shade)
+	pins.reverse()
 	for e in pins:
 		var ground: Vector2 = e[0]
 		var b: Dictionary = e[1]
-		if not Rect2(Vector2.ZERO, size).grow(40).has_point(ground):
-			continue
 		var c := Color("e98a1d") if is_same(b, branch) else Color("c46a14")
 		var asc := font_b.get_ascent(11)
 		var r: Rect2 = e[2]
 		var h := r.size.y
 		var tip := Vector2(ground.x, r.end.y + 5)
-		overlay.draw_line(ground + Vector2(1, 0), tip + Vector2(1, 0), shade, 3.0)
-		overlay.draw_line(ground, tip, Color.WHITE, 2.0)
-		ground_disc(ground, 5.0, c, shade)
 		overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), h / 2), Rect2(r.position + Vector2(0, 2), r.size))
 		overlay.draw_colored_polygon(PackedVector2Array([tip + Vector2(-5, -6), tip + Vector2(5, -6), tip]), c)
 		overlay.draw_style_box(round_box(c, h / 2), r)
