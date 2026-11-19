@@ -31,7 +31,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
 	"floor": ["drawn", "wall_through"], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
 	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["perks", 7],
-	"r_franchise": ["drawn", "fame_sign"], "r_warchest": ["perks", 11], "r_killer": ["decor", 5], "r_express": ["perks", 10], "r_scholar": ["decor", 8],
+	"r_franchise": ["drawn", "fame_sign"], "r_warchest": ["perks", 11], "r_killer": ["drawn", "knockout_glove"], "r_express": ["perks", 10], "r_scholar": ["decor", 8],
 	"r_hq": ["walk", 13], "r_logistics": ["perks", 7], "r_brand": ["perks", 1], "r_academy": ["walk", 10],
 }
 const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
@@ -2317,6 +2317,50 @@ func premium_tag() -> ImageTexture:
 					c = Color("ffe08a") if q.length() < 2.6 else Color("b8862a")  # the medal's face in its ring
 					if q.x + q.y < -1.5 and q.length() > 1.2:
 						c = Color("fff6d6")
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Killer Instinct's picture, in the sprites' chunky pixels: a boxing glove in your shop's orange, its cream cuff banded
+## in green, landing a punch in a yellow burst that knocks chips of the rival's red flying.
+func knockout_glove() -> ImageTexture:
+	var n := 40
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var line := Color("3a2f28")
+	var hit := Vector2(31.0, 19.5)
+	for y in n:
+		for x in n:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var c := Color(0, 0, 0, 0)
+			var q := p - hit
+			var spike := absf(fposmod(atan2(q.y, q.x) / TAU * 6.0 + 0.5, 1.0) - 0.5) * 2.0  # 1 on a point, 0 between
+			var rim := 4.5 + 4.5 * spike
+			if q.length() < rim:
+				c = line if q.length() > rim - 1.2 else (Color("fffdf8") if q.length() < rim * 0.5 else Color("f6cf3c"))
+			for s in [[Vector2(34, 6), Vector2(2, 2)], [Vector2(38, 10), Vector2(1, 1)], [Vector2(35, 31), Vector2(2, 2)], [Vector2(31, 34), Vector2(1, 1)]]:
+				if Rect2(s[0], s[1]).has_point(p):
+					c = Color("dd3a2c")  # chips of the rival's red
+			var f := (p - Vector2(17.5, 19.5)).abs() - Vector2(4.0, 3.0)
+			var d := 7.0 - (Vector2(maxf(f.x, 0.0), maxf(f.y, 0.0)).length() + minf(maxf(f.x, f.y), 0.0))  # >0 on the fist
+			var cuff := minf(minf(p.x - 1.0, 11.0 - p.x), 7.5 - absf(p.y - 19.5))
+			if cuff > 0 and d < 1.0:
+				c = line if cuff < 1 else (Color("fffdf8") if p.y < 21.0 else Color("e4ddce"))
+				if cuff >= 1 and x >= 4 and x <= 5:
+					c = Color("2f9e5a") if p.y < 21.0 else Color("25804a")
+			if d > 0:
+				var lit := p.y < 22.5 - (p.x - 17.0) * 0.4
+				c = line if d < 1 else (Color("f08a24") if lit else Color("cf7419"))
+				if d >= 1:
+					var t := (p - Vector2(19.0, 26.5)) / Vector2(7.5, 5.0)  # the thumb folded across the fist's foot
+					if absf(t.length() - 1.0) < 0.1 and t.y < 0.0:
+						c = line
+					elif x >= 24 and x <= 26 and (y == 14 or y == 19):
+						c = Color("8f4a14")  # the creases between the fingers
+					var g := (p - Vector2(16.0, 18.0)) / Vector2(7.0, 5.5)
+					if absf(g.length() - 1.0) < 0.12 and g.y < -0.35 and g.x < 0.5:
+						c = Color("ffd6a6")  # a glint over the knuckles
 			img.set_pixel(x, y, c)
 	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
 	img.generate_mipmaps()
