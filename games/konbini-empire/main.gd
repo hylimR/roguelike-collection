@@ -434,6 +434,48 @@ func card_fan() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+## The city key's picture: a map folded in three, its panels shaded by the folds, a river and a park on it under a red pin.
+func folded_map() -> ImageTexture:
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var pin := Vector2(42, 19)
+	for y in n:
+		for x in n:
+			var px := Vector2(x + 0.5, y + 0.5)
+			var k := clampi(int((px.x - 6.0) / 17.34), 0, 2)
+			var f := fposmod(px.x - 6.0, 17.34) / 17.34
+			var v := px.y - (f if k % 2 == 0 else 1.0 - f) * 5.0  # accordion folds: each panel tilts the other way
+			var d := Vector2(absf(px.x - 32) - 26, absf(v - 34.5) - 16)
+			var sd := Vector2(maxf(d.x, 0), maxf(d.y, 0)).length() + minf(maxf(d.x, d.y), 0.0) - 2.0
+			var c := Color(0, 0, 0, 0)
+			var cov := clampf(0.5 - sd, 0.0, 1.0)
+			if cov > 0.0:
+				var m := Color("f3e7c4")
+				if absf(px.x + v * 0.55 - 44) < 3.2:
+					m = Color("6fb4e0")
+				elif Vector2((px.x - 18) * 0.8, v - 42).length() < 6.5:
+					m = Color("8cc86a")
+				elif absf(v - 27) < 0.8 or absf(px.x - 0.4 * v - 38) < 0.8:
+					m = Color("dcc79a")
+				m = m.darkened(0.16 if k == 1 else 0.0).lightened(0.12 * (1.0 - f) if k != 1 else 0.0)
+				if sd > -2.0 or k > 0 and f < 0.07:
+					m = INK
+				c = Color(m, cov)
+			var sh := Vector2((px.x - pin.x) / 6.0, (px.y - 35.5) / 2.0).length()
+			if sh < 1.0 and cov > 0.0 and sd <= -2.0:
+				c = c.blend(Color(0.2, 0.12, 0.05, 0.35 * (1.0 - sh)))
+			var q := px - pin
+			var tear := q.length() - 8.0
+			if q.y > 0.0:
+				tear = minf(tear, maxf(absf(q.x) - 8.0 * (1.0 - q.y / 16.0), q.y - 16.0))
+			var pc := clampf(0.5 - tear, 0.0, 1.0)
+			if pc > 0.0:
+				var fill: Color = INK if tear > -2.0 else (PAPER if q.length() < 3.2 else RED.lightened(0.25 if q.x + q.y < -5.0 else 0.0))
+				c = c.blend(Color(fill, pc))
+			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
+
+
 ## A key with its icon over a short caption: cream for abilities and shelves, colored (white caption) for the app dock.
 func key_button(cb: Callable, tip: String, ic: Texture2D, w: int, h: int, radius: int, c := PAPER) -> Button:
 	var b := button("", cb, tip)
@@ -736,7 +778,10 @@ func build() -> void:
 	staff_btn = key_button(show_staff, "", frame("perks", 0, 80), 62, 54, 18, Color("ee9234"))
 	grow_btn = key_button(act_open.bind("openExpansion"), "", frame("perks", 2, 80), 62, 54, 18, Color("5aae55"))
 	store_btn = key_button(act_open.bind("openListings"), "", frame("perks", 10, 80), 62, 54, 18, Color("4a9fdc"))
-	city_btn = key_button(toggle_city, "Tokyo map: your branches and their rivals  [M]", frame("outdoor", 2, 128), 62, 54, 18, Color("e57fa4"))
+	tex["folded_map"] = folded_map()
+	tex["shop_key"] = frame("storefronts", 0, 256)
+	tex.shop_key.region = Rect2(60, 62, 130, 130)  # square, so the caption sits where City's does
+	city_btn = key_button(toggle_city, "", tex.folded_map, 62, 54, 18, Color("e57fa4"))
 	staff_btn.text = "Staff"
 	grow_btn.text = "Expand"
 	store_btn.text = "Store"
@@ -1254,6 +1299,10 @@ func refresh_ui() -> void:
 	store_btn.tooltip_text = "Open another branch: from %s  [N]" % yen(sim.store_cost())
 	staff_btn.disabled = sim.phase != "playing"
 	city_btn.text = "Shop" if view.mode == "city" else "City"
+	if city_btn.get_meta("mode", "") != view.mode:  # back on the street the key shows the map; on the map, your shop to go back to
+		city_btn.set_meta("mode", view.mode)
+		city_btn.icon = tex.shop_key if view.mode == "city" else tex.folded_map
+		city_btn.tooltip_text = "Back to this store's street  [M]" if view.mode == "city" else "Tokyo map: your branches and their rivals  [M]"
 
 
 ## The banner over the view while paused or picking a lot: a dark plate ringed in cream on its own drop shadow, its
