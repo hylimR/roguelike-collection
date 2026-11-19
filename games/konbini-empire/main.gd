@@ -31,7 +31,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
 	"floor": ["drawn", "wall_through"], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
 	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["perks", 7],
-	"r_franchise": ["drawn", "fame_sign"], "r_warchest": ["perks", 11], "r_killer": ["drawn", "knockout_glove"], "r_express": ["perks", 10], "r_scholar": ["decor", 8],
+	"r_franchise": ["drawn", "fame_sign"], "r_warchest": ["perks", 11], "r_killer": ["drawn", "knockout_glove"], "r_express": ["drawn", "bullet_train"], "r_scholar": ["decor", 8],
 	"r_hq": ["walk", 13], "r_logistics": ["perks", 7], "r_brand": ["perks", 1], "r_academy": ["walk", 10],
 }
 const ROLE_ICON := {"cashier": "TILL", "stocker": "STOCK", "cleaner": "CLEAN", "guard": "GUARD", "promoter": "PROMO"}
@@ -2410,6 +2410,55 @@ func knockout_glove() -> ImageTexture:
 					var g := (p - Vector2(16.0, 18.0)) / Vector2(7.0, 5.5)
 					if absf(g.length() - 1.0) < 0.12 and g.y < -0.35 and g.x < 0.5:
 						c = Color("ffd6a6")  # a glint over the knuckles
+			img.set_pixel(x, y, c)
+	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Shinkansen Service's picture, in the sprites' chunky pixels: a bullet train racing right along its rail, its long
+## white nose and blue stripe, the cars behind it streaking away into speed lines.
+func bullet_train() -> ImageTexture:
+	var n := 40
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var line := Color("3a2f28")
+	var tip := 38.5
+	for y in n:
+		for x in n:
+			var row := y - 4  # drawn 4 px high, set down onto the card's shadow
+			var p := Vector2(x + 0.5, row + 0.5)
+			var c := Color(0, 0, 0, 0)
+			var nose := clampf((p.x - 19.0) / (tip - 19.0), 0.0, 1.0)
+			var top := 13.0 + 12.0 * pow(nose, 1.7)
+			var bottom := 28.0 - 2.5 * pow(clampf((p.x - 34.0) / (tip - 34.0), 0.0, 1.0), 2.0)
+			var cut := 2.0 + 7.0 * fposmod(sin(floorf(p.y) * 12.9898) * 43758.5453, 1.0) if fmod(floorf(p.y), 3.0) < 2.0 else 11.0
+			if p.y > 3.0 and p.y < 10.0 and row % 3 == 1 and p.x < 2.0 + 10.0 * fposmod(sin(row * 7.7) * 913.1, 1.0):
+				c = Color("9cc3e4")  # speed lines over the roof
+			if row >= 29 and row <= 30:
+				c = Color("b9bec4") if row == 29 else Color("6b7178")  # the rail
+			if row == 31 and x % 4 == 1:
+				c = Color("8a6a4a")  # its sleepers
+			if row >= 28 and row <= 29 and (absf(p.x - 14.0) < 3.0 or absf(p.x - 30.0) < 3.0):
+				c = line if row == 29 and x % 2 == 0 else Color("4d5258")  # the bogies, wheels blurred
+			if p.y > top + 1.0 and p.y < bottom - 1.0 and row % 2 == 0 and p.x < cut - 1.0 and p.x > cut - 7.0:
+				c = Color("9cc3e4")  # the air it tears through
+			if p.x < tip and p.y > top and p.y < bottom and p.x > cut:
+				var d := minf(minf(p.y - top, bottom - p.y), tip - p.x)
+				var lit := p.y < 22.0
+				c = line if d < 1.0 or (p.x < 12.0 and (p.y - top < 1.0 or bottom - p.y < 1.0)) else (Color("fffdf8") if lit else Color("e4ddce"))
+				if d >= 1.0:
+					if row >= 16 and row <= 17 and x >= 3 and x <= 20 and x % 4 != 0:
+						c = Color("4a5f9e") if row == 16 and x % 4 == 1 else Color("2b3a67")  # the cabin windows
+					if p.y - top > 1.4 and p.y - top < 3.6 and p.x > 23.0 and p.x < 30.0:
+						c = Color("6b84c4") if p.x > 28.0 and p.y - top < 2.6 else Color("2b3a67")  # the cab's windscreen
+					if row >= 22 and row <= 23:
+						c = Color("3b5ca8") if row == 22 else Color("2f4a8a")  # the stripe, running out along the nose
+					if absf(p.x - 36.0) < 1.0 and row == 25:
+						c = Color("f6cf3c")  # the headlight
+				if p.x <= 12.0 and p.x > cut and p.x < cut + 1.0:
+					c = Color("e4ddce")  # the cars behind, smeared by speed
+			if row == 11 and absf(p.x - 14.0) < 3.0 or (row == 12 and (x == 12 or x == 15)) or (row == 10 and (x == 11 or x == 17)):
+				c = Color("6b7178")  # the pantograph on the roof
 			img.set_pixel(x, y, c)
 	img.resize(n * 2, n * 2, Image.INTERPOLATE_NEAREST)
 	img.generate_mipmaps()
