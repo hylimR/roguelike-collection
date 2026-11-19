@@ -1414,6 +1414,7 @@ var actors: Node3D
 var overlay: Control
 var hud_card := Rect2()  # the HUD's store card over the view: the rival's pin keeps clear of it
 var hud_keep: Array = []  # the HUD's chips and buttons over the city map: its labels keep clear of them
+var fit_pins := 0  # frames left, on opening the city, for the camera to slide the pins out from under the HUD
 var hud_dock: Array = []  # the HUD's store tabs and bottom buttons over the street: threat tags stack up clear of them
 var hud_top: Array = []  # the HUD's chips and clock row over the street: a threat tag under one hangs below its threat
 
@@ -2688,6 +2689,7 @@ func set_mode(m: String) -> void:
 		anchor(e)
 	pick = "" if m == "store" else pick
 	hover = {}
+	fit_pins = 3 if m == "city" else 0
 	refresh_city()
 
 
@@ -11040,6 +11042,9 @@ func _process(delta: float) -> void:
 			foot_mat.set_shader_parameter("lamp_count", lit.size())
 		var cold: bool = mode == "store" and not branch.is_empty() and branch.event != null and branch.event.id == "coldSnap"
 		building_mat.set_shader_parameter("snow", 1.0 if cold else 0.0)
+		if fit_pins > 0 and mode == "city" and not hud_keep.is_empty():
+			fit_pins -= 1
+			clear_hud()
 	if paused or city_sig == "":
 		return
 	street_life(delta)
@@ -11646,6 +11651,63 @@ func lot_poly(li: int) -> PackedVector2Array:
 	return out
 
 
+## Where a lot's pin stands on screen: the disc at the foot of its stem.
+func pin_ground(li: int) -> Vector2:
+	var p2: Vector2 = Sim.lot_pos(sim.lots[li])
+	return screen_world(Vector3(p2.x + 2.0, 0.0, p2.y + 3.0))
+
+
+## A branch's pill at its pin's usual height: its number, its name and room for the rival's roundel at the right end.
+func branch_pill(b: Dictionary, font: Font) -> Rect2:
+	var bf: Font = bold if bold else font
+	var ground := pin_ground(b.lot)
+	var h := bf.get_ascent(11) + bf.get_descent(11) + 6
+	var w := bf.get_string_size(b.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + h + (22.0 if not b.rival.defeated else 10.0)
+	return Rect2(ground.x - w / 2, ground.y - 30 - h, w, h)
+
+
+## A lot on offer's pill: its number, the area and what it costs to open.
+func lot_pill(k: int, font: Font) -> Rect2:
+	var bf: Font = bold if bold else font
+	var L: Dictionary = sim.choice.options[k]
+	var ground := pin_ground(L.lot)
+	var h := bf.get_ascent(11) + bf.get_descent(11) + 6
+	var w := h + 3 + bf.get_string_size(sim.districts[sim.lots[L.lot].block].name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 6 + font.get_string_size("¥" + Sim.money(L.cost), HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x + 9
+	return Rect2(ground.x - w / 2, ground.y - 30 - h, w, h)
+
+
+## Slides the city camera up or down just far enough that no pin, pill to foot, sits under the HUD or the clock, and
+## zooms out a step instead when the HUD above and the HUD below each cover one, or a pin is off a narrow screen.
+func clear_hud() -> void:
+	var font := get_theme_default_font()
+	var hud: Array = hud_keep + [Rect2(8, 8, 196, 82)]
+	var was := 0.0
+	for attempt in 10:
+		var boxes: Array = sim.branches.map(func(b): return branch_pill(b, font).grow_individual(0, 4, 13, 36))  # the roundel overhangs the pill's end; the stem runs to the foot
+		if pick == "listing" and sim.choice != null and sim.choice.source == "listing":
+			for k in sim.choice.options.size():
+				boxes.append(lot_pill(k, font).grow_individual(0, 0, 0, 36))
+		var down := 0.0
+		var up := 0.0
+		for p in boxes:
+			for q in hud:
+				if q.intersects(p):
+					if q.get_center().y < size.y / 2:
+						down = maxf(down, q.end.y + 4 - p.position.y)
+					else:
+						up = maxf(up, p.end.y + 4 - q.position.y)
+		var dy := down - up
+		var off := boxes.any(func(p): return not Rect2(Vector2.ZERO, size).encloses(p))
+		if is_zero_approx(down) and is_zero_approx(up) and not off:
+			return
+		if off or (down > 0.0 and up > 0.0) or dy * was < 0.0:
+			zoom *= 1.15
+		else:
+			cam_offset += cam.global_transform.basis.y * dy * cam.size / size.y
+			was = dy
+		update_camera()
+
+
 ## City mode: district names (stations first, overlapping ones left out), street names and route shields up close,
 ## the lots on offer, and a pin over each of your branches and its rival.
 func draw_city_marks(font: Font) -> void:
@@ -11660,8 +11722,7 @@ func draw_city_marks(font: Font) -> void:
 	var pins := []
 	var font_b: Font = bold if bold else font
 	for b in sim.branches:
-		var p2: Vector2 = Sim.lot_pos(sim.lots[b.lot])
-		pins.append([screen_world(Vector3(p2.x + 2.0, 0.0, p2.y + 3.0)), b])
+		pins.append([pin_ground(b.lot), b])
 	# nearest pins keep their height; one whose pill (and roundel) would cover a nearer one's, or any pin's foot, climbs
 	# above it on a longer stem
 	pins.sort_custom(func(a, z): return a[0].y > z[0].y)
@@ -11669,10 +11730,8 @@ func draw_city_marks(font: Font) -> void:
 	var feet := pins.map(func(e): return Rect2(e[0] - Vector2(9, 6), Vector2(18, 12)))
 	for e in pins:
 		var ground: Vector2 = e[0]
-		var b: Dictionary = e[1]
-		var h := font_b.get_ascent(11) + font_b.get_descent(11) + 6
-		var w := font_b.get_string_size(b.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + h + (22.0 if not b.rival.defeated else 10.0)
-		var r := Rect2(ground.x - w / 2, ground.y - 30 - h, w, h)
+		var r := branch_pill(e[1], font)
+		var h := r.size.y
 		var clear := false
 		while not clear:
 			clear = true
@@ -11692,16 +11751,11 @@ func draw_city_marks(font: Font) -> void:
 	lot_tags = {}
 	var lot_text := {}
 	for li in offered:
-		var p2: Vector2 = Sim.lot_pos(sim.lots[li])
-		var ground := screen_world(Vector3(p2.x + 2.0, 0.0, p2.y + 3.0))
-		var nm: String = sim.districts[sim.lots[li].block].name
-		var cost := "¥" + Sim.money(sim.choice.options[offered[li]].cost)
-		var h := bf.get_ascent(11) + bf.get_descent(11) + 6
-		var w := h + 3 + bf.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 6 + font.get_string_size(cost, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x + 9
-		var r := Rect2(ground.x - w / 2, ground.y - 30 - h, w, h)
+		var ground := pin_ground(li)
+		var r := lot_pill(offered[li], font)
 		lot_tags[li] = r
-		lot_text[li] = [ground, nm, cost]
-		taken.append(Rect2(r.position, Vector2(w, ground.y + 4 - r.position.y)))
+		lot_text[li] = [ground, sim.districts[sim.lots[li].block].name, "¥" + Sim.money(sim.choice.options[offered[li]].cost)]
+		taken.append(Rect2(r.position, Vector2(r.size.x, ground.y + 4 - r.position.y)))
 	var order := []
 	for rank in 3:
 		order += sim.districts.filter(func(d): return (0 if d.type == "hub" else (1 if d.lm[1] >= 0 else 2)) == rank)

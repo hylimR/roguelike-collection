@@ -895,6 +895,8 @@ func _process(delta: float) -> void:
 		for c in hud_rows[i].get_children():
 			if c is Control and c.visible:
 				(view.hud_keep if view.mode == "city" else (view.hud_dock if i >= 2 else view.hud_top)).append(Rect2(c.global_position - view.global_position, c.size).grow(3.0))
+	if banner.visible and view.mode == "city":
+		view.hud_keep.append(Rect2(banner.global_position - view.global_position, banner.size).grow(3.0))
 	for t in toasts:
 		t[2] -= delta
 	toasts = toasts.filter(func(t): return t[2] > 0.0)
