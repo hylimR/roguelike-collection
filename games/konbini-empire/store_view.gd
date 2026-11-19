@@ -3948,7 +3948,6 @@ func build_rail(pillars: Array) -> void:
 	var cast := mat(Color.WHITE, parapet_tex())
 	var slab := mat(Color("d6d2c6"))
 	var edge := mat(Color("e8c84a"))
-	var roof := mat(Color("8f979b"))
 	var post := mat(Color("6d7378"))
 	var half: float = CT.RAIL_W / 2
 	var y: float = CT.RAIL_DECK
@@ -3985,7 +3984,13 @@ func build_rail(pillars: Array) -> void:
 			band(side, part, s + n * 0.18, s + n * 0.46, 0.38, 0.38, 38, 42, u0, f, l)
 		elevated.append(commit([top, beds, webs, rails, side], city))
 		i = j
-	# stations: an island platform between the tracks, its yellow edges, a canopy on posts
+	# stations: an island platform between the tracks, its yellow edges, and over its middle a ridged canopy on posts,
+	# the platform's ends left open to the sky
+	var sheet := mat(Color.WHITE, canopy_tex())
+	var glaze_col := Color("e4ebe6")
+	var glaze := mat(glaze_col, canopy_tex(true))
+	light_up(glaze, 0.85)  # the platform lights shine up through the ridge lights after dark
+	var trim := mat(Color("d3d6d2"))
 	for st in C.stations:
 		var pts := PackedVector3Array()
 		for k in int(CT.PLATFORM_L / 2.0) + 3:
@@ -3995,7 +4000,9 @@ func build_rail(pillars: Array) -> void:
 		var deckp := surface(slab)
 		var lines := surface(edge)
 		var sides := surface(fascia)
-		var canopy := surface(roof)
+		var roofs := surface(sheet)
+		var lights := surface(glaze)
+		var trims := surface(trim)
 		var posts := surface(post)
 		var f := 1
 		var l := pts.size() - 2
@@ -4003,13 +4010,24 @@ func build_rail(pillars: Array) -> void:
 		for s in [pw, -pw]:
 			wall(sides, pts, s, 0.3, 1.1, f, l)
 			ribbon(lines, pts, s * 0.8 + 0.08, s * 0.8 - 0.08, 1.12, 0.0, f, l)
-		ribbon(canopy, pts, pw + 0.25, -pw - 0.25, 3.6, 0.0, f, l)  # over the platform, just above the cars' roofs
-		for s in [pw + 0.25, -pw - 0.25]:
-			wall(canopy, pts, s, 3.45, 3.6, f, l)
-		for k in range(f, l + 1, 3):
+		var cf := f + 3
+		var cl := l - 3
+		var e := pw + 0.3
+		var sunny := left_of(pts, (cf + cl) / 2).dot(SUN) > 0.0  # the slope facing the sun takes the lit rows
+		for s in [e, -e]:
+			var r0 := 0 if (s > 0.0) == sunny else 13
+			band(roofs, pts, s, 0.0, 3.5, 3.78, r0, r0 + 13, 0.0, cf, cl, 26)
+			band(lights, pts, s * 0.62, s * 0.36, 3.5 + 0.28 * 0.38 + 0.015, 3.5 + 0.28 * 0.64 + 0.015, 0 if r0 == 0 else 3, 3 if r0 == 0 else 6, 0.0, cf, cl, 6)
+			wall(trims, pts, s, 3.36, 3.5, cf, cl)
+		for k in [cf, cl]:  # the gable ends, closed under the ridge
+			var lf := left_of(pts, k)
+			var c := pts[k]
+			add_quad(trims, [c + lf * e + Vector3(0, 3.36, 0), c + lf * e + Vector3(0, 3.5, 0), c + Vector3(0, 3.78, 0), c - lf * e + Vector3(0, 3.5, 0)], [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
+			add_quad(trims, [c + lf * e + Vector3(0, 3.36, 0), c - lf * e + Vector3(0, 3.5, 0), c - lf * e + Vector3(0, 3.36, 0), c - lf * e + Vector3(0, 3.36, 0)], [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
+		for k in range(cf + 1, cl, 3):
 			var d := pts[mini(k + 1, pts.size() - 1)] - pts[k - 1]
 			block_into(posts, pts[k] + Vector3(0, 2.3, 0), Vector3(0.22, 2.4, 0.22), atan2(d.x, d.z))
-		elevated.append(commit([deckp, lines, sides, canopy, posts], city))
+		elevated.append(commit([deckp, lines, sides, roofs, lights, trims, posts], city))
 	# piers: a column where the city found room for one, under a cap beam across the deck
 	for pr in C.piers:
 		var at_: Vector2 = pr[1]
@@ -4099,6 +4117,50 @@ func parapet_tex() -> ImageTexture:
 				c = c.darkened(0.3)
 			c.a = 1.0
 			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
+
+
+## A platform canopy's roofing, 10 m along at 16 px a metre, eave to ridge: the sunny slope (rows 0-12) and the shaded
+## one (13-25), each a gutter's lit lip over its shadow, corrugated sheet ribbed every 25 cm and lapped every 2.5 m with
+## rain streaks run down to the gutter, and the ridge cap. glazed: the ridge light along each slope instead (0-2 sunny,
+## 3-5 shaded), translucent sheet on a glazing bar every 50 cm.
+func canopy_tex(glazed := false) -> ImageTexture:
+	var r := RandomNumberGenerator.new()
+	r.seed = 31
+	var rows := 6 if glazed else 26
+	var img := Image.create(160, rows, false, Image.FORMAT_RGB8)
+	var streak: Array = []
+	for x in 160:
+		streak.append(r.randi_range(2, 7) if r.randf() < 0.25 else 0)
+	for half in 2:
+		var k := 1.0 if half == 0 else 0.84
+		for x in 160:
+			if glazed:
+				for y in 3:
+					var c := Color.WHITE * (0.97 if y == 0 else 1.0 if y == 1 else 0.92)
+					if x % 8 == 0:
+						c = Color("9aa3a6")
+					img.set_pixel(x, half * 3 + y, c * Color(k, k, k))
+				continue
+			var lap := x % 40 == 0
+			var rib: float = [0.1, 0.0, -0.03, -0.15][x % 4]
+			for y in 13:
+				var c := Color("a9b1b3")
+				if y == 0:
+					c = Color("d9dcd8")
+				elif y == 1:
+					c = Color("6c7376")
+				elif y == 12:
+					c = Color("c8cdcc")
+				else:
+					c = c * (1.0 + rib + r.randf_range(-0.02, 0.02))
+					if lap:
+						c = c.darkened(0.2)
+					if y - 2 < streak[x]:
+						c = c.darkened(0.14 * (1.0 - float(y - 2) / streak[x]))
+				c *= Color(k, k, k)
+				c.a = 1.0
+				img.set_pixel(x, half * 13 + y, c)
 	return ImageTexture.create_from_image(img)
 
 
