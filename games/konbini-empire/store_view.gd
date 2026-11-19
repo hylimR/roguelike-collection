@@ -11190,6 +11190,14 @@ func text(at: Vector2, s: String, px: int, c: Color, w := 0.0, outline := Color(
 	overlay.draw_string(font, p, s, HORIZONTAL_ALIGNMENT_LEFT, -1, px, c)
 
 
+## A threat tag's pip tray across threats ts: 9 px a hit, a 4 px gap between threats.
+func tray_width(ts: Array) -> float:
+	var n := 0
+	for t in ts:
+		n += t.max_clicks
+	return n * 9.0 + 4.0 * (ts.size() - 1) + 2.0
+
+
 func round_box(c: Color, r: float) -> StyleBoxFlat:
 	var k := "%s/%d" % [c.to_html(), roundi(r)]
 	if not styles.has(k):
@@ -11409,20 +11417,21 @@ func draw_street() -> void:
 			continue
 		var at := screen(threat_point(t))
 		var g = null
-		if t.type in ["trash", "spill"]:  # a heap of one kind of mess shares one tag, stemmed to each piece
+		if t.type in ["trash", "spill", "suit"]:  # a heap of one kind of mess, or the takeover's suits, share one tag, stemmed to each
 			for o in tags:
 				if o.t.type == t.type and o.pts.any(func(p): return p.distance_to(at) < 90.0):
 					g = o
 					break
 		if g == null:
-			tags.append({"t": t, "pts": [at], "foot": at.y})
+			tags.append({"t": t, "ts": [t], "pts": [at], "foot": at.y})
 		else:
+			g.ts.append(t)
 			g.pts.append(at)
 			g.foot = maxf(g.foot, at.y)
 	for g in tags:
 		var t: Dictionary = g.t
 		var n: int = g.pts.size()
-		var label: String = {"flyer": "Flyers", "mascot": "Mascot", "trash": "Trash", "review": "1★ review", "shoplifter": "Thief!", "breaker": "Breaker", "suit": "Suit", "spill": "Spill"}[t.type] + (" ×%d" % n if n > 1 else "")
+		var label: String = {"flyer": "Flyers", "mascot": "Mascot", "trash": "Trash", "review": "1★ review", "shoplifter": "Thief!", "breaker": "Breaker", "suit": "Suits" if n > 1 else "Suit", "spill": "Spill"}[t.type] + (" ×%d" % n if n > 1 else "")
 		g.lift = Vector2(0, -26 if t.type in ["flyer", "shoplifter", "suit", "review"] else (-36 if t.type == "mascot" else (-30 if t.type == "breaker" else -12)))
 		var top: Vector2 = g.pts[0] + g.lift
 		if n > 1:  # over the middle of the heap, high enough that its stems fan out to each piece
@@ -11431,7 +11440,8 @@ func draw_street() -> void:
 				sx += p.x
 				top.y = minf(top.y, p.y + g.lift.y - 16.0)
 			top.x = sx / n
-		var w := maxf(font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 14, t.max_clicks * 9.0 + 2 if t.max_clicks > 1 else 0.0)
+		g.tray = tray_width(g.ts) if t.max_clicks > 1 else 0.0
+		var w := maxf(font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 14, g.tray)
 		var below := 16.0 if t.max_clicks > 1 or t.type == "review" else font.get_descent(11) + 2
 		g.label = label
 		g.home = top
@@ -11508,7 +11518,7 @@ func draw_street() -> void:
 			var pr := Rect2(g.top.x - pw / 2, g.top.y - font.get_ascent(11) - 2, pw, font.get_ascent(11) + font.get_descent(11) + 4)
 			var ur := Rect2()
 			if g.t.max_clicks > 1:
-				ur = Rect2(g.top + Vector2(-g.t.max_clicks * 4.5 - 1.0, 4), Vector2(g.t.max_clicks * 9 + 2, 10))
+				ur = Rect2(g.top + Vector2(-g.tray / 2, 4), Vector2(g.tray, 10))
 			elif g.t.type == "review":
 				ur = Rect2(g.top + Vector2(-16, 7), Vector2(32, 4))
 			for to in tos:
@@ -11533,12 +11543,16 @@ func draw_street() -> void:
 		var top: Vector2 = g.top
 		var c := Color("e05a4e") if t.type != "spill" else Color("3a9bd9")
 		pill(top, g.label, 11, c)
-		if t.max_clicks > 1:  # hits left as pips in a cream tray tucked under the tag, spent ones sunk into it
-			var tray := Rect2(top + Vector2(-t.max_clicks * 4.5 - 1.0, 4), Vector2(t.max_clicks * 9 + 2, 10))
+		if t.max_clicks > 1:  # hits left as pips in a cream tray tucked under the tag, spent ones sunk into it, each suit's set apart
+			var tray := Rect2(top + Vector2(-g.tray / 2, 4), Vector2(g.tray, 10))
 			overlay.draw_style_box(round_box(Color(0.42, 0.3, 0.15, 0.25), 5), Rect2(tray.position + Vector2(0, 2), tray.size))
 			overlay.draw_style_box(round_box(Color(1.0, 0.98, 0.92), 5), tray)
-			for k in t.max_clicks:
-				overlay.draw_circle(Vector2(tray.position.x + 5.5 + k * 9, tray.get_center().y), 3.0, c if k < t.clicks else Color("dccca4"))
+			var pip_x := tray.position.x + 5.5
+			for m in g.ts:
+				for k in m.max_clicks:
+					overlay.draw_circle(Vector2(pip_x, tray.get_center().y), 3.0, c if k < m.clicks else Color("dccca4"))
+					pip_x += 9.0
+				pip_x += 4.0
 		if t.type == "review":
 			bar(Rect2(top + Vector2(-16, 7), Vector2(32, 4)), t.ttl / (7.0 + 3.0 * sim.mods().thick_skin), Color("e05a4e"))
 	# pedestrians: angry ones and what they carry
