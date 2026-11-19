@@ -398,8 +398,9 @@ void fragment() {
 }
 """
 # A heatwave's air over the street, on the 3D view's own picture: rows of it waver sideways as the heat climbs off the
-# asphalt, and mirages lie in long glassy sheens down the lanes, the sky's blue mirrored in them over a faint glimpse
-# of the street beyond, paling and strongest at their far end, feathering out and breaking into quivering slips toward their rims. ground_x/ground_z/ground_o take a screen pixel to the street frame's (x, z).
+# asphalt, and mirages lie down the lanes as long soft-edged patches of washed-out glare, sun-white near and a breath of sky
+# toward their far end, bright rows quivering through them and the air bending hardest inside them, so they read as heat off
+# the road, not standing water. ground_x/ground_z/ground_o take a screen pixel to the street frame's (x, z).
 const HEAT_SHADER := """
 shader_type canvas_item;
 uniform vec2 view_size = vec2(1.0);
@@ -418,33 +419,32 @@ void fragment() {
 	float t = TIME;
 	float rows = sin(p.y * 0.26 - t * 3.8 + sin(p.x * 0.013 + t * 0.6) * 2.0) + 0.35 * sin(p.y * 0.53 + p.x * 0.021 - t * 5.1);
 	vec2 off = vec2(rows * 0.9, 0.3 * sin(p.x * 0.04 + t * 2.2)) * road * day / view_size;
-	vec4 c = texture(TEXTURE, UV + off);
 	float m = 0.0;
-	float body = 0.0;
 	float far = 0.0;
 	float ph = 0.0;
 	for (int i = 0; i < 6; i++) {
 		vec4 s = sheens[i];
-		vec2 d = (g - s.xy) / vec2(s.z, 0.5);
+		vec2 d = (g - s.xy) / vec2(s.z, 0.6);
 		float k = 1.0 - dot(d, d);
-		float e = smoothstep(0.0, 0.6, k) * (0.85 + 0.15 * sin(t * 1.3 + s.w));
+		float e = k * k * step(0.0, k) * (0.85 + 0.15 * sin(t * 1.3 + s.w));
 		if (e > m) {
 			m = e;
-			body = smoothstep(0.08, 0.45, k);
 			far = clamp(d.x * 0.5 + 0.5, 0.0, 1.0);
 			ph = s.w;
 		}
 	}
-	// toward its rim the sheen breaks into slips along the screen's rows, quivering as the air climbs
-	float slip = sin(p.y * 0.5 + 2.6 * sin(p.x * 0.023 + t * 2.4 + ph) - t * 1.6) + 0.5 * sin(p.y * 1.1 - p.x * 0.017 + t * 2.9 + ph * 1.7);
-	m *= mix(smoothstep(-0.7, 0.7, slip), 1.0, body) * (0.45 + 0.55 * far) * road * day * day;
+	m *= road * day * day;
+	// inside a mirage the air bends hardest, so the lane's dashes ripple through it
+	vec4 c = texture(TEXTURE, UV + off * (1.0 + 2.5 * m));
 	if (m > 0.001) {
-		vec2 up = vec2(off.x * 3.0, -(9.0 + 7.0 * far + 2.0 * sin(p.x * 0.05 + t * 2.0)) / view_size.y);
+		// bright quivering rows along the screen, climbing with the air
+		float slip = sin(p.y * 0.7 + 2.0 * sin(p.x * 0.019 + t * 2.4 + ph) - t * 2.2) + 0.5 * sin(p.y * 1.3 - p.x * 0.017 + t * 3.1 + ph * 1.7);
+		vec2 up = vec2(off.x * 3.0, -(9.0 + 7.0 * far) / view_size.y);
 		vec3 beyond = texture(TEXTURE, UV + up).rgb;
-		// glassy, not painted: the lane's own paint and grain stay faintly under the mirrored sky, brightest at its far end
-		vec3 blue = mix(sky * vec3(0.56, 0.76, 1.0), sky * 1.08, far * 0.6 + 0.4 * (1.0 - body));
-		vec3 sheen = mix(blue, beyond, 0.18) + c.rgb * 0.08 + vec3(0.2, 0.2, 0.16) * smoothstep(0.9, 1.4, slip) * body;
-		c.rgb = mix(c.rgb, sheen, m * mix(0.5, 0.85, far));
+		// a washed-out glare off the hot asphalt, not standing water: sun-white near, a breath of the sky toward its far end
+		vec3 glare = mix(dot(sky, vec3(0.333)) * vec3(1.38, 1.3, 1.16), sky * 1.22, 0.45 * far);
+		vec3 haze = mix(glare, beyond, 0.1) * mix(0.9, 1.08, smoothstep(-0.4, 1.2, slip));
+		c.rgb = mix(c.rgb, haze, m * mix(0.36, 0.7, far));
 	}
 	COLOR = c;
 }
