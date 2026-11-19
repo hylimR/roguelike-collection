@@ -101,6 +101,7 @@ const SEA_DEEP := Color("1d5a98")  # open water far off any shore, and the sky-l
 const SEA_NIGHT := Color(0.5, 0.48, 0.46)  # water goes darker than the land after dark instead of glowing blue under the night tint
 const GRASS_NIGHT := Color(0.74, 0.6, 0.72)  # unlit lawns and countryside go a dim moonlit grey-green after dark, not vivid green
 const ROOF_TINT := 0.3  # how much of its walls' tint a flat roof takes over its membrane
+const ROOF_SNOW := 0.26  # how much fuller snow lies on a roof than on the trodden ground
 const ASPHALT := Color("576074")  # a cool slate rather than flat grey
 const PITCH := 30.0
 const SUN :=Vector3(-0.35, 1.0, 0.6)  # towards the sun; the building shader lights its faces from here too
@@ -560,6 +561,7 @@ uniform float golden = 0.0;
 uniform float dawn = 0.0;
 uniform float snow = 0.0;  // a cold snap: snow lying on every roof
 uniform sampler2D snow_tex : filter_nearest, repeat_enable;
+uniform sampler2D snow_roof_tex : filter_nearest, repeat_enable;
 varying vec3 lpos;
 varying vec2 wxz;
 varying float wy;
@@ -686,6 +688,7 @@ void fragment() {
 	float shade = n.y > 0.95 ? 1.0 : (n.y > 0.5 ? (sun >= 0.0 ? 1.0 : 0.85) : (sun > 0.0 ? 0.9 : 0.75));
 	vec3 col = tint.rgb;
 	vec3 glow = vec3(0.0);
+	float relief = 1.0;  // a roof's own light and shade (coping, kit, tile courses), kept under a cold snap's snow
 	float inside = 0.0;  // a lit shop seen through its window: its own colours under warm light, not dimmed by the dark
 	vec3 lit_in = vec3(0.0);
 	if (info.w > -0.5) {
@@ -1115,6 +1118,7 @@ void fragment() {
 						}
 					}
 				}
+				relief = mix(min(e.x, e.y) < 0.3 ? 1.14 : f, dot(over.rgb, vec3(0.3, 0.59, 0.11)) / 0.86, over.a);
 				col = mix(mix(ROOF[pick], tint.rgb, ROOF_TINT) * (min(e.x, e.y) < 0.3 ? 1.14 : f), over.rgb, over.a);
 			}
 		} else {
@@ -1202,7 +1206,8 @@ void fragment() {
 		}
 		float up = slope.z - q.y;
 		f = up < 0.2 ? (up < 0.05 ? 1.12 : 0.8) : (q.y < 0.1 ? 0.7 : f);  // the ridge cap, and the eave's edge
-		col = tint.rgb * mix(1.0, f, fine);
+		relief = mix(1.0, f, fine);
+		col = tint.rgb * relief;
 	} else if (info.w < -0.5 && lnrm.y > 0.98 && wy < 0.75 && min(info.x, info.z) > 1.5 && max(tint.g - max(tint.r, tint.b), tint.b - tint.r) < 0.05
 			&& dot(tint.rgb, vec3(0.3, 0.59, 0.11)) > 0.4) {
 		// a landmark's plinth or paving (not its lawns, pools or tarmac), laid in 60 cm slabs on the world's grid so
@@ -1219,6 +1224,10 @@ void fragment() {
 	}
 	if (snow > 0.0 && lnrm.y > 0.25 && !(info.w > -0.5 && info.y < 1.0)) {  // drifts as on the ground, not on the cut-down floors
 		vec4 s = texture(snow_tex, wxz * 0.125);
+		if (wy > 1.0) {  // up on a roof nobody treads or shovels it: a blanket, the roof's relief showing through
+			s = texture(snow_roof_tex, wxz * 0.125);
+			s.rgb *= mix(1.0, relief, 0.6);
+		}
 		col = mix(col, s.rgb, s.a * snow);
 	}
 	float low_sun = max(dot(n, normalize(vec3(-0.5, 0.3, 0.8))), 0.0);
@@ -1343,6 +1352,7 @@ var sign_glow_mat: StandardMaterial3D  # the glow round your lit pole sign
 var fascia_glows: Array = []  # [weakref to the glow round a rival's lit fascia, its chain's colour]
 var fascia_glow_tex: ImageTexture
 var snow_tex: ImageTexture  # patchy settled snow, tiled 8 m
+var snow_roof_tex: ImageTexture  # snow blanketing a roof, bare in only a few melted holes, tiled 8 m
 var snow_walk_tex: ImageTexture  # a sidewalk's snow across its 3.5 m from wall to kerb, tiled 8 m along it
 var snow_lot_tex: ImageTexture  # the car park's ploughed snow
 var snow_road_tex: ImageTexture  # the road's slush across its 7.4 m from kerb to kerb, tiled 16 m along it
@@ -1521,6 +1531,7 @@ func _ready() -> void:
 			key.set_pixel(x, y, Color(1, 1, 1, smoothstep(hw, hw * 0.35, v) * smoothstep(0.0, 0.12, u) * pow(1.0 - u, 1.3)))
 	tv_key_mat.albedo_texture = ImageTexture.create_from_image(key)
 	snow_tex = snow_patches()
+	snow_roof_tex = snow_patches(256, 256, func(_x: float, _z: float) -> float: return ROOF_SNOW)
 	var walk := func(d: float) -> float:  # d metres out from the wall toward the kerb
 		return 0.2 * exp(-pow(d / 0.55, 2.0)) + 0.4 * smoothstep(2.5, 3.3, d) - 0.26 * exp(-pow((d - 1.7) / 0.8, 2.0))
 	snow_walk_tex = snow_patches(256, 112, func(_x: float, d: float) -> float: return walk.call(d))
@@ -4385,6 +4396,7 @@ func build_buildings() -> void:
 	building_mat.set_shader_parameter("accents", atlas[1])
 	building_mat.set_shader_parameter("styles", float(Sim.City.STYLE_COUNT))
 	building_mat.set_shader_parameter("snow_tex", snow_tex)
+	building_mat.set_shader_parameter("snow_roof_tex", snow_roof_tex)
 	var all: Array = Sim.City.buildings() + farms
 	var boxes := []
 	var roofs := []
@@ -6104,9 +6116,10 @@ func snow_patches(w := 256, h := 256, lie := Callable(), stretch := 1, dirty := 
 			height[y * w + x] = sqrt(clampf((v - 0.5) / 0.14, 0.0, 1.0)) + 0.8 * v
 	var sun := Vector2(SUN.x, SUN.z).normalized()
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var tile := w == N and h == N
 	for y in h:
-		var yu := (y + 2) % h if not lies else mini(y + 2, h - 1)
-		var yd := (y + h - 2) % h if not lies else maxi(y - 2, 0)
+		var yu := (y + 2) % h if tile else mini(y + 2, h - 1)
+		var yd := (y + h - 2) % h if tile else maxi(y - 2, 0)
 		for x in w:
 			var v := vals[y * w + x]
 			var g := grain[y % N * N + x % N] / 255.0 - 0.5
@@ -6154,13 +6167,14 @@ func settled_snow(far_gaps: Array, near_gaps: Array) -> MeshInstance3D:
 	var span := rival_span(branch.rival)
 	rect_quad(deep, Rect2(3.7, -20.2, span.x - 3.7, 13.0), -0.034, 0.0, false, 0.125)
 	rect_quad(deep, Rect2(-16.5, -20.2, 20.2, 3.95), -0.034, 0.0, false, 0.125)
-	rect_quad(deep, Rect2(span.x + 0.2, -16.0, span.y - span.x - 0.4, 8.6), 4.27, 0.0, false, 0.125)  # the rival's roof, round its kit
+	var roof := surface(snow_mat(Color.WHITE, snow_roof_tex))
+	rect_quad(roof, Rect2(span.x + 0.2, -16.0, span.y - span.x - 0.4, 8.6), 4.27, 0.0, false, 0.125)  # the rival's roof, round its kit
 	var road := surface(snow_mat(Color(0.94, 0.95, 0.97), snow_road_tex))  # trafficked slush, greyer than the sidewalk's
 	var r0 := street_x.x
 	var r1 := street_x.y
 	add_quad(road, [Vector3(r0, -0.034, -3.7), Vector3(r1, -0.034, -3.7), Vector3(r1, -0.034, 3.7), Vector3(r0, -0.034, 3.7)],
 			[Vector2(r0 / 16.0, 0), Vector2(r1 / 16.0, 0), Vector2(r1 / 16.0, 1), Vector2(r0 / 16.0, 1)])
-	var mi := commit([deep, road, walk, lot], set_node)
+	var mi := commit([deep, roof, road, walk, lot], set_node)
 	mi.visible = false
 	return mi
 
@@ -8014,7 +8028,7 @@ func build_set() -> void:
 		var xl := vx - vw / 2
 		plane(set_node, Vector2(vw - 0.4, 8.4), Vector3(vx, 3.63, -11.75), vacant_roof(xl, vw))
 		block(set_node, Vector3(0.3, 0.05, 0.3), Vector3(xl + 0.45, 3.63, -7.95), Color("4d4a44"))
-		var drift := surface(snow_mat(Color.WHITE, snow_tex))
+		var drift := surface(snow_mat(Color.WHITE, snow_roof_tex))
 		rect_quad(drift, Rect2(xl + 0.2, -15.95, vw - 0.4, 8.4), 3.665, 0.0, false, 0.125)
 		commit([drift], snow_cover)
 		var kit := surface(km)
@@ -8474,7 +8488,7 @@ func shop_roofs(list: Array) -> void:
 	km.vertex_color_is_srgb = true
 	var kit := surface(km)
 	var faces := surface(condenser())
-	var drift := surface(snow_mat(Color.WHITE, snow_tex))
+	var drift := surface(snow_mat(Color.WHITE, snow_roof_tex))
 	var r := RandomNumberGenerator.new()
 	r.seed = branch.lot * 131 + 7
 	for e in list:
