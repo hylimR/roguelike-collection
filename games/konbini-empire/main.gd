@@ -177,14 +177,21 @@ func make_theme() -> Theme:
 	th.set_color("font_color", "Label", INK)
 	th.set_constant("line_spacing", "Label", -2)  # Nunito's own line gap is already loose; Godot's +3 made wrapped text read double-spaced
 	var field := box(Color.WHITE, 14, 8)
+	field.content_margin_left = 16  # clear of the rounded corner, so text doesn't hug the rim
+	field.content_margin_right = 16
 	field.set_border_width_all(2)
-	field.border_color = LINE
+	field.border_width_top = 4  # a heavier top rim reads as the field sunk into its tile
+	field.border_color = LINE.darkened(0.06)
 	th.set_stylebox("normal", "LineEdit", field)
 	var focus: StyleBoxFlat = field.duplicate()
 	focus.border_color = MINT
 	th.set_stylebox("focus", "LineEdit", focus)
 	th.set_color("font_color", "LineEdit", INK)
 	th.set_color("font_placeholder_color", "LineEdit", MUTED)
+	th.set_color("caret_color", "LineEdit", MINT.darkened(0.2))
+	th.set_constant("caret_width", "LineEdit", 2)
+	th.set_color("selection_color", "LineEdit", Color(MINT, 0.35))
+	th.set_color("font_selected_color", "LineEdit", INK)
 	th.set_stylebox("panel", "TooltipPanel", box(INK, 10, 6))
 	th.set_color("font_color", "TooltipLabel", PAPER)
 	th.set_stylebox("background", "ProgressBar", box(Color("ece0c0"), 4, 0))
@@ -3024,13 +3031,12 @@ func show_new_run() -> void:
 	edit.placeholder_text = "random"
 	edit.max_length = 24
 	edit.add_theme_font_override("font", bold)
-	edit.add_theme_font_size_override("font_size", 18)
+	edit.add_theme_font_size_override("font_size", 22)  # the same size as this run's seed beside it
 	edit.add_theme_color_override("font_placeholder_color", LINE.darkened(0.12))
 	var start := func(): new_run(edit.text)
 	edit.text_submitted.connect(func(_t): start.call())
 	var go := primary(button("Start  [Enter]", start))
 	var seed_now := label(sim.seed_text, INK, 22)
-	seed_now.custom_minimum_size.y = edit.get_minimum_size().y
 	seed_now.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var tiles := HBoxContainer.new()
 	tiles.add_theme_constant_override("separation", 8)
@@ -3050,6 +3056,7 @@ func show_new_run() -> void:
 			edit.accept_event()
 			cancel.call())
 	open_modal("New run", v, {KEY_ESCAPE: cancel}, "seed")
+	seed_now.custom_minimum_size.y = edit.get_minimum_size().y  # only now that the field wears the theme's box
 	edit.grab_focus.call_deferred()
 
 
