@@ -30,7 +30,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"hotStreak": ["perks", 5], "negotiator": ["drawn", "lease_deal"], "hr": ["walk", 7], "teamSpirit": ["drawn", "team_trio"], "spotless": ["drawn", "wet_sign"],
 	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
 	"floor": ["drawn", "wall_through"], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
-	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["perks", 7],
+	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["drawn", "delivery_bike"],
 	"r_franchise": ["drawn", "fame_sign"], "r_warchest": ["perks", 11], "r_killer": ["drawn", "knockout_glove"], "r_express": ["drawn", "bullet_train"], "r_scholar": ["decor", 8],
 	"r_hq": ["walk", 13], "r_logistics": ["perks", 7], "r_brand": ["perks", 1], "r_academy": ["walk", 10],
 }
@@ -1910,6 +1910,25 @@ func bench_planters() -> ImageTexture:
 	img.blend_rect(plant, Rect2i(Vector2i.ZERO, plant.get_size()), Vector2i(0, foot - plant.get_height()))
 	img.blend_rect(flip, Rect2i(Vector2i.ZERO, flip.get_size()), Vector2i(n - flip.get_width(), foot - flip.get_height()))
 	img.blend_rect(bench, Rect2i(Vector2i.ZERO, bench.get_size()), Vector2i((n - bench.get_width()) / 2, n - 1 - bench.get_height()))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Delivery Bike's picture: the courier who waits on your car park, off the street on their red scooter, riding
+## right with the wind streaking off the delivery box behind.
+func delivery_bike() -> ImageTexture:
+	var sheet: Image = tex.vehicles.get_image()
+	sheet.convert(Image.FORMAT_RGBA8)
+	var bike := sheet.get_region(Rect2i(6 * StoreView.VEHICLE_CELL.x, 0, StoreView.VEHICLE_CELL.x, StoreView.VEHICLE_CELL.y))
+	bike = bike.get_region(bike.get_used_rect())
+	var at := Vector2i(26, 4)  # wheels centred over the card's shadow, with room behind for the streaks
+	var img := Image.create(bike.get_width() + 2 * at.x, bike.get_height() + at.y + 2, false, Image.FORMAT_RGBA8)
+	var streak: Color = RARITY_COLOR.epic.lerp(PAPER, 0.15)
+	for k in 3:
+		var y := at.y + roundi(bike.get_height() * (0.36 + 0.2 * k))
+		var x0: int = at.x - [16, 24, 10][k]
+		img.fill_rect(Rect2i(x0, y, at.x + 12 - x0, 4), streak)  # tucked under the box and the back wheel
+	img.blend_rect(bike, Rect2i(Vector2i.ZERO, bike.get_size()), at)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
