@@ -1693,11 +1693,39 @@ func listing_card(v: VBoxContainer, L: Dictionary) -> void:
 
 
 ## The lot's picture on a plate in its district's colour: your konbini beside the rival chain's shopfront.
+## A chain's shop on its listing, as it stands on the street: white walls under its own color, drawn from the green
+## chain's front of the same size (odd frames are the big shops) with every green stripe, awning and sign rim shaded
+## over into the chain's color.
+func rival_front(id: String) -> AtlasTexture:
+	var def: Dictionary = Sim.RIVALS[id]
+	var big: bool = def.front % 2 == 1
+	var key := "front_" + id
+	if not tex.has(key):
+		var img: Image = tex.storefronts.get_image().get_region(Rect2i(256 * (7 if big else 6), 0, 256, 192))
+		img.clear_mipmaps()
+		var c := Color(def.color)
+		var mid := Color("28d533").get_luminance()
+		for y in img.get_height():
+			for x in img.get_width():
+				var p := img.get_pixel(x, y)
+				if p.a == 0.0 or p.s < 0.35 or p.h < 0.25 or p.h > 0.42:
+					continue
+				var l := p.get_luminance()
+				var q := c.lightened((l - mid) / (1.0 - mid) * 0.6) if l > mid else c.darkened((mid - l) / mid)
+				q.a = p.a
+				img.set_pixel(x, y, q)
+		img.generate_mipmaps()
+		tex[key] = ImageTexture.create_from_image(img)
+	var t := AtlasTexture.new()
+	t.atlas = tex[key]
+	t.region = Rect2(16, 42, 226, 144) if big else Rect2(58, 66, 132, 124)
+	return t
+
+
 func lot_picture(L: Dictionary) -> PanelContainer:
 	var tint: Color = DISTRICT_COLOR[L.district]
-	var front: int = Sim.RIVALS[L.rival].front
-	var theirs := picture("storefronts", front, 256, Vector2(96, 56))
-	theirs.texture.region = Rect2(front * 256 + 16, 42, 226, 144) if front % 2 == 1 else Rect2(front * 256 + 58, 66, 132, 124)  # odd frames are the big shops
+	var theirs := picture("storefronts", 0, 256, Vector2(96, 56))
+	theirs.texture = rival_front(L.rival)
 	var ours := intro_shop()
 	ours.custom_minimum_size = Vector2(60, 56)
 	var h := HBoxContainer.new()
