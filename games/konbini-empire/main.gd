@@ -28,7 +28,7 @@ const CARD_ICON := {  # [sheet, frame] for each card's picture (a "walk" row: th
 	"bulk": ["perks", 7], "bow": ["walk", 3], "impulse": ["walk", 0], "maneki": ["perks", 9], "nightOwl": ["decor", 9],
 	"earlyBird": ["perks", 3], "upsell": ["perks", 11], "pointCard": ["perks", 4], "comboMaster": ["perks", 10], "thickSkin": ["drawn", "shield"],
 	"hotStreak": ["perks", 5], "negotiator": ["drawn", "lease_deal"], "hr": ["walk", 7], "teamSpirit": ["drawn", "team_trio"], "spotless": ["drawn", "wet_sign"],
-	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["perks", 9],
+	"investor": ["perks", 11], "goldenHour": ["decor", 4], "omotenashi": ["walk", 5], "cat": ["drawn", "store_cat"],
 	"floor": ["drawn", "wall_through"], "neon": ["drawn", "neon_board"], "register2": ["perks", 10], "bigShelves": ["perks", 2], "vending": ["decor", 2],
 	"gacha": ["decor", 3], "atm": ["decor", 6], "bench": ["drawn", "bench_planters"], "camera": ["perks", 6], "delivery": ["drawn", "delivery_bike"],
 	"r_franchise": ["drawn", "fame_sign"], "r_warchest": ["perks", 11], "r_killer": ["drawn", "knockout_glove"], "r_express": ["drawn", "bullet_train"], "r_scholar": ["decor", 8],
@@ -1936,6 +1936,44 @@ func delivery_bike() -> ImageTexture:
 		var x0: int = at.x - [16, 24, 10][k]
 		img.fill_rect(Rect2i(x0, y, at.x + 12 - x0, 4), streak)  # tucked under the box and the back wheel
 	img.blend_rect(bike, Rect2i(Vector2i.ZERO, bike.get_size()), at)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Store Cat's picture: the calico who walks your shop, off the shop floor, dashing right at a rival's flyer that
+## tumbles away clawed into strips, a scrap of it flying.
+func store_cat() -> ImageTexture:
+	var sheet: Image = tex.props.get_image()
+	sheet.convert(Image.FORMAT_RGBA8)
+	var cat := sheet.get_region(Rect2i(StoreView.PROPS.cat[0] * StoreView.PROP.x, 0, StoreView.PROP.x, StoreView.PROP.y))
+	cat = cat.get_region(cat.get_used_rect())
+	var w := 72  # drawn on the sprites' own grid, half the art's resolution
+	var h := 32
+	var at := Vector2i(w - cat.get_width() / 2, 2 * h - 2 - cat.get_height())  # centred over the card's shadow, the flyer's room ahead matching the streaks' behind
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var line := Color("3a2f28")
+	# the flyer clawed into three strips fanning apart, and a scrap of it flying: centre, turn, half size, red head's depth
+	var sheets := [[Vector2(56.5, 12.5), deg_to_rad(-9.0), Vector2(2.9, 7.0), 3.2], [Vector2(62.5, 11.0), deg_to_rad(3.0), Vector2(2.9, 7.2), 3.2],
+			[Vector2(67.6, 13.0), deg_to_rad(10.0), Vector2(2.6, 6.8), 3.2], [Vector2(50.5, 3.0), deg_to_rad(-12.0), Vector2(2.6, 2.0), 2.0]]
+	for y in h:
+		for x in w:
+			var p := Vector2(x + 0.5, y + 0.5)
+			for f in sheets:
+				var q: Vector2 = (p - f[0]).rotated(-f[1])
+				var e: float = minf(f[2].x - absf(q.x), f[2].y - absf(q.y))
+				if e <= 0:
+					continue
+				var c := line if e < 1 else (Color("d94b3c") if q.y < -f[2].y + f[3] else Color("fbf7ee"))
+				if e >= 1 and f[2].y > 6.0 and (absf(q.y + 0.5) < 0.5 or absf(q.y - 2.5) < 0.5) and absf(q.x) < f[2].x - 1.0:
+					c = Color("9a948a")  # its print, torn across the strips
+				img.set_pixel(x, y, c)
+	img.resize(w * 2, h * 2, Image.INTERPOLATE_NEAREST)
+	var streak: Color = RARITY_COLOR.epic.lerp(PAPER, 0.15)
+	for k in 3:
+		var y := at.y + roundi(cat.get_height() * (0.3 + 0.2 * k))
+		var x0: int = at.x - [18, 26, 12][k]
+		img.fill_rect(Rect2i(x0, y, at.x + 14 - x0, 4), streak)  # tucked under the tail and the body
+	img.blend_rect(cat, Rect2i(Vector2i.ZERO, cat.get_size()), at)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
